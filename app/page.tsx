@@ -50,9 +50,9 @@ export default function LandingPage() {
     <div className="min-h-screen bg-white">
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-lg border-b border-slate-100">
-        <div className="flex items-center justify-between px-6 py-4 max-w-7xl mx-auto">
-          <Link href="/" className="flex items-center space-x-2">
-            <Image src="/logo.png" alt="Vente Facile" width={44} height={44} className="object-contain" />
+        <div className="flex items-center justify-between px-6 max-w-7xl mx-auto">
+          <Link href="/" className="flex items-center">
+            <Image src="/logo.png" alt="Vente Facile" width={100} height={100} className="object-contain" />
             <span className="text-xl font-bold">
               Vente<span className="text-orange-500">Facile</span>
             </span>

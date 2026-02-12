@@ -14,6 +14,7 @@ import {
   ShoppingCart,
   ShoppingBag,
   Boxes,
+  ClipboardList,
   FileText,
   Bell,
   BarChart3,
@@ -49,15 +50,21 @@ const menuItems = [
     badge: null,
   },
   {
-    label: "Clients & fournisseurs",
-    icon: Users,
-    href: "/dashboard/contacts",
+    label: "Inventaire",
+    icon: ClipboardList,
+    href: "/dashboard/inventory",
     badge: null,
   },
   {
     label: "Rapports",
     icon: BarChart3,
     href: "/dashboard/reports",
+    badge: null,
+  },
+  {
+    label: "Clients & fournisseurs",
+    icon: Users,
+    href: "/dashboard/contacts",
     badge: null,
   },
   {
