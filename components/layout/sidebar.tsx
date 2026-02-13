@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { usePermissions } from "@/components/auth/permissions-provider";
 import {
   LayoutDashboard,
   Users,
@@ -30,60 +31,70 @@ const menuItems = [
     icon: LayoutDashboard,
     href: "/dashboard",
     badge: null,
+    permission: null,
   },
   {
     label: "Ventes",
     icon: ShoppingCart,
     href: "/dashboard/sales",
     badge: null,
+    permission: "sales.view",
   },
   {
     label: "Produits",
     icon: Package,
     href: "/dashboard/products",
     badge: null,
+    permission: "products.view",
   },
   {
     label: "Stock",
     icon: Boxes,
     href: "/dashboard/stock",
     badge: null,
+    permission: "stock.view",
   },
   {
     label: "Inventaire",
     icon: ClipboardList,
     href: "/dashboard/inventory",
     badge: null,
+    permission: "inventory.view",
   },
   {
     label: "Rapports",
     icon: BarChart3,
     href: "/dashboard/reports",
     badge: null,
+    permission: "reports.view",
   },
   {
     label: "Clients & fournisseurs",
     icon: Users,
     href: "/dashboard/contacts",
     badge: null,
+    permission: "customers.view",
   },
   {
     label: "Utilisateurs",
     icon: UserCog,
     href: "/dashboard/users",
     badge: null,
+    permission: "users.view",
   },
   {
     label: "Abonnements",
     icon: FileText,
     href: "/dashboard/subscriptions",
     badge: null,
+    permission: null,
   },
   {
     label: "Notifications",
     icon: Bell,
     href: "/dashboard/notifications",
     badge: null,
+    permission: null,
   },
 ];
 
@@ -96,6 +107,7 @@ export function Sidebar({ isMobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
 
   useEffect(() => {
     async function fetchOrganization() {
@@ -165,6 +177,9 @@ export function Sidebar({ isMobileOpen = false, onMobileClose }: SidebarProps) {
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => {
+            if (item.permission && !permissionsLoading && !hasPermission(item.permission)) {
+              return null;
+            }
             const Icon = item.icon;
             // Un menu est actif uniquement s'il correspond au chemin le plus long
             // Exemple: /dashboard/products active "Produits", pas "Dashboard"
@@ -181,15 +196,15 @@ export function Sidebar({ isMobileOpen = false, onMobileClose }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-colors group",
+                  "flex items-center justify-between px-4 py-2 rounded-lg text-sm font-medium transition-colors group",
                   isActive
                     ? "bg-orange-500 text-white"
                     : "text-gray-700 hover:bg-gray-100"
                 )}
               >
                 <div className="flex items-center space-x-3">
-                  <Icon className="h-5 w-5" />
-                  <span>{item.label}</span>
+                  <Icon className="h-4 w-4" />
+                  <span className="text-sm">{item.label}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   {item.badge && (

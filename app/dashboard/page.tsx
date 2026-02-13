@@ -145,14 +145,14 @@ export default function DashboardPage() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Total Sales */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <Card className="gap-0">
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-medium text-gray-600">Ventes totales</CardTitle>
             <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
               <DollarSign className="h-5 w-5 text-green-600" />
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             <div className="text-2xl font-bold">
               {stats ? formatPrice(stats.cards.total_sales.value) : "0 CDF"}
             </div>
@@ -171,14 +171,14 @@ export default function DashboardPage() {
         </Card>
 
         {/* Total Customers */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <Card className="gap-0">
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-medium text-gray-600">Total clients</CardTitle>
             <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
               <Users className="h-5 w-5 text-orange-600" />
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             <div className="text-2xl font-bold">
               {stats ? formatNumber(stats.cards.total_customers.value as number) : "0"}
             </div>
@@ -192,8 +192,8 @@ export default function DashboardPage() {
         </Card>
 
         {/* Units Sold */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <Card className="gap-0">
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-medium text-gray-600">Unités vendues</CardTitle>
             <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
               <Package className="h-5 w-5 text-purple-600" />
@@ -218,8 +218,8 @@ export default function DashboardPage() {
         </Card>
 
         {/* Gross Profit */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <Card className="gap-0">
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-medium text-gray-600">Bénéfice brut</CardTitle>
             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
               <TrendingUp className="h-5 w-5 text-blue-600" />
