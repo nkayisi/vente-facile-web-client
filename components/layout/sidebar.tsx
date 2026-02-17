@@ -20,6 +20,7 @@ import {
   Bell,
   BarChart3,
   UserCog,
+  Wallet,
   ChevronRight,
   X,
   Store,
@@ -62,11 +63,11 @@ const menuItems = [
     permission: "inventory.view",
   },
   {
-    label: "Rapports",
-    icon: BarChart3,
-    href: "/dashboard/reports",
+    label: "Livre de caisse",
+    icon: Wallet,
+    href: "/dashboard/cashbook",
     badge: null,
-    permission: "reports.view",
+    permission: "cashbook.view",
   },
   {
     label: "Clients & fournisseurs",
@@ -81,6 +82,13 @@ const menuItems = [
     href: "/dashboard/users",
     badge: null,
     permission: "users.view",
+  },
+    {
+    label: "Rapports",
+    icon: BarChart3,
+    href: "/dashboard/reports",
+    badge: null,
+    permission: "reports.view",
   },
   {
     label: "Abonnements",

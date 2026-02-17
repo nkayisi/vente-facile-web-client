@@ -65,6 +65,7 @@ import {
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
+import { formatCurrencyForPDF, formatNumberForPDF, addSignatureSection } from "@/lib/pdf-utils";
 import { formatDate, formatDateTime, formatPrice, formatDecimal } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
@@ -337,20 +338,21 @@ export default function InventoryDetailPage() {
 
       autoTable(doc, {
         startY: y,
-        head: [["Produit", "SKU", "Stock systeme", "Compte", "Ecart", "Notes"]],
+        head: [["Produit", "SKU", "Stock système", "Compté", "Écart", "Notes"]],
         body: (items as InventoryCount[]).map((item) => [
           item.product_name,
           item.product_sku || "-",
-          parseFloat(item.quantity_expected).toFixed(0),
-          item.is_counted ? parseFloat(item.quantity_counted).toFixed(0) : "___________",
-          item.is_counted ? (parseFloat(item.quantity_difference) > 0 ? "+" : "") + parseFloat(item.quantity_difference).toFixed(0) : "-",
+          formatNumberForPDF(item.quantity_expected, 0),
+          item.is_counted ? formatNumberForPDF(item.quantity_counted, 0) : "___________",
+          item.is_counted ? (parseFloat(item.quantity_difference) > 0 ? "+" : "") + formatNumberForPDF(item.quantity_difference, 0) : "-",
           item.notes || "",
         ]),
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [245, 245, 245], textColor: [51, 51, 51], fontStyle: "bold" },
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
+        headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
         columnStyles: {
           0: { cellWidth: 50 },
-          1: { cellWidth: 25, font: "courier" },
+          1: { cellWidth: 25 },
           2: { halign: "right", cellWidth: 22 },
           3: { halign: "right", cellWidth: 22, fontStyle: "bold" },
           4: { halign: "right", cellWidth: 18 },
@@ -378,24 +380,14 @@ export default function InventoryDetailPage() {
     doc.text("Resume:", 14, y);
     doc.setFont("helvetica", "normal");
     doc.text(
-      `Total produits: ${data.summary.total_products}  |  Comptes: ${data.summary.counted_products}  |  Avec ecart: ${data.summary.products_with_difference}` +
-      (data.summary.total_difference_value !== "0.00" ? `  |  Ecart valeur: ${data.summary.total_difference_value} CDF` : ""),
+      `Total produits: ${data.summary.total_products}  |  Comptés: ${data.summary.counted_products}  |  Avec écart: ${data.summary.products_with_difference}` +
+      (data.summary.total_difference_value !== "0.00" ? `  |  Écart valeur: ${formatCurrencyForPDF(data.summary.total_difference_value)}` : ""),
       14, y + 5
     );
     y += 15;
 
-    // Signatures
-    if (y + 30 > doc.internal.pageSize.getHeight()) {
-      doc.addPage();
-      y = 20;
-    }
-    y += 10;
-    doc.line(30, y, 80, y);
-    doc.line(pageWidth - 80, y, pageWidth - 30, y);
-    y += 5;
-    doc.setFontSize(8);
-    doc.text("Signature compteur", 55, y, { align: "center" });
-    doc.text("Signature responsable", pageWidth - 55, y, { align: "center" });
+    // Signatures (toujours en bas de page)
+    addSignatureSection(doc, y, pageWidth, ["Signature compteur", "Signature responsable"]);
 
     doc.save(`Inventaire_${data.session.reference}.pdf`);
   };
@@ -500,26 +492,25 @@ export default function InventoryDetailPage() {
 
       autoTable(doc, {
         startY: y,
-        head: [["Produit", "SKU", "Categorie", "Stock systeme", "Compte", "Ecart", "Valeur ecart"]],
+        head: [["Produit", "SKU", "Catégorie", "Stock syst.", "Compté", "Écart", "Valeur écart"]],
         body: itemsWithDiff.map((item) => [
           item.product_name,
           item.product_sku || "-",
           item.product_category_name || "-",
-          parseFloat(item.quantity_expected).toFixed(0),
-          parseFloat(item.quantity_counted).toFixed(0),
-          (parseFloat(item.quantity_difference) > 0 ? "+" : "") + parseFloat(item.quantity_difference).toFixed(0),
-          parseFloat(item.difference_value).toFixed(0) + " CDF",
+          formatNumberForPDF(item.quantity_expected, 0),
+          formatNumberForPDF(item.quantity_counted, 0),
+          (parseFloat(item.quantity_difference) > 0 ? "+" : "") + formatNumberForPDF(item.quantity_difference, 0),
+          formatCurrencyForPDF(item.difference_value),
         ]),
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [254, 243, 199], textColor: [51, 51, 51], fontStyle: "bold" },
+        theme: "grid",
+        tableWidth: "wrap",
+        styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
+        headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
         columnStyles: {
-          0: { cellWidth: 40 },
-          1: { cellWidth: 22, font: "courier" },
-          2: { cellWidth: 28 },
-          3: { halign: "right", cellWidth: 22 },
-          4: { halign: "right", cellWidth: 18 },
-          5: { halign: "right", cellWidth: 18 },
-          6: { halign: "right", cellWidth: 28 },
+          3: { halign: "right" },
+          4: { halign: "right" },
+          5: { halign: "right" },
+          6: { halign: "right" },
         },
         margin: { left: 14, right: 14 },
         didParseCell: (hookData) => {
@@ -529,7 +520,7 @@ export default function InventoryDetailPage() {
             else if (val.startsWith("-")) hookData.cell.styles.textColor = [220, 38, 38];
           }
           if (hookData.section === "body" && hookData.column.index === 6) {
-            const val = parseFloat(String(hookData.cell.raw));
+            const val = parseFloat(String(hookData.cell.raw).replace(/[^\d,-]/g, "").replace(",", "."));
             if (val > 0) hookData.cell.styles.textColor = [22, 163, 74];
             else if (val < 0) hookData.cell.styles.textColor = [220, 38, 38];
           }
@@ -557,24 +548,23 @@ export default function InventoryDetailPage() {
 
     autoTable(doc, {
       startY: y,
-      head: [["Produit", "SKU", "Stock systeme", "Compte", "Ecart", "Notes"]],
+      head: [["Produit", "SKU", "Stock système", "Compté", "Écart", "Notes"]],
       body: allItems.map((item) => [
         item.product_name,
         item.product_sku || "-",
-        parseFloat(item.quantity_expected).toFixed(0),
-        item.is_counted ? parseFloat(item.quantity_counted).toFixed(0) : "-",
-        item.is_counted ? (parseFloat(item.quantity_difference) > 0 ? "+" : "") + parseFloat(item.quantity_difference).toFixed(0) : "-",
+        formatNumberForPDF(item.quantity_expected, 0),
+        item.is_counted ? formatNumberForPDF(item.quantity_counted, 0) : "-",
+        item.is_counted ? (parseFloat(item.quantity_difference) > 0 ? "+" : "") + formatNumberForPDF(item.quantity_difference, 0) : "-",
         item.notes || "",
       ]),
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [229, 231, 235], textColor: [51, 51, 51], fontStyle: "bold" },
+      theme: "grid",
+      tableWidth: "wrap",
+      styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
+      headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
       columnStyles: {
-        0: { cellWidth: 50 },
-        1: { cellWidth: 25, font: "courier" },
-        2: { halign: "right", cellWidth: 22 },
-        3: { halign: "right", cellWidth: 22 },
-        4: { halign: "right", cellWidth: 18 },
-        5: { cellWidth: 40 },
+        2: { halign: "right" },
+        3: { halign: "right" },
+        4: { halign: "right" },
       },
       margin: { left: 14, right: 14 },
       didParseCell: (hookData) => {
@@ -588,19 +578,8 @@ export default function InventoryDetailPage() {
 
     y = (doc as any).lastAutoTable.finalY + 10;
 
-    // Signatures
-    if (y + 30 > doc.internal.pageSize.getHeight()) {
-      doc.addPage();
-      y = 20;
-    }
-    y += 10;
-    doc.line(30, y, 80, y);
-    doc.line(pageWidth - 80, y, pageWidth - 30, y);
-    y += 5;
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
-    doc.text("Signature compteur", 55, y, { align: "center" });
-    doc.text("Signature responsable", pageWidth - 55, y, { align: "center" });
+    // Signatures (toujours en bas de page)
+    addSignatureSection(doc, y, pageWidth, ["Signature compteur", "Signature responsable"]);
 
     doc.save(`Rapport_Inventaire_${data.session.reference}.pdf`);
   };

@@ -517,9 +517,9 @@ export default function POSPage() {
     <div className="h-[calc(100vh-80px)] flex flex-col lg:flex-row gap-4 -m-4 lg:-m-6 p-4 lg:p-6 bg-gray-100 relative">
       {/* Products Section */}
       <div className="flex-1 flex flex-col min-h-0 pb-20 lg:pb-0">
-        {/* Search + Close Session */}
-        <div className="mb-4 flex gap-2">
-          <div className="relative flex-1">
+        {/* Search Bar */}
+        <div className="mb-4 flex gap-4 items-center justify-between">
+          <div className="w-full relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
             <Input
               ref={searchInputRef}
@@ -529,18 +529,21 @@ export default function POSPage() {
               className="pl-10 h-12 text-lg bg-white"
             />
           </div>
-          <Button
-            variant="outline"
-            className="h-12 bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-            onClick={() => {
-              setClosingBalance("");
-              setClosingNotes("");
-              setShowCloseSessionDialog(true);
-            }}
-          >
-            <LogOut className="h-4 w-4 mr-2" />
-            Fermer la caisse
-          </Button>
+          {/* Close Session Button - Desktop only */}
+          <div className="hidden lg:block">
+            <Button
+              variant="outline"
+              className="w-full sm:max-w-max h-12 bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              onClick={() => {
+                setClosingBalance("");
+                setClosingNotes("");
+                setShowCloseSessionDialog(true);
+              }}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              <span>Fermer la caisse</span>
+            </Button>
+          </div>
         </div>
 
         {/* Products Grid */}
@@ -569,13 +572,13 @@ export default function POSPage() {
                         <Package className="h-8 w-8 text-gray-300" />
                       )}
                       {product.track_inventory && (
-                        <div className={`absolute top-1 right-1 px-1.5 py-0.5 rounded text-xs font-bold ${getRemainingStock(product) <= 0
-                          ? 'bg-red-500 text-white'
-                          : getRemainingStock(product) <= (product.reorder_point || 5)
-                            ? 'bg-amber-500 text-white'
-                            : 'bg-green-600 text-white'
+                        <div className={`absolute top-1 right-1 px-2 py-0.5 rounded text-xs font-semibold ${getRemainingStock(product) <= 0
+                            ? 'bg-red-500 text-white'
+                            : getRemainingStock(product) <= (product.reorder_point || 5)
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-green-600 text-white'
                           }`}>
-                          {formatNumber(getAvailableStock(product))}
+                          Stock: {formatNumber(getAvailableStock(product))}
                         </div>
                       )}
                     </div>
@@ -592,34 +595,49 @@ export default function POSPage() {
         </div>
       </div>
 
-      {/* Mobile Cart Toggle Bar */}
-      {cart.length > 0 && (
-        <div
-          className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-white border-t shadow-[0_-4px_12px_rgba(0,0,0,0.1)] px-4 py-3 cursor-pointer"
-          onClick={() => setShowMobileCart(true)}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <ShoppingCart className="h-6 w-6 text-orange-500" />
-                <span className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
-                  {cart.reduce((sum, item) => sum + item.quantity, 0)}
-                </span>
+      {/* Mobile Bottom Bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-white border-t shadow-[0_-4px_12px_rgba(0,0,0,0.1)] px-4 py-3">
+        {cart.length > 0 ? (
+          <div
+            className="cursor-pointer"
+            onClick={() => setShowMobileCart(true)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <ShoppingCart className="h-6 w-6 text-orange-500" />
+                  <span className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                    {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{cart.length} article{cart.length > 1 ? "s" : ""}</p>
+                  {selectedCustomer && (
+                    <p className="text-xs text-gray-500">{selectedCustomer.name}</p>
+                  )}
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-gray-900">{cart.length} article{cart.length > 1 ? "s" : ""}</p>
-                {selectedCustomer && (
-                  <p className="text-xs text-gray-500">{selectedCustomer.name}</p>
-                )}
+              <div className="text-right">
+                <p className="text-lg font-bold text-orange-600">{formatPrice(total)}</p>
+                <p className="text-xs text-gray-500">Voir le panier</p>
               </div>
-            </div>
-            <div className="text-right">
-              <p className="text-lg font-bold text-orange-600">{formatPrice(total)}</p>
-              <p className="text-xs text-gray-500">Voir le panier</p>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <Button
+            variant="outline"
+            className="w-full h-12 bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+            onClick={() => {
+              setClosingBalance("");
+              setClosingNotes("");
+              setShowCloseSessionDialog(true);
+            }}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            <span>Fermer la caisse</span>
+          </Button>
+        )}
+      </div>
 
       {/* Mobile Cart Overlay */}
       {showMobileCart && (
