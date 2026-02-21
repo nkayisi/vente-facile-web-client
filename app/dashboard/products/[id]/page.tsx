@@ -330,10 +330,6 @@ export default function ProductDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <DetailItem label="Type" value={
-                product.product_type === "physical" ? "Produit physique" :
-                  product.product_type === "service" ? "Service" : "Pack/Bundle"
-              } />
               <DetailItem label="Unité" value={product.unit_name || "-"} />
               <DetailItem label="Taxable" value={product.is_taxable ? "Oui" : "Non"} />
               {product.is_taxable && (
@@ -349,10 +345,10 @@ export default function ProductDetailPage() {
               )}
             </div>
 
-            {product.description && (
+            {product.short_description && (
               <div className="mt-6 pt-6 border-t">
                 <h4 className="font-medium text-gray-900 mb-2">Description</h4>
-                <p className="text-gray-600 whitespace-pre-wrap">{product.description}</p>
+                <p className="text-gray-600 whitespace-pre-wrap">{product.short_description}</p>
               </div>
             )}
           </CardContent>

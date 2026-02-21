@@ -20,17 +20,10 @@ export const createProductSchema = z.object({
     .string()
     .max(50, "Le code barre ne peut pas dépasser 50 caractères")
     .optional(),
-  description: z
-    .string()
-    .max(1000, "La description ne peut pas dépasser 1000 caractères")
-    .optional(),
   short_description: z
     .string()
-    .max(500, "La description courte ne peut pas dépasser 500 caractères")
+    .max(500, "La description ne peut pas dépasser 500 caractères")
     .optional(),
-  product_type: z
-    .enum(["physical", "service", "bundle"])
-    .default("physical"),
   cost_price: z
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, "Le prix doit être un nombre valide")
@@ -82,9 +75,7 @@ export const productSchema = z.object({
   slug: z.string(),
   sku: z.string(),
   barcode: z.string().nullable(),
-  description: z.string().nullable(),
   short_description: z.string().nullable(),
-  product_type: z.string(),
   cost_price: z.string(),
   selling_price: z.string(),
   wholesale_price: z.string().nullable(),

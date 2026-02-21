@@ -61,16 +61,11 @@ export function DashboardHeader({ onMenuClick }: DashboardHeaderProps) {
         {/* Right Section */}
         <div className="flex items-center gap-2 lg:gap-4">
 
-          {/* Settings - Hidden on mobile */}
-          <Button variant="ghost" size="icon" className="text-gray-600 hidden md:flex">
-            <Settings className="h-5 w-5" />
-          </Button>
-
           {/* Notifications */}
-          <Button variant="ghost" size="icon" className="text-gray-600 relative">
+          {/* <Button variant="ghost" size="icon" className="text-gray-600 relative">
             <Bell className="h-5 w-5" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full"></span>
-          </Button>
+          </Button> */}
 
           {/* User Menu */}
           <DropdownMenu>

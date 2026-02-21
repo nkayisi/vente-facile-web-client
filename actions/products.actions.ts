@@ -64,17 +64,13 @@ export interface ProductVariant {
   effective_price?: string;
 }
 
-export type ProductType = "physical" | "service" | "bundle";
-
 export interface Product {
   id: string;
   name: string;
   slug: string;
   sku: string;
   barcode?: string;
-  description?: string;
   short_description?: string;
-  product_type: ProductType;
   category?: string | null;
   category_name?: string;
   brand?: string | null;
@@ -124,9 +120,7 @@ export interface CreateProductData {
   name: string;
   sku: string;
   barcode?: string;
-  description?: string;
   short_description?: string;
-  product_type?: ProductType;
   category?: string | null;
   brand?: string | null;
   unit?: string | null;
@@ -154,7 +148,6 @@ export interface ProductFilters {
   brand?: string;
   is_active?: boolean;
   is_featured?: boolean;
-  product_type?: ProductType;
   in_stock?: boolean;
   ordering?: string;
   page?: number;
@@ -206,7 +199,6 @@ export async function getProducts(
     if (filters?.brand) params.append("brand", filters.brand);
     if (filters?.is_active !== undefined) params.append("is_active", String(filters.is_active));
     if (filters?.is_featured !== undefined) params.append("is_featured", String(filters.is_featured));
-    if (filters?.product_type) params.append("product_type", filters.product_type);
     if (filters?.in_stock !== undefined) params.append("in_stock", String(filters.in_stock));
     if (filters?.ordering) params.append("ordering", filters.ordering);
     if (filters?.page) params.append("page", String(filters.page));

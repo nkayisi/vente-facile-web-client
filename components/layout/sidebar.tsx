@@ -24,6 +24,7 @@ import {
   ChevronRight,
   X,
   Store,
+  Settings,
 } from "lucide-react";
 
 const menuItems = [
@@ -90,6 +91,13 @@ const menuItems = [
     badge: null,
     permission: "users.view",
   },
+  {
+    label: "Paramètres",
+    icon: Settings,
+    href: "/dashboard/settings",
+    badge: null,
+    permission: "settings.view",
+  }
 ];
 
 interface SidebarProps {

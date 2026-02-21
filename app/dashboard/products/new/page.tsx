@@ -53,9 +53,7 @@ export default function NewProductPage() {
     name: "",
     sku: "",
     barcode: "",
-    description: "",
     short_description: "",
-    product_type: "physical",
     category: null,
     brand: null,
     unit: null,
@@ -240,7 +238,6 @@ export default function NewProductPage() {
     const cleanedData = {
       ...formData,
       barcode: formData.barcode?.trim() || undefined,
-      description: formData.description?.trim() || undefined,
       short_description: formData.short_description?.trim() || undefined,
       category: formData.category || null,
       brand: formData.brand || null,
@@ -432,45 +429,20 @@ export default function NewProductPage() {
                     searchPlaceholder="Rechercher une unité..."
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Type de produit</Label>
-                  <Select
-                    value={formData.product_type}
-                    onValueChange={(value) => handleChange("product_type", value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="physical">Produit physique</SelectItem>
-                      <SelectItem value="service">Service</SelectItem>
-                      <SelectItem value="bundle">Pack/Bundle</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
 
               {/* Description */}
               <div className="space-y-2">
-                <Label htmlFor="short_description">Description courte</Label>
-                <Input
+                <Label htmlFor="short_description">Description</Label>
+                <Textarea
                   id="short_description"
                   value={formData.short_description || ""}
                   onChange={(e) => handleChange("short_description", e.target.value)}
-                  placeholder="Brève description du produit"
+                  placeholder="Description du produit"
+                  rows={3}
                   maxLength={500}
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description complète</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description || ""}
-                  onChange={(e) => handleChange("description", e.target.value)}
-                  placeholder="Description détaillée du produit"
-                  rows={4}
-                />
+                <p className="text-xs text-gray-500">Maximum 500 caractères</p>
               </div>
             </CardContent>
           </Card>
