@@ -19,6 +19,13 @@ export interface Branch {
   created_at: string;
 }
 
+export interface CurrencyInfo {
+  code: string;
+  name: string;
+  symbol: string;
+  decimal_places: number;
+}
+
 export interface Organization {
   id: string;
   name: string;
@@ -37,6 +44,7 @@ export interface Organization {
   currency: string;
   timezone: string;
   is_active: boolean;
+  default_currency_info?: CurrencyInfo;
   created_at: string;
 }
 

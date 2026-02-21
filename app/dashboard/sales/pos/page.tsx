@@ -3,6 +3,7 @@
 import { Customer, getCustomers, createCustomer, CreateCustomerData } from "@/actions/contacts.actions";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProducts, Product } from "@/actions/products.actions";
+import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import {
   CloseSessionData,
   closeSession,
@@ -58,6 +59,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 import { printReceipt, ReceiptData } from "@/lib/receipt-printer";
 
 interface CartItem {
@@ -71,6 +73,7 @@ export default function POSPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const { currency: defaultCurrency } = useCurrency();
 
   // State
   const [isLoading, setIsLoading] = useState(true);
@@ -93,6 +96,10 @@ export default function POSPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCreditSale, setIsCreditSale] = useState(false);
   const [paymentReference, setPaymentReference] = useState("");
+
+  // Multi-currency state
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
+  const [paymentCurrency, setPaymentCurrency] = useState<string>(""); // currency code for payment
 
   // Customer dialog
   const [showCustomerDialog, setShowCustomerDialog] = useState(false);
@@ -134,11 +141,12 @@ export default function POSPage() {
           }
           setCurrentSession(sessionResult.data!);
 
-          // Fetch products, customers, payment methods
-          const [productsResult, customersResult, paymentMethodsResult] = await Promise.all([
+          // Fetch products, customers, payment methods, currencies
+          const [productsResult, customersResult, paymentMethodsResult, currenciesResult] = await Promise.all([
             getProducts(session.accessToken, org.id, { is_active: true, in_stock: true }),
             getCustomers(session.accessToken, org.id),
             getPaymentMethods(session.accessToken, org.id, { is_active: true }),
+            getOrganizationCurrencies(session.accessToken, org.id),
           ]);
 
           if (productsResult.success && productsResult.data) {
@@ -155,6 +163,14 @@ export default function POSPage() {
               setSelectedPaymentMethod(defaultMethod.id);
             } else if (paymentMethodsResult.data.length > 0) {
               setSelectedPaymentMethod(paymentMethodsResult.data[0].id);
+            }
+          }
+          if (currenciesResult.success && currenciesResult.data) {
+            setOrgCurrencies(currenciesResult.data);
+            // Set default payment currency to primary
+            const primary = currenciesResult.data.find((c: OrganizationCurrency) => c.is_primary);
+            if (primary) {
+              setPaymentCurrency(primary.currency_code);
             }
           }
         }
@@ -305,9 +321,32 @@ export default function POSPage() {
     return r2(subtotal - itemDiscount - globalDiscountAmount + tax);
   };
 
+  // Multi-currency helpers
+  const getPrimaryCurrency = () => orgCurrencies.find(c => c.is_primary);
+  const getPaymentCurrencyObj = () => orgCurrencies.find(c => c.currency_code === paymentCurrency);
+  const isPrimaryPayment = () => {
+    const pc = getPaymentCurrencyObj();
+    return !pc || pc.is_primary;
+  };
+
+  // Convert payment amount to primary currency equivalent
+  const getAmountInPrimary = () => {
+    const amount = parseFloat(paymentAmount) || 0;
+    if (isPrimaryPayment()) return amount;
+    const pc = getPaymentCurrencyObj();
+    if (!pc) return amount;
+    const rate = parseFloat(pc.exchange_rate);
+    if (rate <= 0) return amount;
+    // exchange_rate = how many primary units per 1 unit of this currency
+    return Math.round(amount * rate * 100) / 100;
+  };
+
   // Open payment dialog
   const openPaymentDialog = () => {
     const totalAmount = calculateTotal();
+    // Reset to primary currency
+    const primary = getPrimaryCurrency();
+    setPaymentCurrency(primary?.currency_code || "CDF");
     setPaymentAmount(totalAmount.toString());
     setIsCreditSale(false);
     setPaymentReference("");
@@ -342,12 +381,14 @@ export default function POSPage() {
     }
 
     const total = calculateTotal();
-    const amount = parseFloat(paymentAmount) || 0;
-    const creditAmount = total - amount;
+    const rawAmount = parseFloat(paymentAmount) || 0;
+    // Convert payment to primary currency for comparison
+    const amountInPrimary = getAmountInPrimary();
+    const creditAmount = total - amountInPrimary;
 
     // Validation pour vente normale (non crédit)
-    if (!isCreditSale && amount < total) {
-      toast.error(`Le montant payé (${formatPrice(amount)}) est inférieur au total (${formatPrice(total)})`);
+    if (!isCreditSale && amountInPrimary < total) {
+      toast.error(`Le montant payé (${formatPrice(amountInPrimary)}) est inférieur au total (${formatPrice(total)})`);
       return;
     }
 
@@ -375,10 +416,13 @@ export default function POSPage() {
 
       // Paiements : si crédit avec paiement partiel, on enregistre le paiement
       const payments: CreatePaymentData[] = [];
-      if (amount > 0 && selectedPaymentMethod) {
+      if (rawAmount > 0 && selectedPaymentMethod) {
+        const pc = getPaymentCurrencyObj();
         payments.push({
           payment_method: selectedPaymentMethod,
-          amount: r2(amount),
+          amount: r2(rawAmount),
+          currency: paymentCurrency || undefined,
+          exchange_rate: pc && !pc.is_primary ? parseFloat(pc.exchange_rate) : undefined,
           ...(paymentReference ? { reference: paymentReference } : {}),
         });
       }
@@ -403,12 +447,18 @@ export default function POSPage() {
         const selectedMethodObj = getSelectedMethod();
         const receiptPayments = [];
 
+        const primaryCode = getPrimaryCurrency()?.currency_code || "CDF";
+        const primarySymbol = getPrimaryCurrency()?.currency_symbol || "FC";
+
         // Ajouter le paiement si montant > 0
-        if (amount > 0 && selectedMethodObj) {
+        if (rawAmount > 0 && selectedMethodObj) {
+          const payLabel = !isPrimaryPayment()
+            ? `${selectedMethodObj.name} (${formatPrice(rawAmount, getPaymentCurrencyObj()?.currency_symbol)})`
+            : selectedMethodObj.name;
           receiptPayments.push({
-            method: selectedMethodObj.name,
-            amount,
-            currency: "CDF"
+            method: payLabel,
+            amount: amountInPrimary,
+            currency: primaryCode
           });
         }
 
@@ -417,7 +467,7 @@ export default function POSPage() {
           receiptPayments.push({
             method: "À crédit",
             amount: creditAmount,
-            currency: "CDF"
+            currency: primaryCode
           });
         }
 
@@ -442,9 +492,9 @@ export default function POSPage() {
           globalDiscountPercent: globalDiscount,
           total,
           payments: receiptPayments,
-          amountPaid: amount,
-          change: !isCreditSale ? Math.max(0, amount - total) : 0,
-          currency: "CDF",
+          amountPaid: amountInPrimary,
+          change: !isCreditSale ? Math.max(0, amountInPrimary - total) : 0,
+          currency: primaryCode,
           isCreditSale: creditAmount > 0,
           amountDue: creditAmount > 0 ? creditAmount : 0,
         };
@@ -611,7 +661,7 @@ export default function POSPage() {
   }
 
   const total = calculateTotal();
-  const change = (parseFloat(paymentAmount) || 0) - total;
+  const change = getAmountInPrimary() - total;
 
   return (
     <div className="h-[calc(100vh-80px)] flex flex-col lg:flex-row gap-4 -m-4 lg:-m-6 p-4 lg:p-6 bg-gray-100 relative">
@@ -1203,11 +1253,12 @@ export default function POSPage() {
               </div>
             </div>
 
-            {/* 3. Amount Received (always shown, but labeled differently for credit) */}
+            {/* 3. Amount Received */}
             <div className="space-y-3">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 {isCreditSale ? "Montant payé maintenant (optionnel)" : "Montant reçu"}
               </Label>
+
               <div className="relative">
                 <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <Input
@@ -1217,13 +1268,32 @@ export default function POSPage() {
                   className="h-14 text-2xl text-center font-bold pl-10 pr-16"
                   placeholder={total.toString()}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">CDF</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">
+                  {getPaymentCurrencyObj()?.currency_symbol || defaultCurrency.symbol}
+                </span>
               </div>
+
+              {/* Conversion display when paying in different currency */}
+              {!isPrimaryPayment() && (parseFloat(paymentAmount) || 0) > 0 && (
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-blue-700 font-medium">
+                      Équivalent en {getPrimaryCurrency()?.currency_code}
+                    </span>
+                    <span className="text-lg font-bold text-blue-800">
+                      {formatPrice(getAmountInPrimary())}
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-500 mt-1">
+                    Taux: 1 {getPaymentCurrencyObj()?.currency_code} = {formatNumber(parseFloat(getPaymentCurrencyObj()?.exchange_rate || "1"))} {getPrimaryCurrency()?.currency_symbol}
+                  </p>
+                </div>
+              )}
 
               {/* Credit amount display for credit sales */}
               {isCreditSale && (() => {
-                const amountPaid = parseFloat(paymentAmount) || 0;
-                const creditAmount = total - amountPaid;
+                const paidInPrimary = getAmountInPrimary();
+                const creditAmount = total - paidInPrimary;
                 return creditAmount > 0 ? (
                   <div className="p-3 bg-orange-50 rounded-xl border border-orange-200">
                     <div className="flex justify-between items-center">
@@ -1235,21 +1305,34 @@ export default function POSPage() {
               })()}
 
               {/* Change display */}
-              {!isCreditSale && change > 0 && (
-                <div className="p-3 bg-green-50 rounded-xl border border-green-200">
-                  <div className="flex justify-between items-center">
-                    <span className="text-green-700 font-medium text-sm">Monnaie à rendre</span>
-                    <span className="text-2xl font-bold text-green-700">{formatPrice(change)}</span>
+              {!isCreditSale && (() => {
+                const paidInPrimary = getAmountInPrimary();
+                const changeInPrimary = paidInPrimary - total;
+                if (changeInPrimary <= 0) return null;
+
+                // Show change in primary currency (the cashier gives change in the local currency)
+                return (
+                  <div className="p-3 bg-green-50 rounded-xl border border-green-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-green-700 font-medium text-sm">Monnaie à rendre</span>
+                      <span className="text-2xl font-bold text-green-700">{formatPrice(changeInPrimary)}</span>
+                    </div>
+                    {!isPrimaryPayment() && (
+                      <p className="text-xs text-green-600 mt-1">
+                        Le client a donné {formatPrice(parseFloat(paymentAmount) || 0, getPaymentCurrencyObj()?.currency_symbol)} →
+                        retour de {formatPrice(changeInPrimary)} en {getPrimaryCurrency()?.currency_code}
+                      </p>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Insufficient amount warning (only for non-credit sales) */}
-              {!isCreditSale && (parseFloat(paymentAmount) || 0) > 0 && (parseFloat(paymentAmount) || 0) < total && (
+              {!isCreditSale && (parseFloat(paymentAmount) || 0) > 0 && getAmountInPrimary() < total && (
                 <div className="p-2 bg-red-50 rounded-lg border border-red-200">
                   <p className="text-xs text-red-600 font-medium flex items-center gap-1.5">
                     <AlertTriangle className="h-3.5 w-3.5" />
-                    Montant insuffisant — il manque {formatPrice(total - (parseFloat(paymentAmount) || 0))}
+                    Montant insuffisant — il manque {formatPrice(total - getAmountInPrimary())}
                   </p>
                 </div>
               )}
@@ -1271,13 +1354,13 @@ export default function POSPage() {
               onClick={handlePayment}
               disabled={(() => {
                 if (isProcessing) return true;
-                if (!isCreditSale && (parseFloat(paymentAmount) || 0) < total) return true;
+                if (!isCreditSale && getAmountInPrimary() < total) return true;
                 if (isCreditSale && !selectedCustomer) return true;
                 if (isCreditSale && selectedCustomer) {
                   const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
                   const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
-                  const amountPaid = parseFloat(paymentAmount) || 0;
-                  const creditAmount = total - amountPaid;
+                  const paidInPrimary = getAmountInPrimary();
+                  const creditAmount = total - paidInPrimary;
                   const newBalance = currentBalance + creditAmount;
                   if (creditLimit > 0 && newBalance > creditLimit) return true;
                 }
@@ -1327,7 +1410,7 @@ export default function POSPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Solde de fermeture (CDF)</Label>
+              <Label>Solde de fermeture ({defaultCurrency.symbol})</Label>
               <Input
                 type="number"
                 value={closingBalance}

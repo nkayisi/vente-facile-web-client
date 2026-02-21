@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { getDefaultCurrency } from "@/lib/format";
 
 // Couleur principale orange (brand color)
 const BRAND_COLOR: [number, number, number] = [249, 115, 22];
@@ -202,11 +203,13 @@ export function formatNumberForPDF(value: string | number, decimals: number = 2)
 }
 
 /**
- * Formate un montant en CDF pour l'affichage PDF (espace comme séparateur)
+ * Formate un montant dans la devise par défaut pour l'affichage PDF (espace comme séparateur)
  */
-export function formatCurrencyForPDF(value: string | number): string {
+export function formatCurrencyForPDF(value: string | number, currencySymbol?: string): string {
+  const defaults = getDefaultCurrency();
+  const symbol = currencySymbol || defaults.symbol;
   const num = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(num)) return "0,00 CDF";
+  if (isNaN(num)) return `0,00 ${symbol}`;
 
   // Utiliser fr-FR puis remplacer l'espace fine insécable (U+202F) par un espace normal
   // (jsPDF affiche l'espace fine insécable comme un "/")
@@ -215,7 +218,7 @@ export function formatCurrencyForPDF(value: string | number): string {
     maximumFractionDigits: 2,
   });
 
-  return formatted.replace(/\u202F/g, " ") + " CDF";
+  return formatted.replace(/\u202F/g, " ") + " " + symbol;
 }
 
 /**

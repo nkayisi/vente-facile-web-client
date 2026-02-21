@@ -154,7 +154,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-2xl font-bold">
-              {stats ? formatPrice(stats.cards.total_sales.value) : "0 CDF"}
+              {stats ? formatPrice(stats.cards.total_sales.value) : formatPrice(0)}
             </div>
             <div className="flex items-center mt-2 text-sm">
               {stats && stats.cards.total_sales.variation >= 0 ? (
@@ -227,7 +227,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {stats ? formatPrice(stats.cards.gross_profit.value) : "0 CDF"}
+              {stats ? formatPrice(stats.cards.gross_profit.value) : formatPrice(0)}
             </div>
             <div className="flex items-center mt-2 text-sm">
               <Badge variant="secondary" className="bg-blue-100 text-blue-700">
@@ -414,7 +414,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <span className="font-bold text-blue-900">
-                  {stats ? formatPrice(stats.inventory?.stock_value || "0") : "0 CDF"}
+                  {stats ? formatPrice(stats.inventory?.stock_value || "0") : formatPrice(0)}
                 </span>
               </div>
             </div>

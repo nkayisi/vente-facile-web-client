@@ -47,7 +47,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import {
   getSuppliers,
   createSupplier,
@@ -59,15 +61,15 @@ import {
 } from "@/actions/contacts.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 
-const CURRENCIES = ["CDF", "USD", "EUR"];
-
 export default function SuppliersPage() {
   const { data: session } = useSession();
   const router = useRouter();
+  const { currency: defaultCurrency } = useCurrency();
 
   const [isLoading, setIsLoading] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -108,7 +110,13 @@ export default function SuppliersPage() {
       try {
         const orgResult = await getUserOrganizations(session.accessToken);
         if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          setOrganization(orgResult.data[0]);
+          const org = orgResult.data[0];
+          setOrganization(org);
+          // Fetch organization currencies
+          const currResult = await getOrganizationCurrencies(session.accessToken, org.id);
+          if (currResult.success && currResult.data) {
+            setOrgCurrencies(currResult.data);
+          }
         }
       } catch (error) {
         toast.error("Erreur lors du chargement");
@@ -597,9 +605,14 @@ export default function SuppliersPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
+                    {orgCurrencies.filter(c => c.is_active).length > 0
+                      ? orgCurrencies.filter(c => c.is_active).map(c => (
+                        <SelectItem key={c.currency_code} value={c.currency_code}>{c.currency_symbol} {c.currency_code}</SelectItem>
+                      ))
+                      : ["CDF", "USD", "EUR"].map(c => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))
+                    }
                   </SelectContent>
                 </Select>
               </div>

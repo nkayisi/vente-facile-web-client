@@ -8,9 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, Store, Building2, Pill, Package, UtensilsCrossed, MoreHorizontal, ArrowRight, ArrowLeft, Check } from "lucide-react";
 import { registerWithOrganization } from "@/actions/auth.actions";
+import { SUPPORTED_CURRENCIES } from "@/lib/currencies";
 
 const businessTypes = [
   { value: "boutique", label: "Boutique", description: "Magasin de détail, commerce de proximité", icon: Store },
@@ -21,10 +29,6 @@ const businessTypes = [
   { value: "other", label: "Autre", description: "Autre type d'établissement", icon: MoreHorizontal },
 ];
 
-const currencies = [
-  { value: "CDF", label: "Franc Congolais (CDF)" },
-  { value: "USD", label: "Dollar US (USD)" },
-];
 
 interface FormData {
   // Étape 1: Informations personnelles
@@ -38,7 +42,6 @@ interface FormData {
   organizationName: string;
   businessType: string;
   currency: string;
-  country: string;
 }
 
 export default function RegisterPage() {
@@ -57,7 +60,6 @@ export default function RegisterPage() {
     organizationName: "",
     businessType: "boutique",
     currency: "CDF",
-    country: "RDC",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -137,7 +139,7 @@ export default function RegisterPage() {
         organization_name: formData.organizationName,
         business_type: formData.businessType,
         currency: formData.currency,
-        country: formData.country,
+        country: "RDC",
       });
 
       if (!result.success) {
@@ -188,19 +190,17 @@ export default function RegisterPage() {
           {[1, 2].map((step) => (
             <div key={step} className="flex items-center">
               <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
-                  currentStep >= step
-                    ? "bg-orange-500 text-white"
-                    : "bg-gray-200 text-gray-600"
-                }`}
+                className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${currentStep >= step
+                  ? "bg-orange-500 text-white"
+                  : "bg-gray-200 text-gray-600"
+                  }`}
               >
                 {currentStep > step ? <Check className="h-5 w-5" /> : step}
               </div>
               {step < 2 && (
                 <div
-                  className={`w-16 h-1 mx-2 ${
-                    currentStep > step ? "bg-orange-500" : "bg-gray-200"
-                  }`}
+                  className={`w-16 h-1 mx-2 ${currentStep > step ? "bg-orange-500" : "bg-gray-200"
+                    }`}
                 />
               )}
             </div>
@@ -357,11 +357,10 @@ export default function RegisterPage() {
                         key={type.value}
                         type="button"
                         onClick={() => handleInputChange("businessType", type.value)}
-                        className={`p-4 rounded-lg border-2 text-left transition-all ${
-                          isSelected
-                            ? "border-orange-500 bg-orange-50"
-                            : "border-gray-200 hover:border-gray-300"
-                        }`}
+                        className={`p-4 rounded-lg border-2 text-left transition-all ${isSelected
+                          ? "border-orange-500 bg-orange-50"
+                          : "border-gray-200 hover:border-gray-300"
+                          }`}
                         disabled={isLoading}
                       >
                         <Icon className={`h-6 w-6 mb-2 ${isSelected ? "text-orange-500" : "text-gray-500"}`} />
@@ -376,31 +375,31 @@ export default function RegisterPage() {
                 {errors.businessType && <p className="text-sm text-red-500">{errors.businessType}</p>}
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="currency">Devise</Label>
-                  <select
-                    id="currency"
-                    value={formData.currency}
-                    onChange={(e) => handleInputChange("currency", e.target.value)}
-                    className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm"
-                    disabled={isLoading}
-                  >
-                    {currencies.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
+              <div className="space-y-2">
+                <Label htmlFor="currency">Devise par défaut *</Label>
+                <Select
+                  value={formData.currency}
+                  onValueChange={(value) => handleInputChange("currency", value)}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Sélectionnez une devise" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_CURRENCIES.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">{c.symbol}</span>
+                          <span>{c.name}</span>
+                          <span className="text-gray-500">({c.code})</span>
+                        </div>
+                      </SelectItem>
                     ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="country">Pays</Label>
-                  <Input
-                    id="country"
-                    type="text"
-                    value={formData.country}
-                    onChange={(e) => handleInputChange("country", e.target.value)}
-                    disabled={isLoading}
-                  />
-                </div>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Cette devise sera utilisée par défaut dans votre établissement et ne pourra plus être modifiée après la création.
+                </p>
               </div>
 
               <div className="flex items-center space-x-2 pt-2">

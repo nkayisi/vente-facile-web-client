@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 import { getUserOrganizations, getBranches, Organization, Branch } from "@/actions/organization.actions";
 import { getWarehouses, Warehouse } from "@/actions/stock.actions";
 import {
@@ -55,6 +56,7 @@ import {
 export default function RegistersPage() {
   const { data: session } = useSession();
   const router = useRouter();
+  const { currency: defaultCurrency } = useCurrency();
 
   // State
   const [isLoading, setIsLoading] = useState(true);
@@ -644,7 +646,7 @@ export default function RegistersPage() {
 
           <form onSubmit={handleOpenSession} className="space-y-4">
             <div className="space-y-2">
-              <Label>Solde d'ouverture (CDF) *</Label>
+              <Label>Solde d'ouverture ({defaultCurrency.symbol}) *</Label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
@@ -709,7 +711,7 @@ export default function RegistersPage() {
             )}
 
             <div className="space-y-2">
-              <Label>Solde de fermeture (CDF) *</Label>
+              <Label>Solde de fermeture ({defaultCurrency.symbol}) *</Label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input

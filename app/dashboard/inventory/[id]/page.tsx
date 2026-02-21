@@ -67,6 +67,7 @@ import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 import { formatCurrencyForPDF, formatNumberForPDF, addSignatureSection } from "@/lib/pdf-utils";
 import { formatDate, formatDateTime, formatPrice, formatDecimal } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getInventorySession,
@@ -95,6 +96,7 @@ export default function InventoryDetailPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const params = useParams();
+  const { currency: defaultCurrency } = useCurrency();
   const sessionId = params.id as string;
 
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -471,7 +473,7 @@ export default function InventoryDetailPage() {
     doc.text(`Avec ecart: ${data.summary.products_with_difference}`, 140, y);
     y += 5;
     doc.text(`Ecart quantite total: ${data.summary.total_difference_quantity}`, 20, y);
-    doc.text(`Ecart valeur total: ${data.summary.total_difference_value} CDF`, 80, y);
+    doc.text(`Ecart valeur total: ${data.summary.total_difference_value} ${defaultCurrency.code}`, 80, y);
     y += 12;
 
     // Only items with differences

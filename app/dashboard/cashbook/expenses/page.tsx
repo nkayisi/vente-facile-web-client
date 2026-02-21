@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatDate } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 import {
   getUserOrganizations,
   Organization,
@@ -90,6 +91,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 export default function ExpensesPage() {
   const { data: session } = useSession();
   const { hasPermission } = usePermissions();
+  const { currency: defaultCurrency } = useCurrency();
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -660,7 +662,7 @@ export default function ExpensesPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Montant (CDF) *</Label>
+                <Label>Montant ({defaultCurrency.symbol}) *</Label>
                 <Input
                   type="number"
                   min="0"

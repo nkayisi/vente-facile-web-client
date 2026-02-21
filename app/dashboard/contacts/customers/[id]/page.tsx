@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { formatPrice, formatDateTime } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getCustomer,
@@ -77,6 +78,7 @@ export default function CustomerDetailPage() {
   const router = useRouter();
   const params = useParams();
   const customerId = params.id as string;
+  const { currency: defaultCurrency } = useCurrency();
 
   const [isLoading, setIsLoading] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -245,7 +247,7 @@ export default function CustomerDetailPage() {
           paymentMethod: selectedMethod?.name || "Espèces",
           paymentReference: invoicePaymentRef || undefined,
           amountPaid: amount,
-          currency: "CDF",
+          currency: defaultCurrency.code,
           saleReference: selectedSale.reference,
           saleTotalAmount: parseFloat(selectedSale.total),
           previouslyPaid: previouslyPaid,
@@ -951,7 +953,7 @@ export default function CustomerDetailPage() {
                   className="h-14 text-2xl text-center font-bold pl-10 pr-16"
                   placeholder={selectedSale?.amount_due || "0"}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">CDF</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">{defaultCurrency.symbol}</span>
               </div>
 
               {/* Remaining after payment */}

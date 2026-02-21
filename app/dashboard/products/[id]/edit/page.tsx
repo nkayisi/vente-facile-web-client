@@ -41,12 +41,15 @@ import {
   UpdateProductData,
 } from "@/actions/products.actions";
 import { cn } from "@/lib/utils";
+import { formatPrice } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 
 export default function EditProductPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const params = useParams();
   const productId = params.id as string;
+  const { currency: defaultCurrency } = useCurrency();
 
   // Organization
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -404,7 +407,7 @@ export default function EditProductPage() {
               {/* Cost & Selling Price */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cost_price">Prix d'achat (CDF)</Label>
+                  <Label htmlFor="cost_price">Prix d'achat ({defaultCurrency.symbol})</Label>
                   <Input
                     id="cost_price"
                     type="number"
@@ -417,7 +420,7 @@ export default function EditProductPage() {
                   {errors.cost_price && <p className="text-sm text-red-500">{errors.cost_price}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="selling_price">Prix de vente (CDF) *</Label>
+                  <Label htmlFor="selling_price">Prix de vente ({defaultCurrency.symbol}) *</Label>
                   <Input
                     id="selling_price"
                     type="number"
@@ -433,7 +436,7 @@ export default function EditProductPage() {
 
               {/* Wholesale Price */}
               <div className="space-y-2">
-                <Label htmlFor="wholesale_price">Prix de gros (CDF)</Label>
+                <Label htmlFor="wholesale_price">Prix de gros ({defaultCurrency.symbol})</Label>
                 <Input
                   id="wholesale_price"
                   type="number"
@@ -453,7 +456,7 @@ export default function EditProductPage() {
                     {((((formData.selling_price ?? 0) - (formData.cost_price ?? 0)) / (formData.cost_price ?? 1)) * 100).toFixed(1)}%
                   </p>
                   <p className="text-sm text-gray-500">
-                    Bénéfice: {((formData.selling_price ?? 0) - (formData.cost_price ?? 0)).toLocaleString()} CDF
+                    Bénéfice: {formatPrice((formData.selling_price ?? 0) - (formData.cost_price ?? 0))}
                   </p>
                 </div>
               )}

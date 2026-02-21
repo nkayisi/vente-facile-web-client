@@ -1,16 +1,43 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { getUserOrganizations } from "@/actions/organization.actions";
+import { getUserOrganizations, Organization, CurrencyInfo } from "@/actions/organization.actions";
+import { CurrencyProvider } from "@/components/providers/currency-provider";
 import { Loader2 } from "lucide-react";
+
+interface OrganizationContextValue {
+  organization: Organization | null;
+  refreshOrganization: () => Promise<void>;
+}
+
+const OrganizationContext = createContext<OrganizationContextValue>({
+  organization: null,
+  refreshOrganization: async () => { },
+});
+
+export function useOrganization() {
+  return useContext(OrganizationContext);
+}
 
 export function OrganizationChecker({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [isChecking, setIsChecking] = useState(true);
-  const [hasOrganization, setHasOrganization] = useState(false);
+  const [organization, setOrganization] = useState<Organization | null>(null);
+
+  const loadOrganization = useCallback(async () => {
+    if (!session?.accessToken) return;
+    try {
+      const result = await getUserOrganizations(session.accessToken);
+      if (result.success && result.data && result.data.length > 0) {
+        setOrganization(result.data[0]);
+      }
+    } catch (error) {
+      console.error("Error refreshing organization:", error);
+    }
+  }, [session?.accessToken]);
 
   useEffect(() => {
     async function checkOrganizations() {
@@ -29,22 +56,17 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
 
           if (result.success && result.data) {
             if (result.data.length === 0) {
-              // Aucune organisation, rediriger vers la page d'inscription
-              // (l'utilisateur doit créer sa boutique à l'inscription)
               router.push("/auth/register");
             } else {
-              setHasOrganization(true);
+              setOrganization(result.data[0]);
             }
           } else {
-            // Erreur lors de la récupération des organisations
-            // Peut-être un token expiré, permettre l'accès quand même
             console.warn("Could not fetch organizations, allowing access");
-            setHasOrganization(true);
+            setOrganization(null);
           }
         } catch (error) {
           console.error("Error checking organizations:", error);
-          // En cas d'erreur, permettre l'accès
-          setHasOrganization(true);
+          setOrganization(null);
         } finally {
           setIsChecking(false);
         }
@@ -65,9 +87,15 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
     );
   }
 
-  if (!hasOrganization) {
+  if (!organization && !isChecking) {
     return null; // Redirection en cours vers onboarding
   }
 
-  return <>{children}</>;
+  return (
+    <OrganizationContext.Provider value={{ organization, refreshOrganization: loadOrganization }}>
+      <CurrencyProvider currencyInfo={organization?.default_currency_info}>
+        {children}
+      </CurrencyProvider>
+    </OrganizationContext.Provider>
+  );
 }

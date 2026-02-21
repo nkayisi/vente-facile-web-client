@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatDateTime } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 import {
   getUserOrganizations,
   Organization,
@@ -96,6 +97,7 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
 export default function CashbookPage() {
   const { data: session } = useSession();
   const { hasPermission } = usePermissions();
+  const { currency: defaultCurrency } = useCurrency();
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -398,7 +400,7 @@ export default function CashbookPage() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-2xl font-bold">
-              {balance ? formatPrice(balance.balance) : "0 CDF"}
+              {balance ? formatPrice(balance.balance) : formatPrice(0)}
             </div>
           </CardContent>
         </Card>
@@ -414,7 +416,7 @@ export default function CashbookPage() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-2xl font-bold text-green-600">
-              +{balance ? formatPrice(balance.today_in) : "0 CDF"}
+              +{balance ? formatPrice(balance.today_in) : formatPrice(0)}
             </div>
           </CardContent>
         </Card>
@@ -430,7 +432,7 @@ export default function CashbookPage() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-2xl font-bold text-red-600">
-              -{balance ? formatPrice(balance.today_out) : "0 CDF"}
+              -{balance ? formatPrice(balance.today_out) : formatPrice(0)}
             </div>
           </CardContent>
         </Card>
@@ -451,7 +453,7 @@ export default function CashbookPage() {
                 : "text-red-600"
                 }`}
             >
-              {balance ? formatPrice(balance.today_net) : "0 CDF"}
+              {balance ? formatPrice(balance.today_net) : formatPrice(0)}
             </div>
           </CardContent>
         </Card>
@@ -722,7 +724,7 @@ export default function CashbookPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label>Montant (CDF) *</Label>
+              <Label>Montant ({defaultCurrency.symbol}) *</Label>
               <Input
                 type="number"
                 min="0"

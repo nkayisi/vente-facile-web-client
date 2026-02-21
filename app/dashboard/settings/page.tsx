@@ -105,6 +105,8 @@ export default function SettingsPage() {
   const [exchangeRate, setExchangeRate] = useState("1");
   const [editingRate, setEditingRate] = useState<string | null>(null);
   const [newRate, setNewRate] = useState("");
+  const [rateFromCurrency, setRateFromCurrency] = useState<string>(""); // Devise de référence pour le taux
+  const [rateToCurrency, setRateToCurrency] = useState<string>(""); // Devise cible
 
   // Loyalty Program
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
@@ -229,11 +231,48 @@ export default function SettingsPage() {
   const handleUpdateRate = async (currencyId: string) => {
     if (!session?.accessToken || !organization?.id || !newRate) return;
 
-    const result = await updateExchangeRate(session.accessToken, organization.id, currencyId, newRate);
+    // Convention backend: exchange_rate = combien d'unités de devise_principale pour 1 unité de cette devise
+    // Exemple: USD avec exchange_rate=2800 signifie 1 USD = 2800 CDF (si CDF est principale)
+    // L'UI affiche aussi: 1 USD = 2800 CDF
+    // Donc le format est déjà correct !
+
+    let finalRate = newRate;
+
+    if (rateFromCurrency && rateToCurrency) {
+      const fromCurr = orgCurrencies.find(c => c.currency_code === rateFromCurrency);
+      const toCurr = orgCurrencies.find(c => c.currency_code === rateToCurrency);
+
+      if (fromCurr && toCurr) {
+        const rateValue = parseFloat(newRate);
+
+        if (toCurr.is_primary) {
+          // L'utilisateur a saisi: 1 fromCurrency = rateValue principale
+          // Le backend veut exactement ça: exchange_rate de fromCurrency = rateValue
+          finalRate = rateValue.toString();
+        } else if (fromCurr.is_primary) {
+          // L'utilisateur a saisi: 1 principale = rateValue toCurrency
+          // Le backend veut: 1 toCurrency = X principale
+          // Donc X = 1 / rateValue
+          finalRate = (1 / rateValue).toString();
+        } else {
+          // Conversion entre deux devises secondaires
+          // L'utilisateur a saisi: 1 fromCurrency = rateValue toCurrency
+          // fromRate = combien de principale pour 1 fromCurrency
+          // On veut: combien de principale pour 1 toCurrency
+          const fromRate = parseFloat(fromCurr.exchange_rate);
+          const toRate = fromRate / rateValue;
+          finalRate = toRate.toString();
+        }
+      }
+    }
+
+    const result = await updateExchangeRate(session.accessToken, organization.id, currencyId, finalRate);
     if (result.success) {
       toast.success("Taux de change mis à jour");
       setEditingRate(null);
       setNewRate("");
+      setRateFromCurrency("");
+      setRateToCurrency("");
       loadData();
     } else {
       toast.error(result.message || "Erreur");
@@ -436,25 +475,71 @@ export default function SettingsPage() {
                         <TableCell>{currency.currency_symbol}</TableCell>
                         <TableCell>
                           {editingRate === currency.id ? (
-                            <div className="flex items-center gap-2">
-                              <Input
-                                type="number"
-                                step="0.000001"
-                                value={newRate}
-                                onChange={(e) => setNewRate(e.target.value)}
-                                className="w-32"
-                              />
-                              <Button size="sm" variant="ghost" onClick={() => handleUpdateRate(currency.id)}>
-                                <Check className="h-4 w-4 text-green-500" />
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => setEditingRate(null)}>
-                                <X className="h-4 w-4 text-red-500" />
-                              </Button>
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-600">1</span>
+                                <Select
+                                  value={rateFromCurrency || primaryCurrency?.currency_code || ""}
+                                  onValueChange={setRateFromCurrency}
+                                >
+                                  <SelectTrigger className="w-24 h-8">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {orgCurrencies.map((c) => (
+                                      <SelectItem key={c.id} value={c.currency_code}>
+                                        {c.currency_code}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <span className="text-sm text-gray-600">=</span>
+                                <Input
+                                  type="number"
+                                  step="0.000001"
+                                  value={newRate}
+                                  onChange={(e) => setNewRate(e.target.value)}
+                                  className="w-28 h-8"
+                                  placeholder="Taux"
+                                />
+                                <Select
+                                  value={rateToCurrency || currency.currency_code}
+                                  onValueChange={setRateToCurrency}
+                                >
+                                  <SelectTrigger className="w-24 h-8">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {orgCurrencies.map((c) => (
+                                      <SelectItem key={c.id} value={c.currency_code}>
+                                        {c.currency_code}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button size="sm" variant="ghost" onClick={() => handleUpdateRate(currency.id)}>
+                                  <Check className="h-4 w-4 text-green-500" />
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => {
+                                  setEditingRate(null);
+                                  setRateFromCurrency("");
+                                  setRateToCurrency("");
+                                }}>
+                                  <X className="h-4 w-4 text-red-500" />
+                                </Button>
+                              </div>
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
-                              <span>
-                                1 {primaryCurrency?.currency_code || "?"} = {currency.exchange_rate} {currency.currency_code}
+                              <span className="text-sm">
+                                {(() => {
+                                  const rate = parseFloat(currency.exchange_rate);
+                                  if (rate === 0 || isNaN(rate)) return `1 ${currency.currency_code} = ? ${primaryCurrency?.currency_code || "?"}`;
+                                  // exchange_rate stocke déjà: 1 devise_secondaire = X devise_principale
+                                  return `1 ${currency.currency_code} = ${rate.toFixed(6).replace(/\.?0+$/, '')} ${primaryCurrency?.currency_code || "?"}`;
+                                })()}
                               </span>
                               {!currency.is_primary && (
                                 <Button
@@ -462,7 +547,10 @@ export default function SettingsPage() {
                                   variant="ghost"
                                   onClick={() => {
                                     setEditingRate(currency.id);
-                                    setNewRate(currency.exchange_rate);
+                                    const rate = parseFloat(currency.exchange_rate);
+                                    setNewRate(rate !== 0 && !isNaN(rate) ? rate.toString() : "1");
+                                    setRateFromCurrency(currency.currency_code);
+                                    setRateToCurrency(primaryCurrency?.currency_code || "");
                                   }}
                                 >
                                   <Edit className="h-4 w-4" />
@@ -482,25 +570,17 @@ export default function SettingsPage() {
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
                             {!currency.is_primary && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleSetPrimary(currency.id)}
-                                  className="border-orange-500 text-orange-600 hover:bg-orange-50"
-                                >
-                                  <Crown className="h-4 w-4 mr-1" />
-                                  Définir principal
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-red-500"
-                                  onClick={() => handleDeleteCurrency(currency.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-500"
+                                onClick={() => handleDeleteCurrency(currency.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {currency.is_primary && (
+                              <span className="text-xs text-gray-500 italic">Devise par défaut</span>
                             )}
                           </div>
                         </TableCell>
@@ -520,9 +600,11 @@ export default function SettingsPage() {
                 <div className="text-sm text-blue-800">
                   <p className="font-medium">Comment fonctionne la multidevise ?</p>
                   <ul className="list-disc list-inside mt-1 space-y-1">
+                    <li>La devise principale a été définie à la création de votre établissement et ne peut plus être modifiée</li>
                     <li>La devise principale est utilisée pour tous les calculs internes</li>
                     <li>Les devises secondaires permettent d&apos;afficher les prix dans d&apos;autres monnaies</li>
-                    <li>Les taux de change sont utilisés pour la conversion automatique</li>
+                    <li>Pour modifier un taux de change, cliquez sur l&apos;icône d&apos;édition et définissez le taux : <strong>1 devise A = X unités de devise B</strong></li>
+                    <li>Vous pouvez définir le taux entre n&apos;importe quelles devises configurées</li>
                     <li>Vous pouvez accepter des paiements dans n&apos;importe quelle devise configurée</li>
                   </ul>
                 </div>

@@ -40,10 +40,13 @@ import {
   CreateProductData,
 } from "@/actions/products.actions";
 import { cn } from "@/lib/utils";
+import { formatPrice } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 
 export default function NewProductPage() {
   const { data: session } = useSession();
   const router = useRouter();
+  const { currency: defaultCurrency } = useCurrency();
 
   // Organization
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -458,7 +461,7 @@ export default function NewProductPage() {
               {/* Cost & Selling Price */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cost_price">Prix d'achat (CDF)</Label>
+                  <Label htmlFor="cost_price">Prix d'achat ({defaultCurrency.symbol})</Label>
                   <Input
                     id="cost_price"
                     type="number"
@@ -471,7 +474,7 @@ export default function NewProductPage() {
                   {errors.cost_price && <p className="text-sm text-red-500">{errors.cost_price}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="selling_price">Prix de vente (CDF) *</Label>
+                  <Label htmlFor="selling_price">Prix de vente ({defaultCurrency.symbol}) *</Label>
                   <Input
                     id="selling_price"
                     type="number"
@@ -487,7 +490,7 @@ export default function NewProductPage() {
 
               {/* Wholesale Price */}
               <div className="space-y-2">
-                <Label htmlFor="wholesale_price">Prix de gros (CDF)</Label>
+                <Label htmlFor="wholesale_price">Prix de gros ({defaultCurrency.symbol})</Label>
                 <Input
                   id="wholesale_price"
                   type="number"
@@ -507,7 +510,7 @@ export default function NewProductPage() {
                     {(((formData.selling_price - formData.cost_price) / formData.cost_price) * 100).toFixed(1)}%
                   </p>
                   <p className="text-sm text-gray-500">
-                    Bénéfice: {(formData.selling_price - formData.cost_price).toLocaleString()} CDF
+                    Bénéfice: {formatPrice(formData.selling_price - formData.cost_price)}
                   </p>
                 </div>
               )}

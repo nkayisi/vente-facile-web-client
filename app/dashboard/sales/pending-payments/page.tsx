@@ -35,8 +35,10 @@ import {
   CircleDollarSign,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatDate, formatDateTime } from "@/lib/format";
+import { formatPrice, formatNumber, formatDate, formatDateTime } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
+import { useCurrency } from "@/components/providers/currency-provider";
 import { printPaymentReceipt, PaymentReceiptData } from "@/lib/receipt-printer";
 import {
   getSales,
@@ -66,6 +68,27 @@ export default function PendingPaymentsPage() {
   const [paymentReference, setPaymentReference] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Multi-currency
+  const { currency: defaultCurrency } = useCurrency();
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
+  const [paymentCurrency, setPaymentCurrency] = useState<string>("");
+
+  const getPrimaryCurrency = () => orgCurrencies.find(c => c.is_primary);
+  const getPaymentCurrencyObj = () => orgCurrencies.find(c => c.currency_code === paymentCurrency);
+  const isPrimaryPayment = () => {
+    const pc = getPaymentCurrencyObj();
+    return !pc || pc.is_primary;
+  };
+  const getAmountInPrimary = () => {
+    const amount = parseFloat(paymentAmount) || 0;
+    if (isPrimaryPayment()) return amount;
+    const pc = getPaymentCurrencyObj();
+    if (!pc) return amount;
+    const rate = parseFloat(pc.exchange_rate);
+    if (rate <= 0) return amount;
+    return Math.round(amount * rate * 100) / 100;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       if (!session?.accessToken) return;
@@ -77,10 +100,11 @@ export default function PendingPaymentsPage() {
           setOrganization(org);
 
           // Récupérer les ventes partiellement payées ET en attente
-          const [partiallyPaidResult, pendingResult, methodsResult] = await Promise.all([
+          const [partiallyPaidResult, pendingResult, methodsResult, currenciesResult] = await Promise.all([
             getSales(session.accessToken, org.id, { status: "partially_paid" }),
             getSales(session.accessToken, org.id, { status: "pending" }),
             getPaymentMethods(session.accessToken, org.id, { is_active: true }),
+            getOrganizationCurrencies(session.accessToken, org.id),
           ]);
 
           const salesResult = {
@@ -96,6 +120,11 @@ export default function PendingPaymentsPage() {
           }
           if (methodsResult.success && methodsResult.data) {
             setPaymentMethods(Array.isArray(methodsResult.data) ? methodsResult.data : (methodsResult.data as any).results || []);
+          }
+          if (currenciesResult.success && currenciesResult.data) {
+            setOrgCurrencies(currenciesResult.data);
+            const primary = currenciesResult.data.find((c: OrganizationCurrency) => c.is_primary);
+            if (primary) setPaymentCurrency(primary.currency_code);
           }
         }
       } catch (error) {
@@ -117,6 +146,9 @@ export default function PendingPaymentsPage() {
     const cashMethod = paymentMethods.find(m => m.method_type === "cash");
     setSelectedPaymentMethod(cashMethod?.id || "");
     setPaymentReference("");
+    // Reset to primary currency
+    const primary = getPrimaryCurrency();
+    setPaymentCurrency(primary?.currency_code || "CDF");
     setShowPaymentDialog(true);
   };
 
@@ -128,26 +160,29 @@ export default function PendingPaymentsPage() {
       return;
     }
 
-    const amount = parseFloat(paymentAmount);
-    if (amount <= 0) {
+    const rawAmount = parseFloat(paymentAmount);
+    if (rawAmount <= 0) {
       toast.error("Montant invalide");
       return;
     }
 
+    const amountInPrimary = getAmountInPrimary();
     const amountDue = parseFloat(selectedSale.amount_due);
-    if (amount > amountDue) {
-      toast.error(`Le montant ne peut pas dépasser ${formatPrice(amountDue)}`);
+    if (amountInPrimary > amountDue * 1.001) { // small tolerance for rounding
+      toast.error(`Le montant converti (${formatPrice(amountInPrimary)}) dépasse le restant dû (${formatPrice(amountDue)})`);
       return;
     }
 
     setIsProcessing(true);
 
     try {
+      const pc = getPaymentCurrencyObj();
       const paymentData: AddPaymentData = {
         payment_method: selectedPaymentMethod,
-        amount: amount,
+        amount: rawAmount,
         reference: paymentReference || undefined,
-      };
+        ...(pc && !pc.is_primary ? { currency: paymentCurrency, exchange_rate: parseFloat(pc.exchange_rate) } : {}),
+      } as any;
 
       const result = await addPaymentToSale(
         session.accessToken,
@@ -162,7 +197,12 @@ export default function PendingPaymentsPage() {
         // Print payment receipt
         const selectedMethod = paymentMethods.find(m => m.id === selectedPaymentMethod);
         const previouslyPaid = parseFloat(selectedSale.amount_paid);
-        const remainingBalance = amountDue - amount;
+        const remainingBalance = amountDue - amountInPrimary;
+
+        const primaryCode = getPrimaryCurrency()?.currency_code || "CDF";
+        const payLabel = !isPrimaryPayment()
+          ? `${selectedMethod?.name || "Espèces"} (${formatPrice(rawAmount, getPaymentCurrencyObj()?.currency_symbol)})`
+          : (selectedMethod?.name || "Espèces");
 
         const receiptData: PaymentReceiptData = {
           orgName: organization.name || "Vente Facile",
@@ -170,10 +210,10 @@ export default function PendingPaymentsPage() {
           date: new Date().toLocaleString("fr-CD"),
           customerName: selectedSale.customer_name || "Client anonyme",
           customerPhone: selectedSale.customer_phone || undefined,
-          paymentMethod: selectedMethod?.name || "Espèces",
+          paymentMethod: payLabel,
           paymentReference: paymentReference || undefined,
-          amountPaid: amount,
-          currency: "CDF",
+          amountPaid: amountInPrimary,
+          currency: primaryCode,
           saleReference: selectedSale.reference,
           saleTotalAmount: parseFloat(selectedSale.total),
           previouslyPaid: previouslyPaid,
@@ -475,6 +515,7 @@ export default function PendingPaymentsPage() {
             {/* Amount Input */}
             <div className="space-y-3">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Montant reçu</Label>
+
               <div className="relative">
                 <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <Input
@@ -484,23 +525,42 @@ export default function PendingPaymentsPage() {
                   className="h-14 text-2xl text-center font-bold pl-10 pr-16"
                   placeholder={selectedSale?.amount_due || "0"}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">CDF</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">
+                  {getPaymentCurrencyObj()?.currency_symbol || defaultCurrency.symbol}
+                </span>
               </div>
 
+              {/* Conversion display when paying in different currency */}
+              {!isPrimaryPayment() && (parseFloat(paymentAmount) || 0) > 0 && (
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-blue-700 font-medium">
+                      Équivalent en {getPrimaryCurrency()?.currency_code}
+                    </span>
+                    <span className="text-lg font-bold text-blue-800">
+                      {formatPrice(getAmountInPrimary())}
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-500 mt-1">
+                    Taux: 1 {getPaymentCurrencyObj()?.currency_code} = {formatNumber(parseFloat(getPaymentCurrencyObj()?.exchange_rate || "1"))} {getPrimaryCurrency()?.currency_symbol}
+                  </p>
+                </div>
+              )}
+
               {/* Remaining after payment */}
-              {parseFloat(paymentAmount) > 0 && parseFloat(paymentAmount) < parseFloat(selectedSale?.amount_due || "0") && (
+              {getAmountInPrimary() > 0 && getAmountInPrimary() < parseFloat(selectedSale?.amount_due || "0") && (
                 <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
                   <div className="flex justify-between items-center">
                     <span className="text-amber-700 font-medium text-sm">Restera à payer</span>
                     <span className="text-lg font-bold text-amber-700">
-                      {formatPrice(parseFloat(selectedSale?.amount_due || "0") - parseFloat(paymentAmount))}
+                      {formatPrice(parseFloat(selectedSale?.amount_due || "0") - getAmountInPrimary())}
                     </span>
                   </div>
                 </div>
               )}
 
               {/* Full payment indicator */}
-              {parseFloat(paymentAmount) >= parseFloat(selectedSale?.amount_due || "0") && (
+              {getAmountInPrimary() >= parseFloat(selectedSale?.amount_due || "0") && (parseFloat(paymentAmount) || 0) > 0 && (
                 <div className="p-3 bg-green-50 rounded-xl border border-green-200">
                   <div className="flex justify-between items-center">
                     <span className="text-green-700 font-medium text-sm">Facture soldée</span>
