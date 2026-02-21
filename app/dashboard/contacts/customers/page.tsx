@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -56,7 +56,9 @@ import {
   deleteCustomer,
   Customer,
   CreateCustomerData,
+  PaginatedResponse,
 } from "@/actions/contacts.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 export default function CustomersPage() {
   const { data: session } = useSession();
@@ -68,6 +70,13 @@ export default function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -88,30 +97,52 @@ export default function CustomersPage() {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  // Fetch organization on mount
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchOrg = async () => {
       if (!session?.accessToken) return;
-
       try {
         const orgResult = await getUserOrganizations(session.accessToken);
         if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
-
-          const result = await getCustomers(session.accessToken, org.id);
-          if (result.success && result.data) {
-            setCustomers(result.data);
-          }
+          setOrganization(orgResult.data[0]);
         }
       } catch (error) {
-        toast.error("Erreur lors du chargement des clients");
-      } finally {
-        setIsLoading(false);
+        toast.error("Erreur lors du chargement");
       }
     };
-
-    fetchData();
+    fetchOrg();
   }, [session]);
+
+  // Fetch customers with pagination
+  const fetchCustomers = useCallback(async () => {
+    if (!session?.accessToken || !organization) return;
+    setIsLoading(true);
+    try {
+      const filters: any = { page: currentPage, page_size: pageSize };
+      if (typeFilter !== "all") filters.customer_type = typeFilter;
+      if (statusFilter === "active") filters.is_active = true;
+      if (statusFilter === "inactive") filters.is_active = false;
+      if (searchQuery) filters.search = searchQuery;
+
+      const result = await getCustomers(session.accessToken, organization.id, filters);
+      if (result.success && result.data) {
+        setCustomers(result.data.results || []);
+        setTotalCount(result.data.count || 0);
+        setHasNext(result.data.next !== null);
+        setHasPrevious(result.data.previous !== null);
+      }
+    } catch (error) {
+      toast.error("Erreur lors du chargement des clients");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [session, organization, currentPage, pageSize, typeFilter, statusFilter, searchQuery]);
+
+  useEffect(() => {
+    if (organization) {
+      fetchCustomers();
+    }
+  }, [organization, fetchCustomers]);
 
   const resetForm = () => {
     setFormData({
@@ -245,21 +276,13 @@ export default function CustomersPage() {
     }
   };
 
-  // Filtering
-  const filteredCustomers = customers.filter(c => {
-    const matchesSearch =
-      c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.code && c.code.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (c.phone && c.phone.includes(searchQuery)) ||
-      (c.email && c.email.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesType = typeFilter === "all" || c.customer_type === typeFilter;
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && c.is_active) ||
-      (statusFilter === "inactive" && !c.is_active) ||
-      (statusFilter === "with_balance" && parseFloat(c.current_balance) > 0);
-    return matchesSearch && matchesType && matchesStatus;
-  });
+  // Reset to page 1 when filters change
+  const handleFilterChange = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   if (isLoading) {
     return (
@@ -282,7 +305,7 @@ export default function CustomersPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {customers.length} client{customers.length > 1 ? "s" : ""} enregistré{customers.length > 1 ? "s" : ""}
+              {totalCount} client{totalCount > 1 ? "s" : ""} enregistré{totalCount > 1 ? "s" : ""}
             </p>
           </div>
         </div>
@@ -299,11 +322,11 @@ export default function CustomersPage() {
           <Input
             placeholder="Rechercher par nom, code, téléphone, email..."
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
             className="pl-9"
           />
         </div>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
+        <Select value={typeFilter} onValueChange={(v) => handleFilterChange(setTypeFilter, v)}>
           <SelectTrigger className="w-full sm:w-48">
             <User className="h-4 w-4 mr-2" />
             <SelectValue placeholder="Type" />
@@ -314,7 +337,7 @@ export default function CustomersPage() {
             <SelectItem value="business">Entreprises</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={(v) => handleFilterChange(setStatusFilter, v)}>
           <SelectTrigger className="w-full sm:w-48">
             <Filter className="h-4 w-4 mr-2" />
             <SelectValue placeholder="Statut" />
@@ -329,7 +352,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Customers List */}
-      {filteredCustomers.length === 0 ? (
+      {customers.length === 0 ? (
         <Card className="p-0">
           <CardContent className="p-8 text-center">
             <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -349,7 +372,7 @@ export default function CustomersPage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {filteredCustomers.map(customer => (
+          {customers.map((customer: Customer) => (
             <Card key={customer.id} className="p-0 hover:shadow-md transition-shadow">
               <CardContent className="p-4">
                 <div className="flex items-center gap-4">
@@ -454,6 +477,19 @@ export default function CustomersPage() {
               </CardContent>
             </Card>
           ))}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-6">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
+          )}
         </div>
       )}
 

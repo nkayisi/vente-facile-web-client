@@ -36,9 +36,11 @@ import { getUserOrganizations, Organization } from "@/actions/organization.actio
 import {
   getSale,
   cancelSale,
+  markReceiptPrinted,
   Sale,
   SaleStatus,
 } from "@/actions/sales.actions";
+import { printReceipt, ReceiptData } from "@/lib/receipt-printer";
 
 const STATUS_CONFIG: Record<SaleStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -61,6 +63,7 @@ export default function SaleDetailPage() {
   const [sale, setSale] = useState<Sale | null>(null);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   // Fetch data
   useEffect(() => {
@@ -88,6 +91,63 @@ export default function SaleDetailPage() {
 
     fetchData();
   }, [session, saleId]);
+
+  // Handle print receipt
+  const handlePrintReceipt = async () => {
+    if (!session?.accessToken || !organization?.id || !sale) return;
+
+    setIsPrinting(true);
+
+    try {
+      // Generate receipt data
+      const receiptData: ReceiptData = {
+        orgName: organization.name || "Vente Facile",
+        registerName: sale.register_name || undefined,
+        cashierName: sale.sold_by_name,
+        reference: sale.reference,
+        date: new Date(sale.sale_date).toLocaleString("fr-CD"),
+        customerName: sale.customer_name || undefined,
+        customerPhone: sale.customer_phone || undefined,
+        items: sale.items?.map(item => ({
+          name: item.product_name,
+          quantity: parseFloat(item.quantity),
+          unit_price: parseFloat(item.unit_price),
+          discount_percentage: parseFloat(item.discount_percentage),
+          total: parseFloat(item.total),
+        })) || [],
+        subtotal: parseFloat(sale.subtotal),
+        taxAmount: parseFloat(sale.tax_amount),
+        discountAmount: parseFloat(sale.discount_amount),
+        globalDiscountPercent: parseFloat(sale.discount_percentage),
+        total: parseFloat(sale.total),
+        payments: sale.payments?.map(p => ({
+          method: p.payment_method_name,
+          amount: parseFloat(p.amount),
+          currency: p.currency,
+        })) || [],
+        amountPaid: parseFloat(sale.amount_paid),
+        change: parseFloat(sale.change_amount),
+        currency: sale.currency,
+        isCreditSale: sale.sale_type === "credit",
+        amountDue: parseFloat(sale.amount_due),
+      };
+
+      // Print receipt
+      printReceipt(receiptData);
+
+      // Mark as printed
+      const result = await markReceiptPrinted(session.accessToken, organization.id, sale.id);
+      if (result.success && result.data) {
+        setSale(result.data);
+        toast.success("Reçu imprimé avec succès");
+      }
+    } catch (error) {
+      console.error("Error printing receipt:", error);
+      toast.error("Erreur lors de l'impression du reçu");
+    } finally {
+      setIsPrinting(false);
+    }
+  };
 
   // Handle cancel
   const handleCancel = async () => {
@@ -176,10 +236,21 @@ export default function SaleDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline">
-            <Printer className="h-4 w-4 mr-2" />
-            Imprimer
-          </Button>
+          {!sale.receipt_printed && (
+            <Button
+              variant="outline"
+              onClick={handlePrintReceipt}
+              disabled={isPrinting}
+              className="hover:bg-orange-50"
+            >
+              {isPrinting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Receipt className="h-4 w-4 mr-2" />
+              )}
+              {isPrinting ? "Impression..." : "Imprimer le reçu"}
+            </Button>
+          )}
           {canCancel && (
             <Button
               variant="outline"

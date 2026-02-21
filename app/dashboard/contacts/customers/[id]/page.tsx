@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -19,7 +18,6 @@ import {
 } from "@/components/ui/select";
 import {
   ArrowLeft,
-  ArrowDownLeft,
   ArrowUpRight,
   Building2,
   CreditCard,
@@ -40,6 +38,11 @@ import {
   Banknote,
   AlertTriangle,
   Settings,
+  Receipt,
+  Smartphone,
+  CheckCircle,
+  CircleDollarSign,
+  Printer,
 } from "lucide-react";
 import {
   Dialog,
@@ -57,12 +60,17 @@ import {
   deleteCustomer,
   updateCustomer,
   getCustomerTransactions,
-  recordCustomerPayment,
-  recordCustomerAdvance,
-  adjustCustomerBalance,
   Customer,
   CustomerTransaction,
 } from "@/actions/contacts.actions";
+import {
+  getSales,
+  addPaymentToSale,
+  getPaymentMethods,
+  Sale,
+  PaymentMethod,
+} from "@/actions/sales.actions";
+import { printPaymentReceipt, PaymentReceiptData } from "@/lib/receipt-printer";
 
 export default function CustomerDetailPage() {
   const { data: session } = useSession();
@@ -81,19 +89,19 @@ export default function CustomerDetailPage() {
   const [isLoadingTxns, setIsLoadingTxns] = useState(false);
   const [txnFilter, setTxnFilter] = useState<string>("all");
 
-  // Payment / Advance / Adjustment / Credit limit dialogs
-  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-  const [showAdvanceDialog, setShowAdvanceDialog] = useState(false);
-  const [showAdjustDialog, setShowAdjustDialog] = useState(false);
+  // Credit limit dialog
   const [showCreditLimitDialog, setShowCreditLimitDialog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [txnForm, setTxnForm] = useState({
-    amount: "",
-    payment_method: "cash",
-    reference: "",
-    notes: "",
-  });
   const [creditLimitValue, setCreditLimitValue] = useState("");
+
+  // Invoice payment dialog
+  const [showInvoicePaymentDialog, setShowInvoicePaymentDialog] = useState(false);
+  const [pendingSales, setPendingSales] = useState<Sale[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
+  const [invoicePaymentAmount, setInvoicePaymentAmount] = useState("");
+  const [invoicePaymentRef, setInvoicePaymentRef] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -136,6 +144,30 @@ export default function CustomerDetailPage() {
     }
   }, [session, organization, customerId]);
 
+  // Load pending sales for this customer
+  const loadPendingSales = useCallback(async () => {
+    if (!session?.accessToken || !organization) return;
+    try {
+      const [partiallyPaidResult, pendingResult, methodsResult] = await Promise.all([
+        getSales(session.accessToken, organization.id, { status: "partially_paid", customer: customerId }),
+        getSales(session.accessToken, organization.id, { status: "pending", customer: customerId }),
+        getPaymentMethods(session.accessToken, organization.id, { is_active: true }),
+      ]);
+
+      const allSales = [
+        ...(Array.isArray(partiallyPaidResult.data) ? partiallyPaidResult.data : (partiallyPaidResult.data as any)?.results || []),
+        ...(Array.isArray(pendingResult.data) ? pendingResult.data : (pendingResult.data as any)?.results || [])
+      ];
+      setPendingSales(allSales);
+
+      if (methodsResult.success && methodsResult.data) {
+        setPaymentMethods(Array.isArray(methodsResult.data) ? methodsResult.data : (methodsResult.data as any).results || []);
+      }
+    } catch (error) {
+      console.error("Error loading pending sales:", error);
+    }
+  }, [session, organization, customerId]);
+
   // Load transactions
   const loadTransactions = useCallback(async () => {
     if (!session?.accessToken || !organization) return;
@@ -158,101 +190,99 @@ export default function CustomerDetailPage() {
   useEffect(() => {
     if (organization && customer) {
       loadTransactions();
+      loadPendingSales();
     }
   }, [organization, customer, txnFilter]);
 
-  const resetTxnForm = () => {
-    setTxnForm({ amount: "", payment_method: "cash", reference: "", notes: "" });
-  };
+  // Handle invoice payment
+  const handleInvoicePayment = async () => {
+    if (!session?.accessToken || !organization || !customer || !selectedSale) return;
 
-  const handleRecordPayment = async () => {
-    if (!session?.accessToken || !organization || !customer) return;
-    const amount = parseFloat(txnForm.amount);
-    if (!amount || amount <= 0) {
-      toast.error("Le montant doit être supérieur à 0");
+    if (!selectedPaymentMethod) {
+      toast.error("Sélectionnez un mode de paiement");
+      return;
+    }
+
+    const amount = parseFloat(invoicePaymentAmount);
+    if (amount <= 0) {
+      toast.error("Montant invalide");
+      return;
+    }
+
+    const amountDue = parseFloat(selectedSale.amount_due);
+    if (amount > amountDue) {
+      toast.error(`Le montant ne peut pas dépasser ${formatPrice(amountDue)}`);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await recordCustomerPayment(
-        session.accessToken, organization.id, customer.id,
-        { amount, payment_method: txnForm.payment_method, reference: txnForm.reference, notes: txnForm.notes }
+      const result = await addPaymentToSale(
+        session.accessToken,
+        organization.id,
+        selectedSale.id,
+        {
+          payment_method: selectedPaymentMethod,
+          amount: amount,
+          reference: invoicePaymentRef || undefined,
+        }
       );
-      if (result.success && result.data) {
-        toast.success(`Paiement de ${formatPrice(amount)} enregistré`);
-        setShowPaymentDialog(false);
-        resetTxnForm();
+
+      if (result.success) {
+        toast.success("Paiement ajouté avec succès");
+
+        // Print payment receipt
+        const selectedMethod = paymentMethods.find(m => m.id === selectedPaymentMethod);
+        const previouslyPaid = parseFloat(selectedSale.amount_paid);
+        const remainingBalance = amountDue - amount;
+
+        const receiptData: PaymentReceiptData = {
+          orgName: organization.name || "Vente Facile",
+          receiptNumber: `PAY-${Date.now().toString(36).toUpperCase()}`,
+          date: new Date().toLocaleString("fr-CD"),
+          customerName: customer.name,
+          customerPhone: customer.phone || undefined,
+          paymentMethod: selectedMethod?.name || "Espèces",
+          paymentReference: invoicePaymentRef || undefined,
+          amountPaid: amount,
+          currency: "CDF",
+          saleReference: selectedSale.reference,
+          saleTotalAmount: parseFloat(selectedSale.total),
+          previouslyPaid: previouslyPaid,
+          remainingBalance: remainingBalance,
+        };
+
+        printPaymentReceipt(receiptData);
+
+        setShowInvoicePaymentDialog(false);
+        setSelectedSale(null);
+        setSelectedPaymentMethod("");
+        setInvoicePaymentAmount("");
+        setInvoicePaymentRef("");
+
+        // Refresh data
         await refreshData();
         loadTransactions();
+        loadPendingSales();
       } else {
-        toast.error(result.message || "Erreur");
+        toast.error(result.message || "Erreur lors de l'ajout du paiement");
       }
     } catch (error) {
-      toast.error("Une erreur est survenue");
+      console.error("Error adding payment:", error);
+      toast.error("Erreur lors de l'ajout du paiement");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleRecordAdvance = async () => {
-    if (!session?.accessToken || !organization || !customer) return;
-    const amount = parseFloat(txnForm.amount);
-    if (!amount || amount <= 0) {
-      toast.error("Le montant doit être supérieur à 0");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const result = await recordCustomerAdvance(
-        session.accessToken, organization.id, customer.id,
-        { amount, payment_method: txnForm.payment_method, reference: txnForm.reference, notes: txnForm.notes }
-      );
-      if (result.success && result.data) {
-        toast.success(`Avance de ${formatPrice(amount)} enregistrée`);
-        setShowAdvanceDialog(false);
-        resetTxnForm();
-        await refreshData();
-        loadTransactions();
-      } else {
-        toast.error(result.message || "Erreur");
-      }
-    } catch (error) {
-      toast.error("Une erreur est survenue");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAdjustBalance = async () => {
-    if (!session?.accessToken || !organization || !customer) return;
-    const amount = parseFloat(txnForm.amount);
-    if (!amount) {
-      toast.error("Le montant est obligatoire");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const result = await adjustCustomerBalance(
-        session.accessToken, organization.id, customer.id,
-        { amount, notes: txnForm.notes }
-      );
-      if (result.success && result.data) {
-        toast.success("Correction appliquée avec succès");
-        setShowAdjustDialog(false);
-        resetTxnForm();
-        await refreshData();
-        loadTransactions();
-      } else {
-        toast.error(result.message || "Erreur");
-      }
-    } catch (error) {
-      toast.error("Une erreur est survenue");
-    } finally {
-      setIsSubmitting(false);
-    }
+  const openInvoicePaymentDialog = (sale: Sale) => {
+    setSelectedSale(sale);
+    setInvoicePaymentAmount(sale.amount_due);
+    // Définir Espèces comme méthode par défaut
+    const cashMethod = paymentMethods.find(m => m.method_type === "cash");
+    setSelectedPaymentMethod(cashMethod?.id || "");
+    setInvoicePaymentRef("");
+    setShowInvoicePaymentDialog(true);
   };
 
   const handleUpdateCreditLimit = async () => {
@@ -305,7 +335,7 @@ export default function CustomerDetailPage() {
   const getTxnIcon = (type: string) => {
     switch (type) {
       case "credit_sale": return <ArrowUpRight className="h-4 w-4 text-red-500" />;
-      case "payment": return <ArrowDownLeft className="h-4 w-4 text-green-500" />;
+      case "payment": return <CreditCard className="h-4 w-4 text-green-500" />;
       case "advance": return <Banknote className="h-4 w-4 text-blue-500" />;
       case "adjustment": return <DollarSign className="h-4 w-4 text-orange-500" />;
       case "refund": return <ArrowUpRight className="h-4 w-4 text-purple-500" />;
@@ -390,6 +420,13 @@ export default function CustomerDetailPage() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
+            onClick={() => { setCreditLimitValue(customer.credit_limit || "0"); setShowCreditLimitDialog(true); }}
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Configurer la limite de crédit
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => {
               setShowDeleteDialog(true);
             }}
@@ -471,38 +508,6 @@ export default function CustomerDetailPage() {
         </Card>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          className="bg-green-600 hover:bg-green-700"
-          onClick={() => { resetTxnForm(); setShowPaymentDialog(true); }}
-        >
-          <ArrowDownLeft className="h-4 w-4 mr-2" />
-          Le client a payé
-        </Button>
-        <Button
-          variant="outline"
-          className="border-blue-200 text-blue-700 hover:bg-blue-50"
-          onClick={() => { resetTxnForm(); setShowAdvanceDialog(true); }}
-        >
-          <Banknote className="h-4 w-4 mr-2" />
-          Le client donne une avance
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => { resetTxnForm(); setShowAdjustDialog(true); }}
-        >
-          <DollarSign className="h-4 w-4 mr-2" />
-          Corriger le montant
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => { setCreditLimitValue(customer.credit_limit || "0"); setShowCreditLimitDialog(true); }}
-        >
-          <Settings className="h-4 w-4 mr-2" />
-          Configurer la limite de crédit
-        </Button>
-      </div>
 
       {/* Main Content */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -708,8 +713,46 @@ export default function CustomerDetailPage() {
           </Card>
         </div>
 
-        {/* Right: Recent Sales */}
+        {/* Right: Pending Invoices + Recent Sales */}
         <div className="space-y-6">
+          {/* Pending Invoices */}
+          {pendingSales.length > 0 && (
+            <Card className="border-orange-200 bg-orange-50/30">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-orange-500" />
+                  Factures en attente ({pendingSales.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="space-y-2">
+                  {pendingSales.map(sale => (
+                    <div
+                      key={sale.id}
+                      className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-200"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{sale.reference}</p>
+                        <p className="text-xs text-gray-500">
+                          Total: {formatPrice(sale.total)} · Reste: <span className="text-orange-600 font-semibold">{formatPrice(sale.amount_due)}</span>
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => openInvoicePaymentDialog(sale)}
+                        className="bg-orange-500 hover:bg-orange-600"
+                      >
+                        <CreditCard className="h-3.5 w-3.5 mr-1" />
+                        Payer
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Recent Sales */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
@@ -746,212 +789,6 @@ export default function CustomerDetailPage() {
           </Card>
         </div>
       </div>
-
-      {/* Payment Dialog */}
-      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ArrowDownLeft className="h-5 w-5 text-green-500" />
-              Le client a payé
-            </DialogTitle>
-            <DialogDescription>
-              {balance > 0
-                ? <>Le client doit actuellement <span className="text-red-600 font-semibold">{formatPrice(balance)}</span>. Combien a-t-il payé ?</>
-                : "Enregistrez le montant que le client a payé."
-              }
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="payment-amount">Montant *</Label>
-              <Input
-                id="payment-amount"
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={txnForm.amount}
-                onChange={e => setTxnForm({ ...txnForm, amount: e.target.value })}
-                placeholder="0.00"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Mode de paiement</Label>
-              <Select value={txnForm.payment_method} onValueChange={v => setTxnForm({ ...txnForm, payment_method: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Espèces</SelectItem>
-                  <SelectItem value="mobile_money">Mobile Money</SelectItem>
-                  <SelectItem value="bank_transfer">Virement bancaire</SelectItem>
-                  <SelectItem value="check">Chèque</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="payment-ref">Référence</Label>
-              <Input
-                id="payment-ref"
-                value={txnForm.reference}
-                onChange={e => setTxnForm({ ...txnForm, reference: e.target.value })}
-                placeholder="N° reçu, transaction, etc."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="payment-notes">Notes</Label>
-              <Textarea
-                id="payment-notes"
-                value={txnForm.notes}
-                onChange={e => setTxnForm({ ...txnForm, notes: e.target.value })}
-                placeholder="Notes optionnelles..."
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>Annuler</Button>
-            <Button
-              className="bg-green-600 hover:bg-green-700"
-              onClick={handleRecordPayment}
-              disabled={isSubmitting || !txnForm.amount || parseFloat(txnForm.amount) <= 0}
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Confirmer le paiement
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Advance Dialog */}
-      <Dialog open={showAdvanceDialog} onOpenChange={setShowAdvanceDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Banknote className="h-5 w-5 text-blue-500" />
-              Le client donne une avance
-            </DialogTitle>
-            <DialogDescription>
-              Le client paie d&apos;avance un montant qui sera déduit de ses prochains achats.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="advance-amount">Montant *</Label>
-              <Input
-                id="advance-amount"
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={txnForm.amount}
-                onChange={e => setTxnForm({ ...txnForm, amount: e.target.value })}
-                placeholder="0.00"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Mode de paiement</Label>
-              <Select value={txnForm.payment_method} onValueChange={v => setTxnForm({ ...txnForm, payment_method: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Espèces</SelectItem>
-                  <SelectItem value="mobile_money">Mobile Money</SelectItem>
-                  <SelectItem value="bank_transfer">Virement bancaire</SelectItem>
-                  <SelectItem value="check">Chèque</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="advance-ref">Référence</Label>
-              <Input
-                id="advance-ref"
-                value={txnForm.reference}
-                onChange={e => setTxnForm({ ...txnForm, reference: e.target.value })}
-                placeholder="N° reçu, transaction, etc."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="advance-notes">Notes</Label>
-              <Textarea
-                id="advance-notes"
-                value={txnForm.notes}
-                onChange={e => setTxnForm({ ...txnForm, notes: e.target.value })}
-                placeholder="Notes optionnelles..."
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdvanceDialog(false)}>Annuler</Button>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700"
-              onClick={handleRecordAdvance}
-              disabled={isSubmitting || !txnForm.amount || parseFloat(txnForm.amount) <= 0}
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Confirmer l&apos;avance
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Adjust Balance Dialog */}
-      <Dialog open={showAdjustDialog} onOpenChange={setShowAdjustDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-orange-500" />
-              Corriger le montant de la dette
-            </DialogTitle>
-            <DialogDescription>
-              Utilisez cette option pour corriger une erreur sur la dette du client.
-              {balance > 0 && <> Dette actuelle : <span className="font-semibold text-red-600">{formatPrice(balance)}</span>.</>}
-              {balance < 0 && <> Avance actuelle : <span className="font-semibold text-blue-600">{formatPrice(Math.abs(balance))}</span>.</>}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="adjust-amount">Montant de la correction *</Label>
-              <Input
-                id="adjust-amount"
-                type="number"
-                step="0.01"
-                value={txnForm.amount}
-                onChange={e => setTxnForm({ ...txnForm, amount: e.target.value })}
-                placeholder="Ex: 5000 (augmente la dette) ou -5000 (réduit la dette)"
-                autoFocus
-              />
-              <p className="text-xs text-gray-400">
-                Montant positif = le client doit plus. Montant négatif = le client doit moins.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="adjust-notes">Raison de la correction *</Label>
-              <Textarea
-                id="adjust-notes"
-                value={txnForm.notes}
-                onChange={e => setTxnForm({ ...txnForm, notes: e.target.value })}
-                placeholder="Expliquez pourquoi vous corrigez ce montant..."
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdjustDialog(false)}>Annuler</Button>
-            <Button
-              className="bg-orange-500 hover:bg-orange-600"
-              onClick={handleAdjustBalance}
-              disabled={isSubmitting || !txnForm.amount}
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Appliquer la correction
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Credit Limit Dialog */}
       <Dialog open={showCreditLimitDialog} onOpenChange={setShowCreditLimitDialog}>
@@ -1028,6 +865,139 @@ export default function CustomerDetailPage() {
             <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
               {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Supprimer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice Payment Dialog - POS Style */}
+      <Dialog open={showInvoicePaymentDialog} onOpenChange={setShowInvoicePaymentDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-orange-500" />
+              Payer une facture
+            </DialogTitle>
+            <DialogDescription>
+              Facture: <span className="font-semibold text-gray-900">{selectedSale?.reference}</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5">
+            {/* Sale Summary */}
+            <div className="p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-200">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Total facture</p>
+                  <p className="text-lg font-bold text-gray-900">{formatPrice(selectedSale?.total || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Déjà payé</p>
+                  <p className="text-lg font-bold text-green-600">{formatPrice(selectedSale?.amount_paid || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Reste à payer</p>
+                  <p className="text-xl font-bold text-orange-600">{formatPrice(selectedSale?.amount_due || 0)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Methods - Visual Buttons */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mode de paiement</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {paymentMethods.map(method => {
+                  const getIcon = (type: string) => {
+                    switch (type) {
+                      case "cash": return <Banknote className="h-5 w-5" />;
+                      case "mobile_money": return <Smartphone className="h-5 w-5" />;
+                      case "card": return <CreditCard className="h-5 w-5" />;
+                      case "bank_transfer": return <Building2 className="h-5 w-5" />;
+                      default: return <DollarSign className="h-5 w-5" />;
+                    }
+                  };
+                  return (
+                    <button
+                      key={method.id}
+                      type="button"
+                      className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 transition-all ${selectedPaymentMethod === method.id
+                        ? "border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
+                        : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                        }`}
+                      onClick={() => setSelectedPaymentMethod(method.id)}
+                    >
+                      {getIcon(method.method_type)}
+                      <span className="text-xs font-medium leading-tight text-center">{method.name}</span>
+                      {selectedPaymentMethod === method.id && (
+                        <div className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-orange-500 flex items-center justify-center">
+                          <CheckCircle className="h-2.5 w-2.5 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Amount Input */}
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Montant reçu</Label>
+              <div className="relative">
+                <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <Input
+                  type="number"
+                  value={invoicePaymentAmount}
+                  onChange={(e) => setInvoicePaymentAmount(e.target.value)}
+                  className="h-14 text-2xl text-center font-bold pl-10 pr-16"
+                  placeholder={selectedSale?.amount_due || "0"}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">CDF</span>
+              </div>
+
+              {/* Remaining after payment */}
+              {parseFloat(invoicePaymentAmount) > 0 && parseFloat(invoicePaymentAmount) < parseFloat(selectedSale?.amount_due || "0") && (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-amber-700 font-medium text-sm">Restera à payer</span>
+                    <span className="text-lg font-bold text-amber-700">
+                      {formatPrice(parseFloat(selectedSale?.amount_due || "0") - parseFloat(invoicePaymentAmount))}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Full payment indicator */}
+              {parseFloat(invoicePaymentAmount) >= parseFloat(selectedSale?.amount_due || "0") && (
+                <div className="p-3 bg-green-50 rounded-xl border border-green-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-green-700 font-medium text-sm">Facture soldée</span>
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowInvoicePaymentDialog(false)}
+              className="sm:flex-1"
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleInvoicePayment}
+              disabled={isSubmitting || !selectedPaymentMethod || parseFloat(invoicePaymentAmount) <= 0}
+              className="sm:flex-[2] bg-green-600 hover:bg-green-700 gap-2"
+            >
+              {isSubmitting ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Printer className="h-5 w-5" />
+              )}
+              {isSubmitting ? "Traitement..." : "Confirmer et imprimer le reçu"}
             </Button>
           </DialogFooter>
         </DialogContent>

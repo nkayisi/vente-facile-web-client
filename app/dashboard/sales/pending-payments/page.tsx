@@ -27,10 +27,17 @@ import {
   Calendar,
   User,
   ArrowLeft,
+  Clock,
+  Banknote,
+  Smartphone,
+  Building,
+  Printer,
+  CircleDollarSign,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatDate } from "@/lib/format";
+import { formatPrice, formatDate, formatDateTime } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { printPaymentReceipt, PaymentReceiptData } from "@/lib/receipt-printer";
 import {
   getSales,
   addPaymentToSale,
@@ -69,10 +76,20 @@ export default function PendingPaymentsPage() {
           const org = orgResult.data[0];
           setOrganization(org);
 
-          const [salesResult, methodsResult] = await Promise.all([
+          // Récupérer les ventes partiellement payées ET en attente
+          const [partiallyPaidResult, pendingResult, methodsResult] = await Promise.all([
             getSales(session.accessToken, org.id, { status: "partially_paid" }),
+            getSales(session.accessToken, org.id, { status: "pending" }),
             getPaymentMethods(session.accessToken, org.id, { is_active: true }),
           ]);
+
+          const salesResult = {
+            success: partiallyPaidResult.success && pendingResult.success,
+            data: [
+              ...(Array.isArray(partiallyPaidResult.data) ? partiallyPaidResult.data : (partiallyPaidResult.data as any)?.results || []),
+              ...(Array.isArray(pendingResult.data) ? pendingResult.data : (pendingResult.data as any)?.results || [])
+            ]
+          };
 
           if (salesResult.success && salesResult.data) {
             setPendingSales(Array.isArray(salesResult.data) ? salesResult.data : (salesResult.data as any).results || []);
@@ -96,7 +113,9 @@ export default function PendingPaymentsPage() {
   const openPaymentDialog = (sale: Sale) => {
     setSelectedSale(sale);
     setPaymentAmount(sale.amount_due);
-    setSelectedPaymentMethod("");
+    // Définir Espèces comme méthode par défaut
+    const cashMethod = paymentMethods.find(m => m.method_type === "cash");
+    setSelectedPaymentMethod(cashMethod?.id || "");
     setPaymentReference("");
     setShowPaymentDialog(true);
   };
@@ -139,15 +158,43 @@ export default function PendingPaymentsPage() {
 
       if (result.success) {
         toast.success("Paiement ajouté avec succès");
+
+        // Print payment receipt
+        const selectedMethod = paymentMethods.find(m => m.id === selectedPaymentMethod);
+        const previouslyPaid = parseFloat(selectedSale.amount_paid);
+        const remainingBalance = amountDue - amount;
+
+        const receiptData: PaymentReceiptData = {
+          orgName: organization.name || "Vente Facile",
+          receiptNumber: `PAY-${Date.now().toString(36).toUpperCase()}`,
+          date: new Date().toLocaleString("fr-CD"),
+          customerName: selectedSale.customer_name || "Client anonyme",
+          customerPhone: selectedSale.customer_phone || undefined,
+          paymentMethod: selectedMethod?.name || "Espèces",
+          paymentReference: paymentReference || undefined,
+          amountPaid: amount,
+          currency: "CDF",
+          saleReference: selectedSale.reference,
+          saleTotalAmount: parseFloat(selectedSale.total),
+          previouslyPaid: previouslyPaid,
+          remainingBalance: remainingBalance,
+        };
+
+        printPaymentReceipt(receiptData);
+
         setShowPaymentDialog(false);
 
         // Refresh the list
-        const salesResult = await getSales(session.accessToken, organization.id, {
-          status: "partially_paid",
-        });
-        if (salesResult.success && salesResult.data) {
-          setPendingSales(Array.isArray(salesResult.data) ? salesResult.data : (salesResult.data as any).results || []);
-        }
+        const [partiallyPaidResult, pendingResult] = await Promise.all([
+          getSales(session.accessToken, organization.id, { status: "partially_paid" }),
+          getSales(session.accessToken, organization.id, { status: "pending" }),
+        ]);
+
+        const allSales = [
+          ...(Array.isArray(partiallyPaidResult.data) ? partiallyPaidResult.data : (partiallyPaidResult.data as any)?.results || []),
+          ...(Array.isArray(pendingResult.data) ? pendingResult.data : (pendingResult.data as any)?.results || [])
+        ];
+        setPendingSales(allSales);
       } else {
         toast.error(result.message || "Erreur lors de l'ajout du paiement");
       }
@@ -186,7 +233,7 @@ export default function PendingPaymentsPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Paiements en attente</h1>
             <p className="text-sm text-gray-500 mt-1">
-              Ventes partiellement payées nécessitant un paiement complet
+              Ventes en attente de paiement et ventes partiellement payées
             </p>
           </div>
         </div>
@@ -204,7 +251,7 @@ export default function PendingPaymentsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -213,7 +260,23 @@ export default function PendingPaymentsPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{filteredSales.length}</p>
-                <p className="text-xs text-gray-500">Ventes en attente</p>
+                <p className="text-xs text-gray-500">Total ventes</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <Clock className="h-5 w-5 text-yellow-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {filteredSales.filter(s => s.status === 'pending').length}
+                </p>
+                <p className="text-xs text-gray-500">En attente</p>
               </div>
             </div>
           </CardContent>
@@ -259,7 +322,7 @@ export default function PendingPaymentsPage() {
       {/* Sales List */}
       <Card>
         <CardHeader>
-          <CardTitle>Ventes partiellement payées</CardTitle>
+          <CardTitle>Ventes en attente de paiement</CardTitle>
         </CardHeader>
         <CardContent>
           {filteredSales.length === 0 ? (
@@ -282,9 +345,15 @@ export default function PendingPaymentsPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="font-semibold text-gray-900">{sale.reference}</h3>
-                      <Badge className="bg-orange-100 text-orange-700">
-                        Partiellement payé
-                      </Badge>
+                      {sale.status === 'partially_paid' ? (
+                        <Badge className="bg-orange-100 text-orange-700">
+                          Partiellement payé
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-yellow-100 text-yellow-700">
+                          En attente
+                        </Badge>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div className="flex items-center gap-2 text-gray-600">
@@ -299,12 +368,14 @@ export default function PendingPaymentsPage() {
                         <span className="text-gray-500">Total: </span>
                         <span className="font-semibold">{formatPrice(sale.total)}</span>
                       </div>
-                      <div>
-                        <span className="text-gray-500">Payé: </span>
-                        <span className="font-semibold text-green-600">
-                          {formatPrice(sale.amount_paid)}
-                        </span>
-                      </div>
+                      {parseFloat(sale.amount_paid) > 0 && (
+                        <div>
+                          <span className="text-gray-500">Payé: </span>
+                          <span className="font-semibold text-green-600">
+                            {formatPrice(sale.amount_paid)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-4 ml-4">
@@ -329,94 +400,137 @@ export default function PendingPaymentsPage() {
         </CardContent>
       </Card>
 
-      {/* Payment Dialog */}
+      {/* Payment Dialog - POS Style */}
       <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Ajouter un paiement</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-orange-500" />
+              Enregistrer un paiement
+            </DialogTitle>
             <DialogDescription>
-              Vente: {selectedSale?.reference}
+              Facture: <span className="font-semibold text-gray-900">{selectedSale?.reference}</span>
+              {selectedSale?.customer_name && (
+                <> · Client: <span className="font-medium">{selectedSale.customer_name}</span></>
+              )}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <div className="space-y-5">
             {/* Sale Summary */}
-            <div className="p-3 bg-gray-50 rounded-lg space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Total de la vente</span>
-                <span className="font-medium">{formatPrice(selectedSale?.total || 0)}</span>
-              </div>
-              <div className="flex justify-between text-green-600">
-                <span>Déjà payé</span>
-                <span>{formatPrice(selectedSale?.amount_paid || 0)}</span>
-              </div>
-              <div className="flex justify-between text-base font-bold pt-1 border-t border-gray-300">
-                <span>Reste à payer</span>
-                <span className="text-orange-600">
-                  {formatPrice(selectedSale?.amount_due || 0)}
-                </span>
+            <div className="p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-200">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Total facture</p>
+                  <p className="text-lg font-bold text-gray-900">{formatPrice(selectedSale?.total || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Déjà payé</p>
+                  <p className="text-lg font-bold text-green-600">{formatPrice(selectedSale?.amount_paid || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Reste à payer</p>
+                  <p className="text-xl font-bold text-orange-600">{formatPrice(selectedSale?.amount_due || 0)}</p>
+                </div>
               </div>
             </div>
 
-            {/* Payment Method */}
+            {/* Payment Methods - Visual Buttons */}
             <div className="space-y-2">
-              <Label>Mode de paiement</Label>
-              <SearchableSelect
-                options={paymentMethods.map((method) => ({ value: method.id, label: method.name }))}
-                value={selectedPaymentMethod || undefined}
-                onValueChange={setSelectedPaymentMethod}
-                placeholder="Sélectionnez un mode de paiement"
-                searchPlaceholder="Rechercher un mode de paiement..."
-              />
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mode de paiement</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {paymentMethods.map(method => {
+                  const getIcon = (type: string) => {
+                    switch (type) {
+                      case "cash": return <Banknote className="h-5 w-5" />;
+                      case "mobile_money": return <Smartphone className="h-5 w-5" />;
+                      case "card": return <CreditCard className="h-5 w-5" />;
+                      case "bank_transfer": return <Building className="h-5 w-5" />;
+                      default: return <DollarSign className="h-5 w-5" />;
+                    }
+                  };
+                  return (
+                    <button
+                      key={method.id}
+                      type="button"
+                      className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 transition-all ${selectedPaymentMethod === method.id
+                        ? "border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
+                        : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                        }`}
+                      onClick={() => setSelectedPaymentMethod(method.id)}
+                    >
+                      {getIcon(method.method_type)}
+                      <span className="text-xs font-medium leading-tight text-center">{method.name}</span>
+                      {selectedPaymentMethod === method.id && (
+                        <div className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-orange-500 flex items-center justify-center">
+                          <CheckCircle className="h-2.5 w-2.5 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Amount */}
-            <div className="space-y-2">
-              <Label>Montant à payer (CDF)</Label>
-              <Input
-                type="number"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-                className="text-lg font-semibold"
-                placeholder="0"
-                max={selectedSale?.amount_due}
-              />
-              <p className="text-xs text-gray-500">
-                Maximum: {formatPrice(selectedSale?.amount_due || 0)}
-              </p>
+            {/* Amount Input */}
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Montant reçu</Label>
+              <div className="relative">
+                <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <Input
+                  type="number"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  className="h-14 text-2xl text-center font-bold pl-10 pr-16"
+                  placeholder={selectedSale?.amount_due || "0"}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">CDF</span>
+              </div>
+
+              {/* Remaining after payment */}
+              {parseFloat(paymentAmount) > 0 && parseFloat(paymentAmount) < parseFloat(selectedSale?.amount_due || "0") && (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-amber-700 font-medium text-sm">Restera à payer</span>
+                    <span className="text-lg font-bold text-amber-700">
+                      {formatPrice(parseFloat(selectedSale?.amount_due || "0") - parseFloat(paymentAmount))}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Full payment indicator */}
+              {parseFloat(paymentAmount) >= parseFloat(selectedSale?.amount_due || "0") && (
+                <div className="p-3 bg-green-50 rounded-xl border border-green-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-green-700 font-medium text-sm">Facture soldée</span>
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Reference */}
-            <div className="space-y-2">
-              <Label>Référence (optionnel)</Label>
-              <Input
-                value={paymentReference}
-                onChange={(e) => setPaymentReference(e.target.value)}
-                placeholder="Numéro de transaction, etc."
-              />
-            </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
+          <DialogFooter className="flex-col sm:flex-row gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowPaymentDialog(false)}
+              className="sm:flex-1"
+            >
               Annuler
             </Button>
             <Button
               onClick={handleAddPayment}
               disabled={isProcessing || !selectedPaymentMethod || parseFloat(paymentAmount) <= 0}
-              className="bg-green-600 hover:bg-green-700"
+              className="sm:flex-[2] bg-green-600 hover:bg-green-700 gap-2"
             >
               {isProcessing ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Traitement...
-                </>
+                <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
-                <>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Confirmer le paiement
-                </>
+                <Printer className="h-5 w-5" />
               )}
+              {isProcessing ? "Traitement..." : "Confirmer et imprimer le reçu"}
             </Button>
           </DialogFooter>
         </DialogContent>

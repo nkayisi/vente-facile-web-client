@@ -11,6 +11,7 @@ import {
   CreateSaleItemData,
   getCurrentSession,
   getPaymentMethods,
+  markReceiptPrinted,
   PaymentMethod,
   RegisterSession,
 } from "@/actions/sales.actions";
@@ -46,13 +47,18 @@ import {
   Trash2,
   User,
   UserPlus,
-  X
+  X,
+  Printer,
+  Receipt,
+  HandCoins,
+  CircleDollarSign,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
+import { printReceipt, ReceiptData } from "@/lib/receipt-printer";
 
 interface CartItem {
   product: Product;
@@ -85,6 +91,8 @@ export default function POSPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCreditSale, setIsCreditSale] = useState(false);
+  const [paymentReference, setPaymentReference] = useState("");
 
   // Customer dialog
   const [showCustomerDialog, setShowCustomerDialog] = useState(false);
@@ -137,7 +145,7 @@ export default function POSPage() {
             setProducts(productsResult.data.results || []);
           }
           if (customersResult.success && customersResult.data) {
-            setCustomers(customersResult.data);
+            setCustomers(customersResult.data.results || []);
           }
           if (paymentMethodsResult.success && paymentMethodsResult.data) {
             setPaymentMethods(paymentMethodsResult.data);
@@ -294,14 +302,31 @@ export default function POSPage() {
     const itemDiscount = calculateItemDiscount();
     const globalDiscountAmount = calculateGlobalDiscountAmount();
     const tax = calculateTax();
-
     return r2(subtotal - itemDiscount - globalDiscountAmount + tax);
   };
 
+  // Open payment dialog
+  const openPaymentDialog = () => {
+    const totalAmount = calculateTotal();
+    setPaymentAmount(totalAmount.toString());
+    setIsCreditSale(false);
+    setPaymentReference("");
+    // Set default payment method to cash
+    const cashMethod = paymentMethods.find(m => m.method_type === "cash");
+    if (cashMethod) {
+      setSelectedPaymentMethod(cashMethod.id);
+    } else if (paymentMethods.length > 0) {
+      setSelectedPaymentMethod(paymentMethods[0].id);
+    }
+    setShowPaymentDialog(true);
+  };
+
+  // Get selected payment method object
+  const getSelectedMethod = () => paymentMethods.find(m => m.id === selectedPaymentMethod);
 
   // Process payment
   const handlePayment = async () => {
-    if (!selectedPaymentMethod) {
+    if (!isCreditSale && !selectedPaymentMethod) {
       toast.error("Sélectionnez un mode de paiement");
       return;
     }
@@ -311,17 +336,31 @@ export default function POSPage() {
       return;
     }
 
-    const total = calculateTotal();
-    const amount = parseFloat(paymentAmount) || total;
-
-    if (amount <= 0) {
-      toast.error("Montant invalide");
+    if (isCreditSale && !selectedCustomer) {
+      toast.error("Sélectionnez un client pour une vente à crédit");
       return;
     }
 
-    if (amount < total) {
+    const total = calculateTotal();
+    const amount = parseFloat(paymentAmount) || 0;
+    const creditAmount = total - amount;
+
+    // Validation pour vente normale (non crédit)
+    if (!isCreditSale && amount < total) {
       toast.error(`Le montant payé (${formatPrice(amount)}) est inférieur au total (${formatPrice(total)})`);
       return;
+    }
+
+    // Validation pour vente à crédit
+    if (isCreditSale && selectedCustomer) {
+      const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
+      const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
+      const newBalance = currentBalance + creditAmount;
+
+      if (creditLimit > 0 && newBalance > creditLimit) {
+        toast.error(`Limite de crédit dépassée. Limite: ${formatPrice(creditLimit)}, Dette actuelle: ${formatPrice(currentBalance)}, Nouveau total: ${formatPrice(newBalance)}`);
+        return;
+      }
     }
 
     setIsProcessing(true);
@@ -334,32 +373,96 @@ export default function POSPage() {
         discount_percentage: r2(item.discount_percentage),
       }));
 
-      const payments: CreatePaymentData[] = [
-        {
+      // Paiements : si crédit avec paiement partiel, on enregistre le paiement
+      const payments: CreatePaymentData[] = [];
+      if (amount > 0 && selectedPaymentMethod) {
+        payments.push({
           payment_method: selectedPaymentMethod,
           amount: r2(amount),
-        },
-      ];
+          ...(paymentReference ? { reference: paymentReference } : {}),
+        });
+      }
+
+      const saleType = isCreditSale ? "credit" : "retail";
 
       const result = await createSale(session.accessToken, organization.id, {
         register: currentSession.register,
         warehouse: currentSession.warehouse || undefined,
         customer: selectedCustomer?.id,
-        sale_type: "retail",
+        sale_type: saleType,
         discount_percentage: globalDiscount,
         is_pos: true,
         items,
         payments,
       });
 
-      if (result.success) {
-        toast.success(`Vente ${result.data?.reference} créée avec succès`);
+      if (result.success && result.data) {
+        toast.success(`Vente ${result.data.reference} créée avec succès`);
+
+        // Print receipt
+        const selectedMethodObj = getSelectedMethod();
+        const receiptPayments = [];
+
+        // Ajouter le paiement si montant > 0
+        if (amount > 0 && selectedMethodObj) {
+          receiptPayments.push({
+            method: selectedMethodObj.name,
+            amount,
+            currency: "CDF"
+          });
+        }
+
+        // Ajouter le crédit si montant à crédit > 0
+        if (creditAmount > 0) {
+          receiptPayments.push({
+            method: "À crédit",
+            amount: creditAmount,
+            currency: "CDF"
+          });
+        }
+
+        const receiptData: ReceiptData = {
+          orgName: organization.name || "Vente Facile",
+          registerName: currentSession.register_name,
+          cashierName: currentSession.opened_by_name,
+          reference: result.data.reference,
+          date: new Date().toLocaleString("fr-CD"),
+          customerName: selectedCustomer?.name,
+          customerPhone: selectedCustomer?.phone || undefined,
+          items: cart.map(item => ({
+            name: item.product.name,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            discount_percentage: item.discount_percentage,
+            total: r2(item.quantity * item.unit_price * (1 - item.discount_percentage / 100)),
+          })),
+          subtotal: calculateSubtotal(),
+          taxAmount: calculateTax(),
+          discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount()),
+          globalDiscountPercent: globalDiscount,
+          total,
+          payments: receiptPayments,
+          amountPaid: amount,
+          change: !isCreditSale ? Math.max(0, amount - total) : 0,
+          currency: "CDF",
+          isCreditSale: creditAmount > 0,
+          amountDue: creditAmount > 0 ? creditAmount : 0,
+        };
+
+        printReceipt(receiptData);
+
+        // Mark receipt as printed
+        markReceiptPrinted(session.accessToken, organization.id, result.data.id).catch((err: any) => {
+          console.error("Failed to mark receipt as printed:", err);
+        });
 
         // Reset cart
         setCart([]);
         setSelectedCustomer(null);
         setGlobalDiscount(0);
         setPaymentAmount("");
+        setPaymentReference("");
+        setIsCreditSale(false);
         setShowPaymentDialog(false);
 
         // Refresh products to get updated stock
@@ -378,12 +481,10 @@ export default function POSPage() {
         let errorMsg = result.message || "Erreur lors de la création de la vente";
 
         if (errors) {
-          // Handle stock validation errors
           if (errors.items) {
             const itemsError = Array.isArray(errors.items) ? errors.items.join(". ") : String(errors.items);
             errorMsg = itemsError;
           }
-          // Handle other field errors
           const fieldErrors = Object.entries(errors)
             .filter(([key]) => key !== 'items')
             .map(([, val]) => Array.isArray(val) ? val.join(". ") : String(val))
@@ -398,13 +499,12 @@ export default function POSPage() {
           description: errorMsg.includes("Stock") ? "Veuillez ajuster les quantités dans le panier." : undefined,
         });
 
-        // Close payment dialog on stock error so seller can adjust cart
         if (errorMsg.includes("Stock") || errorMsg.includes("stock")) {
           setShowPaymentDialog(false);
         }
       }
     } catch (error) {
-      toast.error("Une erreur est survenue lors de la vente");
+      toast.error("Une erreur est survenue lors du paiement");
     } finally {
       setIsProcessing(false);
     }
@@ -573,10 +673,10 @@ export default function POSPage() {
                       )}
                       {product.track_inventory && (
                         <div className={`absolute top-1 right-1 px-2 py-0.5 rounded text-xs font-semibold ${getRemainingStock(product) <= 0
-                            ? 'bg-red-500 text-white'
-                            : getRemainingStock(product) <= (product.reorder_point || 5)
-                              ? 'bg-amber-500 text-white'
-                              : 'bg-green-600 text-white'
+                          ? 'bg-red-500 text-white'
+                          : getRemainingStock(product) <= (product.reorder_point || 5)
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-green-600 text-white'
                           }`}>
                           Stock: {formatNumber(getAvailableStock(product))}
                         </div>
@@ -746,10 +846,7 @@ export default function POSPage() {
                 disabled={cart.length === 0}
                 onClick={() => {
                   setShowMobileCart(false);
-                  const totalAmount = calculateTotal();
-                  setPaymentAmount(totalAmount.toString());
-                  setSelectedPaymentMethod("");
-                  setShowPaymentDialog(true);
+                  openPaymentDialog();
                 }}
               >
                 <CreditCard className="h-5 w-5 mr-2" />
@@ -912,12 +1009,7 @@ export default function POSPage() {
           <Button
             className="w-full h-12 text-lg bg-orange-500 hover:bg-orange-600"
             disabled={cart.length === 0}
-            onClick={() => {
-              const totalAmount = calculateTotal();
-              setPaymentAmount(totalAmount.toString());
-              setSelectedPaymentMethod("");
-              setShowPaymentDialog(true);
-            }}
+            onClick={openPaymentDialog}
           >
             <CreditCard className="h-5 w-5 mr-2" />
             Payer {formatPrice(total)}
@@ -926,114 +1018,283 @@ export default function POSPage() {
       </div>
 
       {/* Payment Dialog */}
-      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={showPaymentDialog} onOpenChange={(open) => {
+        if (!isProcessing) {
+          setShowPaymentDialog(open);
+          if (!open) {
+            setIsCreditSale(false);
+            setPaymentReference("");
+          }
+        }
+      }}>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Paiement</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-orange-500" />
+              Encaissement
+            </DialogTitle>
             <DialogDescription>
-              Total à payer: <span className="font-bold text-orange-600">{formatPrice(total)}</span>
+              Sélectionnez le mode de paiement et confirmez le montant
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* Payment Methods */}
-            <div className="grid grid-cols-2 gap-2">
-              {paymentMethods.map(method => (
-                <Button
-                  key={method.id}
-                  variant={selectedPaymentMethod === method.id ? "default" : "outline"}
-                  className={`h-16 flex-col ${selectedPaymentMethod === method.id ? "bg-orange-500 hover:bg-orange-600" : ""
-                    }`}
-                  onClick={() => setSelectedPaymentMethod(method.id)}
-                >
-                  {getPaymentIcon(method.method_type)}
-                  <span className="text-xs mt-1">{method.name}</span>
-                </Button>
-              ))}
-            </div>
-
-            {/* Total Breakdown */}
-            <div className="p-3 bg-gray-50 rounded-lg space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Sous-total</span>
-                <span className="font-medium">{formatPrice(calculateSubtotal())}</span>
-              </div>
-              {calculateItemDiscount() > 0 && (
-                <div className="flex justify-between text-orange-600">
-                  <span>Remises</span>
-                  <span>-{formatPrice(calculateItemDiscount())}</span>
-                </div>
-              )}
-              {globalDiscount > 0 && (
-                <div className="flex justify-between text-orange-600">
-                  <span>Remise globale</span>
-                  <span>-{formatPrice(calculateGlobalDiscountAmount())}</span>
-                </div>
-              )}
-              {calculateTax() > 0 && (
-                <div className="flex justify-between text-green-600">
-                  <span>Taxes (TVA)</span>
-                  <span>+{formatPrice(calculateTax())}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-base font-bold pt-1 border-t border-gray-300">
-                <span>Total à payer</span>
-                <span className="text-orange-600">{formatPrice(total)}</span>
-              </div>
-            </div>
-
-            {/* Amount */}
+          <div className="space-y-5">
+            {/* 1. Payment Methods Selection */}
             <div className="space-y-2">
-              <Label>Montant reçu (CDF)</Label>
-              <Input
-                type="number"
-                value={paymentAmount}
-                onChange={e => setPaymentAmount(e.target.value)}
-                className="h-12 text-xl text-center font-bold"
-                placeholder={total.toString()}
-              />
-            </div>
-
-            {/* Quick amounts */}
-            <div className="grid grid-cols-4 gap-2">
-              {[1000, 5000, 10000, 20000].map(amount => (
-                <Button
-                  key={amount}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPaymentAmount(((parseFloat(paymentAmount) || 0) + amount).toString())}
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mode de paiement</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {/* Dynamic payment methods from backend */}
+                {paymentMethods.map(method => (
+                  <button
+                    key={method.id}
+                    type="button"
+                    className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 transition-all ${!isCreditSale && selectedPaymentMethod === method.id
+                      ? "border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
+                      : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                      }`}
+                    onClick={() => {
+                      setIsCreditSale(false);
+                      setSelectedPaymentMethod(method.id);
+                      setPaymentAmount(calculateTotal().toString());
+                    }}
+                  >
+                    {getPaymentIcon(method.method_type)}
+                    <span className="text-xs font-medium leading-tight text-center">{method.name}</span>
+                    {!isCreditSale && selectedPaymentMethod === method.id && (
+                      <div className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-orange-500 flex items-center justify-center">
+                        <Check className="h-2.5 w-2.5 text-white" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+                {/* Credit sale option */}
+                <button
+                  type="button"
+                  className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 transition-all ${isCreditSale
+                    ? "border-amber-500 bg-amber-50 text-amber-700 shadow-sm"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                    }`}
+                  onClick={() => {
+                    setIsCreditSale(true);
+                    setSelectedPaymentMethod("");
+                    setPaymentAmount("0");
+                  }}
                 >
-                  +{amount / 1000}k
-                </Button>
-              ))}
+                  <HandCoins className="h-5 w-5" />
+                  <span className="text-xs font-medium leading-tight text-center">Crédit</span>
+                  {isCreditSale && (
+                    <div className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-amber-500 flex items-center justify-center">
+                      <Check className="h-2.5 w-2.5 text-white" />
+                    </div>
+                  )}
+                </button>
+              </div>
             </div>
 
-            {/* Change */}
-            {change > 0 && (
-              <div className="p-3 bg-green-50 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <span className="text-green-700">Monnaie à rendre</span>
-                  <span className="text-xl font-bold text-green-700">{formatPrice(change)}</span>
+            {/* Credit sale warning and info */}
+            {isCreditSale && (
+              <div className="space-y-2">
+                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <p className="text-sm text-amber-800 font-medium flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    Vente à crédit — un client est obligatoire
+                  </p>
+                  {!selectedCustomer && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 border-amber-300 text-amber-700 hover:bg-amber-100"
+                      onClick={() => setShowCustomerDialog(true)}
+                    >
+                      <User className="h-3.5 w-3.5 mr-1.5" />
+                      Sélectionner un client
+                    </Button>
+                  )}
+                  {selectedCustomer && (
+                    <p className="text-xs text-amber-600 mt-1">Client: {selectedCustomer.name}</p>
+                  )}
                 </div>
+
+                {/* Credit limit info */}
+                {selectedCustomer && (
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-blue-700 font-medium">Limite de crédit autorisée</span>
+                      <span className="font-bold text-blue-900">{formatPrice(parseFloat(selectedCustomer.credit_limit || "0"))}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-blue-700">Dette actuelle</span>
+                      <span className="font-semibold text-red-600">{formatPrice(parseFloat(selectedCustomer.current_balance || "0"))}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm pt-2 border-t border-blue-300">
+                      <span className="text-blue-700 font-medium">Peut encore prendre à crédit</span>
+                      <span className="font-bold text-green-600">
+                        {formatPrice(Math.max(0, parseFloat(selectedCustomer.credit_limit || "0") - parseFloat(selectedCustomer.current_balance || "0")))}
+                      </span>
+                    </div>
+                    {(() => {
+                      const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
+                      const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
+                      const amountPaid = parseFloat(paymentAmount) || 0;
+                      const creditAmount = total - amountPaid;
+                      const newBalance = currentBalance + creditAmount;
+                      const exceedsLimit = creditLimit > 0 && newBalance > creditLimit;
+
+                      if (exceedsLimit) {
+                        return (
+                          <div className="mt-2 p-2 bg-red-50 rounded border border-red-300">
+                            <p className="text-xs text-red-700 font-medium flex items-center gap-1.5">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              Limite de crédit dépassée de {formatPrice(newBalance - creditLimit)}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                )}
               </div>
             )}
+
+            {/* Payment reference for non-cash methods */}
+            {!isCreditSale && getSelectedMethod()?.requires_reference && (
+              <div className="space-y-1.5">
+                <Label className="text-sm">Référence de paiement</Label>
+                <Input
+                  value={paymentReference}
+                  onChange={e => setPaymentReference(e.target.value)}
+                  placeholder="N° transaction, référence..."
+                  className="h-10"
+                />
+              </div>
+            )}
+
+            {/* 2. Order Summary */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Récapitulatif</Label>
+              <div className="p-3 bg-gray-50 rounded-xl space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Sous-total ({cart.reduce((s, i) => s + i.quantity, 0)} articles)</span>
+                  <span className="font-medium">{formatPrice(calculateSubtotal())}</span>
+                </div>
+                {calculateItemDiscount() > 0 && (
+                  <div className="flex justify-between text-orange-600">
+                    <span>Remises articles</span>
+                    <span>-{formatPrice(calculateItemDiscount())}</span>
+                  </div>
+                )}
+                {globalDiscount > 0 && (
+                  <div className="flex justify-between text-orange-600">
+                    <span>Remise globale ({globalDiscount}%)</span>
+                    <span>-{formatPrice(calculateGlobalDiscountAmount())}</span>
+                  </div>
+                )}
+                {calculateTax() > 0 && (
+                  <div className="flex justify-between text-blue-600">
+                    <span>Taxes (TVA)</span>
+                    <span>+{formatPrice(calculateTax())}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-300">
+                  <span>Total à payer</span>
+                  <span className="text-orange-600">{formatPrice(total)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Amount Received (always shown, but labeled differently for credit) */}
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                {isCreditSale ? "Montant payé maintenant (optionnel)" : "Montant reçu"}
+              </Label>
+              <div className="relative">
+                <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <Input
+                  type="number"
+                  value={paymentAmount}
+                  onChange={e => setPaymentAmount(e.target.value)}
+                  className="h-14 text-2xl text-center font-bold pl-10 pr-16"
+                  placeholder={total.toString()}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">CDF</span>
+              </div>
+
+              {/* Credit amount display for credit sales */}
+              {isCreditSale && (() => {
+                const amountPaid = parseFloat(paymentAmount) || 0;
+                const creditAmount = total - amountPaid;
+                return creditAmount > 0 ? (
+                  <div className="p-3 bg-orange-50 rounded-xl border border-orange-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-orange-700 font-medium text-sm">Montant à crédit</span>
+                      <span className="text-2xl font-bold text-orange-700">{formatPrice(creditAmount)}</span>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Change display */}
+              {!isCreditSale && change > 0 && (
+                <div className="p-3 bg-green-50 rounded-xl border border-green-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-green-700 font-medium text-sm">Monnaie à rendre</span>
+                    <span className="text-2xl font-bold text-green-700">{formatPrice(change)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Insufficient amount warning (only for non-credit sales) */}
+              {!isCreditSale && (parseFloat(paymentAmount) || 0) > 0 && (parseFloat(paymentAmount) || 0) < total && (
+                <div className="p-2 bg-red-50 rounded-lg border border-red-200">
+                  <p className="text-xs text-red-600 font-medium flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Montant insuffisant — il manque {formatPrice(total - (parseFloat(paymentAmount) || 0))}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
+          {/* Footer with confirm button */}
+          <DialogFooter className="flex-col sm:flex-row gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowPaymentDialog(false)}
+              disabled={isProcessing}
+              className="sm:flex-1"
+            >
               Annuler
             </Button>
             <Button
-              className="bg-green-600 hover:bg-green-700"
+              className="sm:flex-[2] bg-green-600 hover:bg-green-700 gap-2"
               onClick={handlePayment}
-              disabled={isProcessing || (parseFloat(paymentAmount) || 0) < total}
+              disabled={(() => {
+                if (isProcessing) return true;
+                if (!isCreditSale && (parseFloat(paymentAmount) || 0) < total) return true;
+                if (isCreditSale && !selectedCustomer) return true;
+                if (isCreditSale && selectedCustomer) {
+                  const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
+                  const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
+                  const amountPaid = parseFloat(paymentAmount) || 0;
+                  const creditAmount = total - amountPaid;
+                  const newBalance = currentBalance + creditAmount;
+                  if (creditLimit > 0 && newBalance > creditLimit) return true;
+                }
+                return false;
+              })()}
             >
               {isProcessing ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
-                <Check className="h-4 w-4 mr-2" />
+                <Printer className="h-5 w-5" />
               )}
-              Confirmer
+              {isProcessing
+                ? "Traitement..."
+                : isCreditSale
+                  ? "Confirmer la vente à crédit"
+                  : `Encaisser ${formatPrice(total)}`
+              }
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,6 +50,7 @@ import {
   MovementType,
   CreateStockMovementData,
 } from "@/actions/stock.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 const MOVEMENT_TYPES: { value: MovementType; label: string; direction: "in" | "out" }[] = [
   { value: "purchase", label: "Achat", direction: "in" },
@@ -78,7 +79,13 @@ export default function MovementsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -132,12 +139,12 @@ export default function MovementsPage() {
   }, [session]);
 
   // Fetch movements with filters
-  const fetchMovements = async (orgId?: string) => {
+  const fetchMovements = useCallback(async (orgId?: string) => {
     if (!session?.accessToken) return;
     const id = orgId || organization?.id;
     if (!id) return;
 
-    const filters: any = { page_size: 50 };
+    const filters: any = { page: currentPage, page_size: pageSize };
     if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
     if (selectedType !== "all") filters.movement_type = selectedType;
     if (searchQuery) filters.search = searchQuery;
@@ -146,15 +153,25 @@ export default function MovementsPage() {
     if (result.success && result.data) {
       setMovements(result.data.results);
       setTotalCount(result.data.count);
+      setHasNext(result.data.next !== null);
+      setHasPrevious(result.data.previous !== null);
     }
-  };
+  }, [session, organization, currentPage, pageSize, selectedWarehouse, selectedType, searchQuery]);
 
-  // Refetch when filters change
+  // Refetch when filters or page change
   useEffect(() => {
     if (organization) {
       fetchMovements();
     }
-  }, [selectedWarehouse, selectedType, searchQuery]);
+  }, [organization, fetchMovements]);
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
@@ -361,6 +378,19 @@ export default function MovementsPage() {
               </Card>
             );
           })}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-6">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
+          )}
         </div>
       )}
 

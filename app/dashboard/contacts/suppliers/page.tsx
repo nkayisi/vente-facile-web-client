@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -55,7 +55,9 @@ import {
   deleteSupplier,
   Supplier,
   CreateSupplierData,
+  PaginatedResponse,
 } from "@/actions/contacts.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 const CURRENCIES = ["CDF", "USD", "EUR"];
 
@@ -68,6 +70,13 @@ export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -92,30 +101,59 @@ export default function SuppliersPage() {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  // Fetch organization on mount
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchOrg = async () => {
       if (!session?.accessToken) return;
-
       try {
         const orgResult = await getUserOrganizations(session.accessToken);
         if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
-
-          const result = await getSuppliers(session.accessToken, org.id);
-          if (result.success && result.data) {
-            setSuppliers(result.data);
-          }
+          setOrganization(orgResult.data[0]);
         }
       } catch (error) {
-        toast.error("Erreur lors du chargement des fournisseurs");
-      } finally {
-        setIsLoading(false);
+        toast.error("Erreur lors du chargement");
       }
     };
-
-    fetchData();
+    fetchOrg();
   }, [session]);
+
+  // Fetch suppliers with pagination
+  const fetchSuppliers = useCallback(async () => {
+    if (!session?.accessToken || !organization) return;
+    setIsLoading(true);
+    try {
+      const filters: any = { page: currentPage, page_size: pageSize };
+      if (statusFilter === "active") filters.is_active = true;
+      if (statusFilter === "inactive") filters.is_active = false;
+      if (searchQuery) filters.search = searchQuery;
+
+      const result = await getSuppliers(session.accessToken, organization.id, filters);
+      if (result.success && result.data) {
+        setSuppliers(result.data.results || []);
+        setTotalCount(result.data.count || 0);
+        setHasNext(result.data.next !== null);
+        setHasPrevious(result.data.previous !== null);
+      }
+    } catch (error) {
+      toast.error("Erreur lors du chargement des fournisseurs");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [session, organization, currentPage, pageSize, statusFilter, searchQuery]);
+
+  useEffect(() => {
+    if (organization) {
+      fetchSuppliers();
+    }
+  }, [organization, fetchSuppliers]);
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   const resetForm = () => {
     setFormData({
@@ -256,19 +294,6 @@ export default function SuppliersPage() {
     }
   };
 
-  // Filtering
-  const filteredSuppliers = suppliers.filter(s => {
-    const matchesSearch =
-      s.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.code && s.code.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (s.phone && s.phone.includes(searchQuery)) ||
-      (s.contact_person && s.contact_person.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && s.is_active) ||
-      (statusFilter === "inactive" && !s.is_active);
-    return matchesSearch && matchesStatus;
-  });
 
   if (isLoading) {
     return (
@@ -291,7 +316,7 @@ export default function SuppliersPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Fournisseurs</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {suppliers.length} fournisseur{suppliers.length > 1 ? "s" : ""} enregistré{suppliers.length > 1 ? "s" : ""}
+              {totalCount} fournisseur{totalCount > 1 ? "s" : ""} enregistré{totalCount > 1 ? "s" : ""}
             </p>
           </div>
         </div>
@@ -308,11 +333,11 @@ export default function SuppliersPage() {
           <Input
             placeholder="Rechercher par nom, code, téléphone, contact..."
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
             className="pl-9"
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={(v) => handleFilterChange(setStatusFilter, v)}>
           <SelectTrigger className="w-full sm:w-48">
             <Filter className="h-4 w-4 mr-2" />
             <SelectValue placeholder="Statut" />
@@ -326,7 +351,7 @@ export default function SuppliersPage() {
       </div>
 
       {/* Suppliers List */}
-      {filteredSuppliers.length === 0 ? (
+      {suppliers.length === 0 ? (
         <Card className="p-0">
           <CardContent className="p-8 text-center">
             <Truck className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -346,7 +371,7 @@ export default function SuppliersPage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {filteredSuppliers.map(supplier => (
+          {suppliers.map((supplier: Supplier) => (
             <Card key={supplier.id} className="p-0 hover:shadow-md transition-shadow">
               <CardContent className="p-4">
                 <div className="flex items-center gap-4">
@@ -439,6 +464,19 @@ export default function SuppliersPage() {
               </CardContent>
             </Card>
           ))}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-6">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
+          )}
         </div>
       )}
 

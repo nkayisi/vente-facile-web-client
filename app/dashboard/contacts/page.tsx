@@ -59,10 +59,10 @@ export default function ContactsPage() {
           ]);
 
           if (customersResult.success && customersResult.data) {
-            setCustomers(customersResult.data);
+            setCustomers(customersResult.data.results || []);
           }
           if (suppliersResult.success && suppliersResult.data) {
-            setSuppliers(suppliersResult.data);
+            setSuppliers(suppliersResult.data.results || []);
           }
           if (statsResult.success && statsResult.data) {
             setStats(statsResult.data);

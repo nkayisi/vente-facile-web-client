@@ -49,7 +49,9 @@ import {
   updateUnit,
   deleteUnit,
   Unit,
+  UnitFilters,
 } from "@/actions/products.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 export default function UnitsPage() {
   const { data: session } = useSession();
@@ -58,6 +60,13 @@ export default function UnitsPage() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Dialog states
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -92,15 +101,23 @@ export default function UnitsPage() {
     }
 
     setIsLoading(true);
-    const result = await getUnits(session.accessToken, organization.id, {
+    const filters: UnitFilters = {
       search: searchQuery || undefined,
-    });
+      page: currentPage,
+      page_size: pageSize,
+    };
+    const result = await getUnits(session.accessToken, organization.id, filters);
 
     if (result.success && result.data) {
       setUnits(result.data.results || []);
+      setTotalCount(result.data.count || 0);
+      setHasNext(result.data.next !== null);
+      setHasPrevious(result.data.previous !== null);
     }
     setIsLoading(false);
-  }, [session, organization, searchQuery]);
+  }, [session, organization, searchQuery, currentPage, pageSize]);
+
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   useEffect(() => {
     fetchUnits();
@@ -208,7 +225,7 @@ export default function UnitsPage() {
             </p>
           </div>
         </div>
-        <Button onClick={openNewDialog} className="w-full bg-orange-500 hover:bg-orange-600">
+        <Button onClick={openNewDialog} className="max-w-max bg-orange-500 hover:bg-orange-600">
           <Plus className="h-4 w-4 mr-2" />
           Nouvelle unité
         </Button>
@@ -233,7 +250,7 @@ export default function UnitsPage() {
         </div>
       ) : units.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
+          <CardContent className="flex flex-col sm:flex-row gap-3 justify-between items-center justify-center py-12">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
               <Ruler className="h-8 w-8 text-gray-400" />
             </div>
@@ -241,7 +258,7 @@ export default function UnitsPage() {
             <p className="text-sm text-gray-500 text-center mb-4">
               Créez des unités de mesure pour vos produits.
             </p>
-            <Button onClick={openNewDialog} className="bg-orange-500 hover:bg-orange-600">
+            <Button onClick={openNewDialog} className="bg-orange-500 max-w-max hover:bg-orange-600">
               <Plus className="h-4 w-4 mr-2" />
               Créer une unité
             </Button>
@@ -292,6 +309,19 @@ export default function UnitsPage() {
               </div>
             ))}
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
+          )}
         </Card>
       )}
 

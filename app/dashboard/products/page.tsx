@@ -74,6 +74,7 @@ import {
     ProductFilters,
 } from "@/actions/products.actions";
 import { cn } from "@/lib/utils";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 export default function ProductsPage() {
     const { data: session } = useSession();
@@ -100,6 +101,8 @@ export default function ProductsPage() {
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
+    const [hasNext, setHasNext] = useState(false);
+    const [hasPrevious, setHasPrevious] = useState(false);
     const [pageSize] = useState(12);
 
     // View mode - list by default (mobile), grid on large screens
@@ -180,6 +183,8 @@ export default function ProductsPage() {
         if (result.success && result.data) {
             setProducts(result.data.results || []);
             setTotalCount(result.data.count || 0);
+            setHasNext(result.data.next !== null);
+            setHasPrevious(result.data.previous !== null);
         } else {
             setError(result.message || "Erreur lors du chargement des produits");
         }
@@ -512,28 +517,14 @@ export default function ProductsPage() {
 
                     {/* Pagination */}
                     {totalPages > 1 && (
-                        <div className="flex items-center justify-between">
-                            <p className="text-sm text-gray-500">
-                                Page {currentPage} sur {totalPages}
-                            </p>
-                            <div className="flex gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                                    disabled={currentPage === 1}
-                                >
-                                    <ChevronLeft className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                                    disabled={currentPage === totalPages}
-                                >
-                                    <ChevronRight className="h-4 w-4" />
-                                </Button>
-                            </div>
+                        <div className="mt-6">
+                            <DataPagination
+                                currentPage={currentPage}
+                                totalPages={totalPages}
+                                onPageChange={setCurrentPage}
+                                hasNext={hasNext}
+                                hasPrevious={hasPrevious}
+                            />
                         </div>
                     )}
                 </>

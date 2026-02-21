@@ -78,8 +78,10 @@ import {
   InventorySession,
   InventorySessionStatus,
   InventoryScopeType,
+  InventorySessionFilters,
   CreateInventorySessionData,
 } from "@/actions/inventory.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 const statusConfig: Record<InventorySessionStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -105,8 +107,14 @@ export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouseStockCounts, setWarehouseStockCounts] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
   const [productSearch, setProductSearch] = useState("");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Filters
   const [search, setSearch] = useState("");
@@ -193,17 +201,30 @@ export default function InventoryPage() {
       return;
     }
     setIsLoading(true);
-    const result = await getInventorySessions(session.accessToken, organization.id, {
+    const filters: InventorySessionFilters = {
       search: search || undefined,
       status: statusFilter !== "all" ? (statusFilter as InventorySessionStatus) : undefined,
       warehouse: warehouseFilter !== "all" ? warehouseFilter : undefined,
-    });
+      page: currentPage,
+      page_size: pageSize,
+    };
+    const result = await getInventorySessions(session.accessToken, organization.id, filters);
     if (result.success && result.data) {
       setSessions(result.data.results || []);
       setTotalCount(result.data.count || 0);
+      setHasNext(result.data.next !== null);
+      setHasPrevious(result.data.previous !== null);
     }
     setIsLoading(false);
-  }, [session?.accessToken, organization?.id, search, statusFilter, warehouseFilter]);
+  }, [session?.accessToken, organization?.id, search, statusFilter, warehouseFilter, currentPage, pageSize]);
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   useEffect(() => {
     fetchSessions();
@@ -546,6 +567,19 @@ export default function InventoryPage() {
                 </TableBody>
               </Table>
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="p-4 border-t">
+                <DataPagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  hasNext={hasNext}
+                  hasPrevious={hasPrevious}
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

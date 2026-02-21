@@ -317,6 +317,8 @@ interface ApiResponse<T> {
 
 interface PaginatedResponse<T> {
   count: number;
+  next: string | null;
+  previous: string | null;
   results: T[];
 }
 
@@ -498,17 +500,21 @@ export async function deleteExpenseCategory(
 // EXPENSES
 // =============================================================================
 
+export interface ExpenseFilters {
+  status?: string;
+  category?: string;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+  is_recurring?: string;
+  page?: number;
+  page_size?: number;
+}
+
 export async function getExpenses(
   accessToken: string,
   organizationId: string,
-  filters?: {
-    status?: string;
-    category?: string;
-    date_from?: string;
-    date_to?: string;
-    search?: string;
-    is_recurring?: string;
-  }
+  filters?: ExpenseFilters
 ): Promise<ApiResponse<PaginatedResponse<Expense>>> {
   try {
     const params = new URLSearchParams();
@@ -518,6 +524,8 @@ export async function getExpenses(
     if (filters?.date_to) params.append("date_to", filters.date_to);
     if (filters?.search) params.append("search", filters.search);
     if (filters?.is_recurring) params.append("is_recurring", filters.is_recurring);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/expenses/?${params.toString()}`,
@@ -743,17 +751,21 @@ export async function getExpenseStats(
 // CASH MOVEMENTS
 // =============================================================================
 
+export interface CashMovementFilters {
+  direction?: string;
+  movement_type?: string;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+  is_cancelled?: string;
+  page?: number;
+  page_size?: number;
+}
+
 export async function getCashMovements(
   accessToken: string,
   organizationId: string,
-  filters?: {
-    direction?: string;
-    movement_type?: string;
-    date_from?: string;
-    date_to?: string;
-    search?: string;
-    is_cancelled?: string;
-  }
+  filters?: CashMovementFilters
 ): Promise<ApiResponse<PaginatedResponse<CashMovement>>> {
   try {
     const params = new URLSearchParams();
@@ -763,6 +775,8 @@ export async function getCashMovements(
     if (filters?.date_to) params.append("date_to", filters.date_to);
     if (filters?.search) params.append("search", filters.search);
     if (filters?.is_cancelled) params.append("is_cancelled", filters.is_cancelled);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/cash-movements/?${params.toString()}`,

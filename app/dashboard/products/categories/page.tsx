@@ -53,7 +53,9 @@ import {
   updateCategory,
   deleteCategory,
   Category,
+  CategoryFilters,
 } from "@/actions/products.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 import { cn } from "@/lib/utils";
 
 export default function CategoriesPage() {
@@ -63,6 +65,13 @@ export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Dialog states
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -101,15 +110,23 @@ export default function CategoriesPage() {
     }
 
     setIsLoading(true);
-    const result = await getCategories(session.accessToken, organization.id, {
+    const filters: CategoryFilters = {
       search: searchQuery || undefined,
-    });
+      page: currentPage,
+      page_size: pageSize,
+    };
+    const result = await getCategories(session.accessToken, organization.id, filters);
 
     if (result.success && result.data) {
       setCategories(result.data.results || []);
+      setTotalCount(result.data.count || 0);
+      setHasNext(result.data.next !== null);
+      setHasPrevious(result.data.previous !== null);
     }
     setIsLoading(false);
-  }, [session, organization, searchQuery]);
+  }, [session, organization, searchQuery, currentPage, pageSize]);
+
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   useEffect(() => {
     fetchCategories();
@@ -332,6 +349,19 @@ export default function CategoriesPage() {
               </div>
             ))}
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
+          )}
         </Card>
       )}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -37,7 +37,9 @@ import {
   CashMovement,
   CreateCashMovementData,
   IncomeCategory,
+  CashMovementFilters,
 } from "@/actions/cashbook.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 import { usePermissions } from "@/components/auth/permissions-provider";
 import { PermissionGate } from "@/components/auth/permission-gate";
 
@@ -100,8 +102,14 @@ export default function CashbookPage() {
   // Data
   const [balance, setBalance] = useState<CashBalance | null>(null);
   const [movements, setMovements] = useState<CashMovement[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -148,7 +156,7 @@ export default function CashbookPage() {
       fetchData();
       loadIncomeCategories();
     }
-  }, [organization, session, directionFilter, typeFilter, dateFrom, dateTo]);
+  }, [organization, session, directionFilter, typeFilter, dateFrom, dateTo, currentPage]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -163,22 +171,28 @@ export default function CashbookPage() {
     if (!session?.accessToken || !organization) return;
     setIsLoading(true);
     try {
+      const filters: CashMovementFilters = {
+        direction: directionFilter !== "all" ? directionFilter : undefined,
+        movement_type: typeFilter !== "all" ? typeFilter : undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        search: searchQuery || undefined,
+        is_cancelled: "false",
+        page: currentPage,
+        page_size: pageSize,
+      };
+
       const [balanceRes, movementsRes] = await Promise.all([
         getCashBalance(session.accessToken, organization.id),
-        getCashMovements(session.accessToken, organization.id, {
-          direction: directionFilter !== "all" ? directionFilter : undefined,
-          movement_type: typeFilter !== "all" ? typeFilter : undefined,
-          date_from: dateFrom || undefined,
-          date_to: dateTo || undefined,
-          search: searchQuery || undefined,
-          is_cancelled: "false",
-        }),
+        getCashMovements(session.accessToken, organization.id, filters),
       ]);
 
       if (balanceRes.success && balanceRes.data) setBalance(balanceRes.data);
       if (movementsRes.success && movementsRes.data) {
         setMovements(movementsRes.data.results);
         setTotalCount(movementsRes.data.count);
+        setHasNext(movementsRes.data.next !== null);
+        setHasPrevious(movementsRes.data.previous !== null);
       }
     } catch {
       toast.error("Erreur lors du chargement des données");
@@ -190,22 +204,36 @@ export default function CashbookPage() {
   async function fetchMovements() {
     if (!session?.accessToken || !organization) return;
     try {
-      const res = await getCashMovements(session.accessToken, organization.id, {
+      const filters: CashMovementFilters = {
         direction: directionFilter !== "all" ? directionFilter : undefined,
         movement_type: typeFilter !== "all" ? typeFilter : undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         search: searchQuery || undefined,
         is_cancelled: "false",
-      });
+        page: currentPage,
+        page_size: pageSize,
+      };
+
+      const res = await getCashMovements(session.accessToken, organization.id, filters);
       if (res.success && res.data) {
         setMovements(res.data.results);
         setTotalCount(res.data.count);
+        setHasNext(res.data.next !== null);
+        setHasPrevious(res.data.previous !== null);
       }
     } catch {
       // silent
     }
   }
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   async function loadIncomeCategories() {
     if (!session?.accessToken || !organization) return;
@@ -595,6 +623,19 @@ export default function CashbookPage() {
               )}
             </TableBody>
           </Table>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 

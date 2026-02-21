@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -76,6 +76,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700" },
@@ -95,7 +96,13 @@ export default function ExpensesPage() {
   // Data
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -168,6 +175,8 @@ export default function ExpensesPage() {
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
           search: searchQuery || undefined,
+          page: currentPage,
+          page_size: pageSize,
         }),
         getExpenseCategories(session.accessToken, organization.id),
       ]);
@@ -175,6 +184,8 @@ export default function ExpensesPage() {
       if (expensesRes.success && expensesRes.data) {
         setExpenses(expensesRes.data.results);
         setTotalCount(expensesRes.data.count);
+        setHasNext(expensesRes.data.next !== null);
+        setHasPrevious(expensesRes.data.previous !== null);
       }
       if (categoriesRes.success && categoriesRes.data) {
         setCategories(categoriesRes.data.results);
@@ -195,15 +206,27 @@ export default function ExpensesPage() {
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         search: searchQuery || undefined,
+        page: currentPage,
+        page_size: pageSize,
       });
       if (res.success && res.data) {
         setExpenses(res.data.results);
         setTotalCount(res.data.count);
+        setHasNext(res.data.next !== null);
+        setHasPrevious(res.data.previous !== null);
       }
     } catch {
       // silent
     }
   }
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   async function handleCreateExpense() {
     if (!session?.accessToken || !organization) return;
@@ -583,6 +606,19 @@ export default function ExpensesPage() {
               )}
             </TableBody>
           </Table>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 

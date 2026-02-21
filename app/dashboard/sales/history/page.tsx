@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -33,7 +33,9 @@ import {
   getSales,
   Sale,
   SaleStatus,
+  SaleFilters,
 } from "@/actions/sales.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 const STATUS_CONFIG: Record<SaleStatus, { label: string; color: string }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700" },
@@ -57,65 +59,66 @@ export default function SalesHistoryPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  // Fetch data
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!session?.accessToken) return;
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
+  // Fetch organization on mount
+  useEffect(() => {
+    const fetchOrg = async () => {
+      if (!session?.accessToken) return;
       try {
         const orgResult = await getUserOrganizations(session.accessToken);
         if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
-
-          const salesResult = await getSales(session.accessToken, org.id);
-          if (salesResult.success && salesResult.data) {
-            setSales(salesResult.data);
-          }
+          setOrganization(orgResult.data[0]);
         }
       } catch (error) {
-        console.error("Error fetching sales:", error);
-        toast.error("Erreur lors du chargement des ventes");
-      } finally {
-        setIsLoading(false);
+        toast.error("Erreur lors du chargement");
       }
     };
-
-    fetchData();
+    fetchOrg();
   }, [session]);
 
-  // Apply filters
-  const applyFilters = async () => {
-    if (!session?.accessToken || !organization?.id) return;
-
+  // Fetch sales with pagination
+  const fetchSales = useCallback(async () => {
+    if (!session?.accessToken || !organization) return;
     setIsLoading(true);
     try {
-      const salesResult = await getSales(session.accessToken, organization.id, {
-        status: selectedStatus !== "all" ? (selectedStatus as SaleStatus) : undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        search: searchQuery || undefined,
-      });
+      const filters: SaleFilters = { page: currentPage, page_size: pageSize };
+      if (selectedStatus !== "all") filters.status = selectedStatus as SaleStatus;
+      if (dateFrom) filters.date_from = dateFrom;
+      if (dateTo) filters.date_to = dateTo;
+      if (searchQuery) filters.search = searchQuery;
 
-      if (salesResult.success && salesResult.data) {
-        setSales(salesResult.data);
+      const result = await getSales(session.accessToken, organization.id, filters);
+      if (result.success && result.data) {
+        setSales(result.data.results || []);
+        setTotalCount(result.data.count || 0);
+        setHasNext(result.data.next !== null);
+        setHasPrevious(result.data.previous !== null);
       }
     } catch (error) {
-      toast.error("Erreur lors du filtrage");
+      toast.error("Erreur lors du chargement des ventes");
     } finally {
       setIsLoading(false);
     }
+  }, [session, organization, currentPage, pageSize, selectedStatus, dateFrom, dateTo, searchQuery]);
+
+  useEffect(() => {
+    if (organization) {
+      fetchSales();
+    }
+  }, [organization, fetchSales]);
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = () => {
+    setCurrentPage(1);
   };
 
-
-  // Filter sales locally
-  const filteredSales = (Array.isArray(sales) ? sales : []).filter(sale => {
-    const matchesSearch =
-      sale.reference.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (sale.customer_name && sale.customer_name.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesStatus = selectedStatus === "all" || sale.status === selectedStatus;
-    return matchesSearch && matchesStatus;
-  });
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   if (isLoading) {
     return (
@@ -137,7 +140,7 @@ export default function SalesHistoryPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Historique des ventes</h1>
-            <p className="text-sm text-gray-500 mt-1">{filteredSales.length} ventes</p>
+            <p className="text-sm text-gray-500 mt-1">{totalCount} ventes</p>
           </div>
         </div>
       </div>
@@ -150,12 +153,12 @@ export default function SalesHistoryPage() {
             <Input
               placeholder="Rechercher par référence ou client..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => { setSearchQuery(e.target.value); handleFilterChange(); }}
               className="pl-9"
             />
           </div>
 
-          <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+          <Select value={selectedStatus} onValueChange={(v) => { setSelectedStatus(v); handleFilterChange(); }}>
             <SelectTrigger className="w-full">
               <Filter className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Statut" />
@@ -175,7 +178,7 @@ export default function SalesHistoryPage() {
             <Input
               type="date"
               value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
+              onChange={e => { setDateFrom(e.target.value); handleFilterChange(); }}
               className="pl-9"
               placeholder="Date début"
             />
@@ -186,20 +189,16 @@ export default function SalesHistoryPage() {
             <Input
               type="date"
               value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
+              onChange={e => { setDateTo(e.target.value); handleFilterChange(); }}
               className="pl-9"
               placeholder="Date fin"
             />
           </div>
-          <Button onClick={applyFilters} disabled={isLoading}>
-            {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Appliquer les filtres
-          </Button>
         </div>
       </div>
 
       {/* Sales List */}
-      {filteredSales.length === 0 ? (
+      {sales.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center">
             <Receipt className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -239,8 +238,8 @@ export default function SalesHistoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredSales.map(sale => {
-                  const statusConfig = STATUS_CONFIG[sale.status];
+                {sales.map((sale: Sale) => {
+                  const statusConfig = STATUS_CONFIG[sale.status as SaleStatus];
                   return (
                     <tr key={sale.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
@@ -286,6 +285,19 @@ export default function SalesHistoryPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
+          )}
         </Card>
       )}
     </div>

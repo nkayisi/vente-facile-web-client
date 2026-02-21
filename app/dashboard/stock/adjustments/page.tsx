@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,6 +66,7 @@ import {
   AdjustmentStatus,
   CreateStockAdjustmentData,
 } from "@/actions/stock.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 const STATUS_CONFIG: Record<AdjustmentStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -96,7 +97,13 @@ export default function AdjustmentsPage() {
   const [warehouseStocks, setWarehouseStocks] = useState<Stock[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -156,12 +163,12 @@ export default function AdjustmentsPage() {
   }, [session]);
 
   // Fetch adjustments with filters
-  const fetchAdjustments = async (orgId?: string) => {
+  const fetchAdjustments = useCallback(async (orgId?: string) => {
     if (!session?.accessToken) return;
     const id = orgId || organization?.id;
     if (!id) return;
 
-    const filters: any = { page_size: 50 };
+    const filters: any = { page: currentPage, page_size: pageSize };
     if (selectedStatus !== "all") filters.status = selectedStatus;
     if (searchQuery) filters.search = searchQuery;
 
@@ -169,15 +176,25 @@ export default function AdjustmentsPage() {
     if (result.success && result.data) {
       setAdjustments(result.data.results);
       setTotalCount(result.data.count);
+      setHasNext(result.data.next !== null);
+      setHasPrevious(result.data.previous !== null);
     }
+  }, [session?.accessToken, organization?.id, currentPage, pageSize, selectedStatus, searchQuery]);
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setCurrentPage(1);
   };
 
-  // Refetch when filters change
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  // Refetch when filters or page change
   useEffect(() => {
     if (organization) {
       fetchAdjustments();
     }
-  }, [selectedStatus, searchQuery]);
+  }, [organization, fetchAdjustments]);
 
   // Fetch warehouse stocks when warehouse changes
   useEffect(() => {
@@ -481,6 +498,19 @@ export default function AdjustmentsPage() {
               </Card>
             );
           })}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-6">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
+          )}
         </div>
       )}
 

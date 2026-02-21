@@ -70,6 +70,13 @@ const menuItems = [
     permission: "cashbook.view",
   },
   {
+    label: "Rapports & statistiques",
+    icon: BarChart3,
+    href: "/dashboard/reports",
+    badge: null,
+    permission: "reports.view",
+  },
+  {
     label: "Clients & fournisseurs",
     icon: Users,
     href: "/dashboard/contacts",
@@ -82,27 +89,6 @@ const menuItems = [
     href: "/dashboard/users",
     badge: null,
     permission: "users.view",
-  },
-    {
-    label: "Rapports",
-    icon: BarChart3,
-    href: "/dashboard/reports",
-    badge: null,
-    permission: "reports.view",
-  },
-  {
-    label: "Abonnements",
-    icon: FileText,
-    href: "/dashboard/subscriptions",
-    badge: null,
-    permission: null,
-  },
-  {
-    label: "Notifications",
-    icon: Bell,
-    href: "/dashboard/notifications",
-    badge: null,
-    permission: null,
   },
 ];
 

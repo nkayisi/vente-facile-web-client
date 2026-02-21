@@ -170,25 +170,43 @@ function getHeaders(accessToken: string, organizationId: string) {
 // CUSTOMER ACTIONS
 // =============================================================================
 
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+export interface CustomerFilters {
+  is_active?: boolean;
+  customer_type?: string;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
 export async function getCustomers(
   accessToken: string,
   organizationId: string,
-  filters?: { is_active?: boolean; customer_type?: string; search?: string }
-): Promise<ApiResponse<Customer[]>> {
+  filters?: CustomerFilters
+): Promise<ApiResponse<PaginatedResponse<Customer>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append("is_active", String(filters.is_active));
     if (filters?.customer_type) params.append("customer_type", filters.customer_type);
     if (filters?.search) params.append("search", filters.search);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/customers/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 
-    const data = Array.isArray(response.data)
-      ? response.data
-      : response.data.results || [];
+    // Handle both paginated and non-paginated responses
+    const data: PaginatedResponse<Customer> = Array.isArray(response.data)
+      ? { count: response.data.length, next: null, previous: null, results: response.data }
+      : response.data;
 
     return { success: true, data };
   } catch (error: any) {
@@ -403,24 +421,33 @@ export async function getDebtSummary(
 // SUPPLIER ACTIONS
 // =============================================================================
 
+export interface SupplierFilters {
+  is_active?: boolean;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
 export async function getSuppliers(
   accessToken: string,
   organizationId: string,
-  filters?: { is_active?: boolean; search?: string }
-): Promise<ApiResponse<Supplier[]>> {
+  filters?: SupplierFilters
+): Promise<ApiResponse<PaginatedResponse<Supplier>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append("is_active", String(filters.is_active));
     if (filters?.search) params.append("search", filters.search);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/suppliers/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 
-    const data = Array.isArray(response.data)
-      ? response.data
-      : response.data.results || [];
+    const data: PaginatedResponse<Supplier> = Array.isArray(response.data)
+      ? { count: response.data.length, next: null, previous: null, results: response.data }
+      : response.data;
 
     return { success: true, data };
   } catch (error: any) {

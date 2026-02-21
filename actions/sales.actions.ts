@@ -140,6 +140,7 @@ export interface Sale {
   sale_date: string;
   due_date: string | null;
   is_pos: boolean;
+  receipt_printed: boolean;
   items_count: number;
   items?: SaleItem[];
   payments?: Payment[];
@@ -346,6 +347,15 @@ export interface SaleFilters {
   date_from?: string;
   date_to?: string;
   search?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
 }
 
 export interface ApiResponse<T> {
@@ -698,7 +708,7 @@ export async function getSales(
   accessToken: string,
   organizationId: string,
   filters?: SaleFilters
-): Promise<ApiResponse<Sale[]>> {
+): Promise<ApiResponse<PaginatedResponse<Sale>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);
@@ -709,15 +719,17 @@ export async function getSales(
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);
     if (filters?.search) params.append("search", filters.search);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/sales/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 
-    const data = Array.isArray(response.data)
-      ? response.data
-      : response.data.results || [];
+    const data: PaginatedResponse<Sale> = Array.isArray(response.data)
+      ? { count: response.data.length, next: null, previous: null, results: response.data }
+      : response.data;
 
     return { success: true, data };
   } catch (error: any) {
@@ -847,6 +859,28 @@ export async function cancelSale(
     return {
       success: false,
       message: error.response?.data?.error || "Erreur lors de l'annulation de la vente",
+    };
+  }
+}
+
+export async function markReceiptPrinted(
+  accessToken: string,
+  organizationId: string,
+  saleId: string
+): Promise<ApiResponse<Sale>> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/sales/${saleId}/mark_receipt_printed/`,
+      {},
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    console.error("[Sales] Mark receipt printed error:", error.response?.data || error.message);
+    return {
+      success: false,
+      message: error.response?.data?.error || "Erreur lors de la mise à jour du reçu",
     };
   }
 }

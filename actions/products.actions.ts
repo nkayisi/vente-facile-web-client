@@ -428,10 +428,18 @@ export async function bulkDeleteProducts(
 // CATEGORIES ACTIONS
 // =============================================================================
 
+export interface CategoryFilters {
+  search?: string;
+  is_active?: boolean;
+  parent?: string | null;
+  page?: number;
+  page_size?: number;
+}
+
 export async function getCategories(
   accessToken: string,
   organizationId: string,
-  filters?: { search?: string; is_active?: boolean; parent?: string | null }
+  filters?: CategoryFilters
 ): Promise<ApiResponse<PaginatedResponse<Category>>> {
   try {
     const params = new URLSearchParams();
@@ -444,6 +452,8 @@ export async function getCategories(
         params.append("parent", filters.parent);
       }
     }
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(`${API_BASE_URL}/categories/?${params.toString()}`, {
       headers: getHeaders(accessToken, organizationId),
@@ -565,15 +575,24 @@ export async function deleteCategory(
 // BRANDS ACTIONS
 // =============================================================================
 
+export interface BrandFilters {
+  search?: string;
+  is_active?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
 export async function getBrands(
   accessToken: string,
   organizationId: string,
-  filters?: { search?: string; is_active?: boolean }
+  filters?: BrandFilters
 ): Promise<ApiResponse<PaginatedResponse<Brand>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.search) params.append("search", filters.search);
     if (filters?.is_active !== undefined) params.append("is_active", String(filters.is_active));
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(`${API_BASE_URL}/brands/?${params.toString()}`, {
       headers: getHeaders(accessToken, organizationId),
@@ -673,14 +692,22 @@ export async function deleteBrand(
 // UNITS ACTIONS
 // =============================================================================
 
+export interface UnitFilters {
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
 export async function getUnits(
   accessToken: string,
   organizationId: string,
-  filters?: { search?: string }
+  filters?: UnitFilters
 ): Promise<ApiResponse<PaginatedResponse<Unit>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.search) params.append("search", filters.search);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(`${API_BASE_URL}/units/?${params.toString()}`, {
       headers: getHeaders(accessToken, organizationId),

@@ -43,9 +43,19 @@ interface MembersListResponse {
   success: boolean;
   data?: {
     count: number;
+    next: string | null;
+    previous: string | null;
     results: OrganizationMember[];
   };
   error?: string;
+}
+
+export interface MemberFilters {
+  role?: string;
+  is_active?: string;
+  search?: string;
+  page?: number;
+  page_size?: number;
 }
 
 interface MemberResponse {
@@ -68,13 +78,15 @@ function getHeaders(accessToken: string, organizationId: string) {
 export async function getMembers(
   accessToken: string,
   organizationId: string,
-  filters?: { role?: string; is_active?: string; search?: string }
+  filters?: MemberFilters
 ): Promise<MembersListResponse> {
   try {
     const params = new URLSearchParams();
     if (filters?.role) params.append("role", filters.role);
     if (filters?.is_active) params.append("is_active", filters.is_active);
     if (filters?.search) params.append("search", filters.search);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const url = `${API_BASE_URL}/memberships/?${params.toString()}`;
     const response = await axios.get(url, {

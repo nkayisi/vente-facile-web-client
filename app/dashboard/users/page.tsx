@@ -71,7 +71,9 @@ import {
   removeMember,
   type OrganizationMember,
   type CreateUserData,
+  type MemberFilters,
 } from "@/actions/users.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 const ROLE_COLORS: Record<string, string> = {
   owner: "bg-purple-100 text-purple-800",
@@ -90,6 +92,13 @@ export default function UsersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 20;
 
   // Create dialog
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -128,18 +137,29 @@ export default function UsersPage() {
     if (!session?.accessToken || !organizationId) return;
 
     setIsLoading(true);
-    const filters: { role?: string; search?: string } = {};
+    const filters: MemberFilters = { page: currentPage, page_size: pageSize };
     if (roleFilter !== "all") filters.role = roleFilter;
     if (searchQuery) filters.search = searchQuery;
 
     const result = await getMembers(session.accessToken, organizationId, filters);
     if (result.success && result.data) {
       setMembers(result.data.results || []);
+      setTotalCount(result.data.count || 0);
+      setHasNext(result.data.next !== null);
+      setHasPrevious(result.data.previous !== null);
     } else {
       toast.error(result.error || "Erreur lors du chargement");
     }
     setIsLoading(false);
-  }, [session, organizationId, roleFilter, searchQuery]);
+  }, [session, organizationId, roleFilter, searchQuery, currentPage, pageSize]);
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   useEffect(() => {
     fetchMembers();
@@ -467,6 +487,19 @@ export default function UsersPage() {
                 ))}
               </TableBody>
             </Table>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={hasNext}
+                hasPrevious={hasPrevious}
+              />
+            </div>
           )}
         </CardContent>
       </Card>

@@ -77,7 +77,7 @@ export default function SalesPage() {
           ]);
 
           if (salesResult.success && salesResult.data) {
-            setTodaySales(salesResult.data);
+            setTodaySales(salesResult.data.results || []);
           }
           if (statsResult.success && statsResult.data) {
             setStats(statsResult.data);
