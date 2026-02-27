@@ -72,6 +72,8 @@ import {
   PaymentMethod,
 } from "@/actions/sales.actions";
 import { printPaymentReceipt, PaymentReceiptData } from "@/lib/receipt-printer";
+import { getCustomerLoyalty, CustomerLoyalty, LoyaltyProgram, getLoyaltyProgram } from "@/actions/settings.actions";
+import { Star } from "lucide-react";
 
 export default function CustomerDetailPage() {
   const { data: session } = useSession();
@@ -96,6 +98,10 @@ export default function CustomerDetailPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [creditLimitValue, setCreditLimitValue] = useState("");
 
+  // Loyalty points
+  const [customerLoyalty, setCustomerLoyalty] = useState<CustomerLoyalty | null>(null);
+  const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
+
   // Invoice payment dialog
   const [showInvoicePaymentDialog, setShowInvoicePaymentDialog] = useState(false);
   const [pendingSales, setPendingSales] = useState<Sale[]>([]);
@@ -118,6 +124,32 @@ export default function CustomerDetailPage() {
           const result = await getCustomer(session.accessToken, org.id, customerId);
           if (result.success && result.data) {
             setCustomer(result.data);
+
+            // Charger les points de fidélité du client
+            const [loyaltyResult, programResult] = await Promise.all([
+              getCustomerLoyalty(session.accessToken, org.id, customerId),
+              getLoyaltyProgram(session.accessToken, org.id),
+            ]);
+
+            console.log('[Customer Detail] Loyalty result:', loyaltyResult);
+            console.log('[Customer Detail] Program result:', programResult);
+
+            if (loyaltyResult.success && loyaltyResult.data) {
+              setCustomerLoyalty(loyaltyResult.data);
+            } else {
+              console.log('[Customer Detail] No loyalty data for customer');
+            }
+
+            if (programResult.success) {
+              if (programResult.data) {
+                console.log('[Customer Detail] Setting loyalty program:', programResult.data);
+                setLoyaltyProgram(programResult.data);
+              } else {
+                console.log('[Customer Detail] Program result is null');
+              }
+            } else {
+              console.error('[Customer Detail] Failed to load loyalty program:', programResult.message);
+            }
           } else {
             toast.error("Client non trouvé");
             router.push("/dashboard/contacts/customers");
@@ -131,7 +163,12 @@ export default function CustomerDetailPage() {
     };
 
     fetchData();
-  }, [session, customerId]);
+  }, [session?.accessToken, customerId]);
+
+  // Debug loyalty program state
+  useEffect(() => {
+    console.log('[Customer Detail] loyaltyProgram state changed:', loyaltyProgram);
+  }, [loyaltyProgram]);
 
   // Refresh all data (customer + transactions)
   const refreshData = useCallback(async () => {
@@ -510,6 +547,39 @@ export default function CustomerDetailPage() {
         </Card>
       </div>
 
+      {/* Loyalty Points Card - Always show for debugging, with conditional styling */}
+      <Card className={`border-2 ${loyaltyProgram?.is_active ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-400' : 'bg-gray-100 border-gray-300'}`}>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className={`p-3 rounded-xl ${loyaltyProgram?.is_active ? 'bg-amber-100' : 'bg-gray-200'}`}>
+                <Star className={`h-6 w-6 ${loyaltyProgram?.is_active ? 'text-amber-600 fill-amber-600' : 'text-gray-400'}`} />
+              </div>
+              <div>
+                <p className={`text-sm font-medium ${loyaltyProgram?.is_active ? 'text-amber-700' : 'text-gray-500'}`}>
+                  Points de fidélité {!loyaltyProgram?.is_active && '(Programme inactif)'}
+                </p>
+                <p className={`text-4xl font-bold ${loyaltyProgram?.is_active ? 'text-amber-800' : 'text-gray-400'}`}>
+                  {customerLoyalty?.current_points || 0} <span className="text-xl font-normal">pts</span>
+                </p>
+              </div>
+            </div>
+            <div className="text-right space-y-1">
+              <p className={`text-sm ${loyaltyProgram?.is_active ? 'text-amber-700' : 'text-gray-500'}`}>
+                Total gagné: <span className="font-semibold">{customerLoyalty?.total_points_earned || 0} pts</span>
+              </p>
+              <p className={`text-sm ${loyaltyProgram?.is_active ? 'text-amber-700' : 'text-gray-500'}`}>
+                Total utilisé: <span className="font-semibold">{customerLoyalty?.total_points_redeemed || 0} pts</span>
+              </p>
+              {loyaltyProgram?.is_active && loyaltyProgram.min_points_to_redeem > 0 && (
+                <p className="text-xs text-amber-600 mt-2">
+                  Min. pour utiliser: {loyaltyProgram.min_points_to_redeem} pts
+                </p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Main Content */}
       <div className="grid gap-6 lg:grid-cols-3">

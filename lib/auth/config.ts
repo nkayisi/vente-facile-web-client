@@ -17,6 +17,8 @@ const REFRESH_BUFFER = 2 * 60 * 1000; // 2 minutes
 async function refreshAccessToken(token: JWT): Promise<JWT> {
   try {
     console.log("[Auth] Tentative de rafraîchissement du token...");
+    console.log("[Auth] Refresh token (premiers 20 chars):", token.refreshToken?.substring(0, 20));
+    console.log("[Auth] Refresh token expires:", token.refreshTokenExpires ? new Date(token.refreshTokenExpires).toISOString() : "N/A");
 
     const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
       method: "POST",
@@ -31,6 +33,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       console.error("[Auth] Échec du rafraîchissement:", response.status, errorData);
+      console.error("[Auth] Refresh token utilisé (premiers 20 chars):", token.refreshToken?.substring(0, 20));
 
       // Le refresh token est invalide ou expiré
       return {

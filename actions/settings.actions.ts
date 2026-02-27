@@ -114,10 +114,6 @@ export interface OrganizationSettings {
   id: string;
   receipt_header: string;
   receipt_footer: string;
-  allow_negative_stock_sales: boolean;
-  default_tax_rate: string;
-  show_secondary_currency_on_receipt: boolean;
-  auto_update_exchange_rates: boolean;
   show_loyalty_points_on_receipt: boolean;
   low_stock_threshold: number;
   created_at: string;
@@ -296,9 +292,17 @@ export async function getLoyaltyProgram(
       `${API_BASE_URL}/settings/loyalty-program/`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    console.log("[Settings] Loyalty program response:", response.data);
     return { success: true, data: response.data };
   } catch (error: any) {
-    console.error("[Settings] Get loyalty program error:", error.response?.data || error.message);
+    console.error("[Settings] Get loyalty program error:", {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      message: error.message,
+      url: `${API_BASE_URL}/settings/loyalty-program/`,
+      organizationId
+    });
     return { success: false, message: "Erreur lors de la récupération du programme de fidélité" };
   }
 }

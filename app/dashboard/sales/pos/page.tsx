@@ -3,7 +3,7 @@
 import { Customer, getCustomers, createCustomer, CreateCustomerData } from "@/actions/contacts.actions";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProducts, Product } from "@/actions/products.actions";
-import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
+import { getOrganizationCurrencies, OrganizationCurrency, getCustomerLoyalty, CustomerLoyalty, getLoyaltyProgram, LoyaltyProgram, getOrganizationSettings, OrganizationSettings } from "@/actions/settings.actions";
 import {
   CloseSessionData,
   closeSession,
@@ -53,6 +53,8 @@ import {
   Receipt,
   HandCoins,
   CircleDollarSign,
+  Star,
+  Gift,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -121,6 +123,13 @@ export default function POSPage() {
   const [closingNotes, setClosingNotes] = useState("");
   const [isClosingSession, setIsClosingSession] = useState(false);
 
+  // Loyalty points
+  const [customerLoyalty, setCustomerLoyalty] = useState<CustomerLoyalty | null>(null);
+  const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
+  const [orgSettings, setOrgSettings] = useState<OrganizationSettings | null>(null);
+  const [usePoints, setUsePoints] = useState(false);
+  const [pointsToUse, setPointsToUse] = useState(0);
+
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
@@ -173,6 +182,18 @@ export default function POSPage() {
               setPaymentCurrency(primary.currency_code);
             }
           }
+
+          // Fetch loyalty program and org settings
+          const [loyaltyResult, settingsResult] = await Promise.all([
+            getLoyaltyProgram(session.accessToken, org.id),
+            getOrganizationSettings(session.accessToken, org.id),
+          ]);
+          if (loyaltyResult.success && loyaltyResult.data) {
+            setLoyaltyProgram(loyaltyResult.data);
+          }
+          if (settingsResult.success && settingsResult.data) {
+            setOrgSettings(settingsResult.data);
+          }
         }
       } catch (error) {
         console.error("Error fetching POS data:", error);
@@ -191,6 +212,30 @@ export default function POSPage() {
       searchInputRef.current.focus();
     }
   }, [isLoading]);
+
+  // Load customer loyalty points when customer is selected
+  useEffect(() => {
+    const loadCustomerLoyalty = async () => {
+      if (!session?.accessToken || !organization || !selectedCustomer) {
+        setCustomerLoyalty(null);
+        setUsePoints(false);
+        setPointsToUse(0);
+        return;
+      }
+      try {
+        const result = await getCustomerLoyalty(session.accessToken, organization.id, selectedCustomer.id);
+        if (result.success && result.data) {
+          setCustomerLoyalty(result.data);
+        } else {
+          setCustomerLoyalty(null);
+        }
+      } catch (error) {
+        console.error("Error loading customer loyalty:", error);
+        setCustomerLoyalty(null);
+      }
+    };
+    loadCustomerLoyalty();
+  }, [session?.accessToken, organization, selectedCustomer]);
 
   // Get available stock for a product (considering what's already in cart)
   const getAvailableStock = (product: Product) => {
@@ -429,6 +474,11 @@ export default function POSPage() {
 
       const saleType = isCreditSale ? "credit" : "retail";
 
+      // Calculer la réduction des points
+      const pointsDiscount = usePoints && pointsToUse > 0 && loyaltyProgram
+        ? pointsToUse * (loyaltyProgram.point_value ? parseFloat(loyaltyProgram.point_value) : 1)
+        : 0;
+
       const result = await createSale(session.accessToken, organization.id, {
         register: currentSession.register,
         warehouse: currentSession.warehouse || undefined,
@@ -438,6 +488,8 @@ export default function POSPage() {
         is_pos: true,
         items,
         payments,
+        // Points de fidélité utilisés
+        points_used: usePoints ? pointsToUse : undefined,
       });
 
       if (result.success && result.data) {
@@ -488,15 +540,19 @@ export default function POSPage() {
           })),
           subtotal: calculateSubtotal(),
           taxAmount: calculateTax(),
-          discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount()),
+          discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount() + pointsDiscount),
           globalDiscountPercent: globalDiscount,
-          total,
+          total: total - pointsDiscount,
           payments: receiptPayments,
           amountPaid: amountInPrimary,
-          change: !isCreditSale ? Math.max(0, amountInPrimary - total) : 0,
+          change: !isCreditSale ? Math.max(0, amountInPrimary - (total - pointsDiscount)) : 0,
           currency: primaryCode,
           isCreditSale: creditAmount > 0,
           amountDue: creditAmount > 0 ? creditAmount : 0,
+          // Loyalty points on receipt
+          showLoyaltyPoints: !!(orgSettings?.show_loyalty_points_on_receipt && selectedCustomer && loyaltyProgram?.is_active),
+          loyaltyPointsEarned: loyaltyProgram?.is_active ? Math.floor((total - pointsDiscount) * (loyaltyProgram.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1) / 100) : 0,
+          loyaltyPointsBalance: customerLoyalty ? (customerLoyalty.current_points - (usePoints ? pointsToUse : 0) + Math.floor((total - pointsDiscount) * (loyaltyProgram?.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1) / 100)) : 0,
         };
 
         printReceipt(receiptData);
@@ -514,6 +570,9 @@ export default function POSPage() {
         setPaymentReference("");
         setIsCreditSale(false);
         setShowPaymentDialog(false);
+        setUsePoints(false);
+        setPointsToUse(0);
+        setCustomerLoyalty(null);
 
         // Refresh products to get updated stock
         if (organization) {
@@ -1089,6 +1148,104 @@ export default function POSPage() {
           </DialogHeader>
 
           <div className="space-y-5">
+            {/* Customer Selection/Display */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Client</Label>
+              {selectedCustomer ? (
+                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-blue-600" />
+                    <div>
+                      <p className="font-medium text-blue-900">{selectedCustomer.name}</p>
+                      {selectedCustomer.phone && (
+                        <p className="text-xs text-blue-600">{selectedCustomer.phone}</p>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowCustomerDialog(true)}
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-100"
+                  >
+                    Changer
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start border-dashed border-2 h-12"
+                  onClick={() => setShowCustomerDialog(true)}
+                >
+                  <User className="h-4 w-4 mr-2" />
+                  Sélectionner un client (optionnel)
+                </Button>
+              )}
+            </div>
+
+            {/* Loyalty Points Usage */}
+            {selectedCustomer && loyaltyProgram?.is_active && customerLoyalty && customerLoyalty.current_points >= (loyaltyProgram.min_points_to_redeem || 100) && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Points de fidélité</Label>
+                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Star className="h-4 w-4 text-amber-600" />
+                      <span className="font-medium text-amber-800">
+                        {customerLoyalty.current_points} pts disponibles
+                      </span>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={usePoints}
+                        onChange={(e) => {
+                          setUsePoints(e.target.checked);
+                          if (e.target.checked) {
+                            // Par défaut, utiliser tous les points disponibles (max = total de la facture en points)
+                            const maxPointsValue = calculateTotal() / (loyaltyProgram.point_value ? parseFloat(loyaltyProgram.point_value) : 1);
+                            const pointsToApply = Math.min(customerLoyalty.current_points, Math.floor(maxPointsValue));
+                            setPointsToUse(pointsToApply);
+                          } else {
+                            setPointsToUse(0);
+                          }
+                        }}
+                        className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500"
+                      />
+                      <span className="text-sm text-amber-700">Utiliser mes points</span>
+                    </label>
+                  </div>
+                  {usePoints && (
+                    <div className="space-y-2 pt-2 border-t border-amber-200">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={pointsToUse}
+                          onChange={(e) => {
+                            const value = Math.min(
+                              Math.max(0, parseInt(e.target.value) || 0),
+                              customerLoyalty.current_points
+                            );
+                            setPointsToUse(value);
+                          }}
+                          min={loyaltyProgram.min_points_to_redeem || 100}
+                          max={customerLoyalty.current_points}
+                          className="w-24 h-8 text-center"
+                        />
+                        <span className="text-sm text-amber-700">points</span>
+                        <span className="text-sm text-amber-600 ml-auto">
+                          = {formatPrice(pointsToUse * (loyaltyProgram.point_value ? parseFloat(loyaltyProgram.point_value) : 1))} de réduction
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-500">
+                        Min: {loyaltyProgram.min_points_to_redeem || 100} pts | 1 pt = {formatPrice(loyaltyProgram.point_value ? parseFloat(loyaltyProgram.point_value) : 1)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* 1. Payment Methods Selection */}
             <div className="space-y-2">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mode de paiement</Label>

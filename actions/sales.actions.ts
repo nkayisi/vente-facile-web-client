@@ -296,6 +296,7 @@ export interface CreateSaleData {
   is_pos?: boolean;
   items: CreateSaleItemData[];
   payments?: CreatePaymentData[];
+  points_used?: number;
 }
 
 export interface AddPaymentData {

@@ -131,10 +131,6 @@ export default function SettingsPage() {
   const [settingsForm, setSettingsForm] = useState({
     receipt_header: "",
     receipt_footer: "",
-    allow_negative_stock_sales: false,
-    default_tax_rate: "0",
-    show_secondary_currency_on_receipt: false,
-    auto_update_exchange_rates: false,
     show_loyalty_points_on_receipt: true,
     low_stock_threshold: 10,
   });
@@ -170,10 +166,6 @@ export default function SettingsPage() {
         setSettingsForm({
           receipt_header: settingsRes.data.receipt_header || "",
           receipt_footer: settingsRes.data.receipt_footer || "",
-          allow_negative_stock_sales: settingsRes.data.allow_negative_stock_sales,
-          default_tax_rate: settingsRes.data.default_tax_rate || "0",
-          show_secondary_currency_on_receipt: settingsRes.data.show_secondary_currency_on_receipt,
-          auto_update_exchange_rates: settingsRes.data.auto_update_exchange_rates,
           show_loyalty_points_on_receipt: settingsRes.data.show_loyalty_points_on_receipt,
           low_stock_threshold: settingsRes.data.low_stock_threshold,
         });
@@ -779,71 +771,34 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Sales Settings */}
+              {/* Notifications Settings */}
               <div className="space-y-4">
-                <h3 className="font-medium text-orange-600">Ventes</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Autoriser les ventes avec stock négatif</Label>
-                      <p className="text-sm text-gray-500">
-                        Permet de vendre même si le stock est insuffisant
-                      </p>
-                    </div>
-                    <Switch
-                      checked={settingsForm.allow_negative_stock_sales}
-                      onCheckedChange={(checked) =>
-                        setSettingsForm({ ...settingsForm, allow_negative_stock_sales: checked })
-                      }
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Taux de TVA par défaut (%)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={settingsForm.default_tax_rate}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, default_tax_rate: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Seuil d&apos;alerte stock bas</Label>
-                      <Input
-                        type="number"
-                        value={settingsForm.low_stock_threshold}
-                        onChange={(e) =>
-                          setSettingsForm({ ...settingsForm, low_stock_threshold: parseInt(e.target.value) || 0 })
-                        }
-                      />
-                    </div>
-                  </div>
+                <h3 className="font-medium text-orange-600">Notifications</h3>
+                <div className="space-y-2">
+                  <Label>Seuil d&apos;alerte stock bas</Label>
+                  <Input
+                    type="number"
+                    value={settingsForm.low_stock_threshold}
+                    onChange={(e) =>
+                      setSettingsForm({ ...settingsForm, low_stock_threshold: parseInt(e.target.value) || 0 })
+                    }
+                    className="max-w-xs"
+                  />
+                  <p className="text-sm text-gray-500">
+                    Alerte lorsque le stock d&apos;un produit descend en dessous de ce seuil
+                  </p>
                 </div>
               </div>
 
               {/* Display Settings */}
               <div className="space-y-4">
-                <h3 className="font-medium text-orange-600">Affichage</h3>
+                <h3 className="font-medium text-orange-600">Affichage sur les reçus</h3>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Afficher la devise secondaire sur les reçus</Label>
-                      <p className="text-sm text-gray-500">
-                        Affiche le montant converti en devise secondaire
-                      </p>
-                    </div>
-                    <Switch
-                      checked={settingsForm.show_secondary_currency_on_receipt}
-                      onCheckedChange={(checked) =>
-                        setSettingsForm({ ...settingsForm, show_secondary_currency_on_receipt: checked })
-                      }
-                    />
-                  </div>
                   <div className="flex items-center justify-between">
                     <div>
                       <Label>Afficher les points de fidélité sur les reçus</Label>
                       <p className="text-sm text-gray-500">
-                        Affiche les points gagnés et le solde du client
+                        Affiche les points gagnés et le solde du client sur les reçus/factures
                       </p>
                     </div>
                     <Switch

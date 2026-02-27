@@ -44,6 +44,10 @@ export interface ReceiptData {
   receiptFooter?: string;
   isCreditSale?: boolean;
   amountDue?: number;
+  // Loyalty points
+  showLoyaltyPoints?: boolean;
+  loyaltyPointsEarned?: number;
+  loyaltyPointsBalance?: number;
 }
 
 type PaperWidth = 58 | 80;
@@ -81,6 +85,9 @@ function calculateReceiptHeight(data: ReceiptData): number {
 
   // Credit sale banner
   if (data.isCreditSale) lines += 2;
+
+  // Loyalty points
+  if (data.showLoyaltyPoints && data.loyaltyPointsEarned) lines += 3;
 
   // Receipt info
   lines += 2; // reference + date
@@ -279,6 +286,17 @@ export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): vo
 
   if (data.isCreditSale && data.amountDue && data.amountDue > 0) {
     drawLeftRightText("Reste a payer", formatAmountWithCurrency(data.amountDue, data.currency), FONT_SIZE_SMALL); // reset to black
+  }
+
+  // === LOYALTY POINTS ===
+  if (data.showLoyaltyPoints && data.loyaltyPointsEarned && data.loyaltyPointsEarned > 0) {
+    y += 1;
+    drawSeparator();
+    drawCenteredText("*** POINTS DE FIDELITE ***", FONT_SIZE_SMALL, true, LINE_HEIGHT_SMALL);
+    drawLeftRightText("Points gagnes", `+${data.loyaltyPointsEarned} pts`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    if (data.loyaltyPointsBalance !== undefined) {
+      drawLeftRightText("Solde total", `${data.loyaltyPointsBalance} pts`, FONT_SIZE_SMALL, true, LINE_HEIGHT_SMALL);
+    }
   }
 
   // === FOOTER ===
