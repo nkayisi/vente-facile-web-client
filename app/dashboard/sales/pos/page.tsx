@@ -3,6 +3,7 @@
 import { Customer, getCustomers, createCustomer, CreateCustomerData } from "@/actions/contacts.actions";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProducts, Product } from "@/actions/products.actions";
+import { getLockedProducts, LockedProductsResponse } from "@/actions/inventory.actions";
 import { getOrganizationCurrencies, OrganizationCurrency, getCustomerLoyalty, CustomerLoyalty, getLoyaltyProgram, LoyaltyProgram, getOrganizationSettings, OrganizationSettings } from "@/actions/settings.actions";
 import {
   CloseSessionData,
@@ -130,6 +131,10 @@ export default function POSPage() {
   const [usePoints, setUsePoints] = useState(false);
   const [pointsToUse, setPointsToUse] = useState(0);
 
+  // Inventory lock state
+  const [lockedProductIds, setLockedProductIds] = useState<Set<string>>(new Set());
+  const [activeInventorySessions, setActiveInventorySessions] = useState<LockedProductsResponse['active_sessions']>([]);
+
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
@@ -150,12 +155,13 @@ export default function POSPage() {
           }
           setCurrentSession(sessionResult.data!);
 
-          // Fetch products, customers, payment methods, currencies
-          const [productsResult, customersResult, paymentMethodsResult, currenciesResult] = await Promise.all([
+          // Fetch products, customers, payment methods, currencies, locked products
+          const [productsResult, customersResult, paymentMethodsResult, currenciesResult, lockedResult] = await Promise.all([
             getProducts(session.accessToken, org.id, { is_active: true, in_stock: true }),
             getCustomers(session.accessToken, org.id),
             getPaymentMethods(session.accessToken, org.id, { is_active: true }),
             getOrganizationCurrencies(session.accessToken, org.id),
+            getLockedProducts(session.accessToken, org.id),
           ]);
 
           if (productsResult.success && productsResult.data) {
@@ -180,6 +186,18 @@ export default function POSPage() {
             const primary = currenciesResult.data.find((c: OrganizationCurrency) => c.is_primary);
             if (primary) {
               setPaymentCurrency(primary.currency_code);
+            }
+          }
+
+          // Set locked products from active inventory sessions
+          if (lockedResult.success && lockedResult.data) {
+            setLockedProductIds(new Set(lockedResult.data.locked_product_ids));
+            setActiveInventorySessions(lockedResult.data.active_sessions);
+            if (lockedResult.data.has_active_inventory) {
+              toast.warning(
+                `Inventaire en cours: ${lockedResult.data.active_sessions.length} session(s) active(s). Certains produits sont bloqués.`,
+                { duration: 5000 }
+              );
             }
           }
 
@@ -251,6 +269,16 @@ export default function POSPage() {
 
   // Add product to cart
   const addToCart = (product: Product) => {
+    // Check if product is locked by inventory
+    if (lockedProductIds.has(product.id)) {
+      const session = activeInventorySessions[0];
+      toast.error(
+        `"${product.name}" est bloqué par un inventaire en cours (${session?.reference || 'Inventaire'}). Veuillez attendre la fin de l'inventaire.`,
+        { duration: 5000 }
+      );
+      return;
+    }
+
     const available = getAvailableStock(product);
     const existingIndex = cart.findIndex(item => item.product.id === product.id);
     const currentQty = existingIndex >= 0 ? cart[existingIndex].quantity : 0;
@@ -763,42 +791,57 @@ export default function POSPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {(searchQuery ? filteredProducts : products.slice(0, 20)).map(product => (
-                <Card
-                  key={product.id}
-                  className={`cursor-pointer hover:shadow-md transition-shadow py-0 ${product.track_inventory && getRemainingStock(product) <= 0 ? 'opacity-50' : ''}`}
-                  onClick={() => addToCart(product)}
-                >
-                  <CardContent className="p-3">
-                    <div className="aspect-square bg-gray-100 rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
-                      {product.image ? (
-                        <img
-                          src={product.image}
-                          alt={product.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <Package className="h-8 w-8 text-gray-300" />
-                      )}
-                      {product.track_inventory && (
-                        <div className={`absolute top-1 right-1 px-2 py-0.5 rounded text-xs font-semibold ${getRemainingStock(product) <= 0
-                          ? 'bg-red-500 text-white'
-                          : getRemainingStock(product) <= (product.reorder_point || 5)
-                            ? 'bg-amber-500 text-white'
-                            : 'bg-green-600 text-white'
-                          }`}>
-                          Stock: {formatNumber(getAvailableStock(product))}
-                        </div>
-                      )}
-                    </div>
-                    <h3 className="font-medium text-sm text-gray-900 truncate">{product.name}</h3>
-                    <p className="text-xs text-gray-500 truncate">{product.sku}</p>
-                    <p className="text-sm font-bold text-orange-600 mt-1">
-                      {formatPrice(parseFloat(product.selling_price))}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+              {(searchQuery ? filteredProducts : products.slice(0, 20)).map(product => {
+                const isLocked = lockedProductIds.has(product.id);
+                return (
+                  <Card
+                    key={product.id}
+                    className={`cursor-pointer hover:shadow-md transition-shadow py-0 ${isLocked
+                        ? 'opacity-60 cursor-not-allowed border-red-300 bg-red-50'
+                        : product.track_inventory && getRemainingStock(product) <= 0
+                          ? 'opacity-50'
+                          : ''
+                      }`}
+                    onClick={() => addToCart(product)}
+                  >
+                    <CardContent className="p-3">
+                      <div className="aspect-square bg-gray-100 rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
+                        {product.image ? (
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            className={`w-full h-full object-cover ${isLocked ? 'grayscale' : ''}`}
+                          />
+                        ) : (
+                          <Package className="h-8 w-8 text-gray-300" />
+                        )}
+                        {isLocked ? (
+                          <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
+                            <div className="bg-red-600 text-white px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3" />
+                              INVENTAIRE
+                            </div>
+                          </div>
+                        ) : product.track_inventory && (
+                          <div className={`absolute top-1 right-1 px-2 py-0.5 rounded text-xs font-semibold ${getRemainingStock(product) <= 0
+                            ? 'bg-red-500 text-white'
+                            : getRemainingStock(product) <= (product.reorder_point || 5)
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-green-600 text-white'
+                            }`}>
+                            Stock: {formatNumber(getAvailableStock(product))}
+                          </div>
+                        )}
+                      </div>
+                      <h3 className={`font-medium text-sm truncate ${isLocked ? 'text-red-700' : 'text-gray-900'}`}>{product.name}</h3>
+                      <p className="text-xs text-gray-500 truncate">{product.sku}</p>
+                      <p className={`text-sm font-bold mt-1 ${isLocked ? 'text-red-600' : 'text-orange-600'}`}>
+                        {formatPrice(parseFloat(product.selling_price))}
+                      </p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>

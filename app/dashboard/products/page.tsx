@@ -488,6 +488,7 @@ export default function ProductsPage() {
                                     formatPrice={formatPrice}
                                     onEdit={() => router.push(`/dashboard/products/${product.id}/edit`)}
                                     onView={() => router.push(`/dashboard/products/${product.id}`)}
+                                    href={`/dashboard/products/${product.id}`}
                                     onDelete={() => {
                                         setProductToDelete(product);
                                         setDeleteDialogOpen(true);
@@ -497,7 +498,7 @@ export default function ProductsPage() {
                         </div>
                     ) : (
                         <Card className="p-2">
-                            <div className="divide-y">
+                            <div className="divide-y space-y-1">
                                 {products.map((product) => (
                                     <ProductListItem
                                         key={product.id}
@@ -505,6 +506,7 @@ export default function ProductsPage() {
                                         formatPrice={formatPrice}
                                         onEdit={() => router.push(`/dashboard/products/${product.id}/edit`)}
                                         onView={() => router.push(`/dashboard/products/${product.id}`)}
+                                        href={`/dashboard/products/${product.id}`}
                                         onDelete={() => {
                                             setProductToDelete(product);
                                             setDeleteDialogOpen(true);
@@ -569,113 +571,117 @@ function ProductCard({
     formatPrice,
     onEdit,
     onView,
+    href,
     onDelete,
 }: {
     product: Product;
     formatPrice: (price: string | number) => string;
     onEdit: () => void;
     onView: () => void;
+    href: string;
     onDelete: () => void;
 }) {
     const stockQuantity = product.stock_quantity ?? 0;
     const isLowStock = product.track_inventory && stockQuantity <= product.reorder_point;
 
     return (
-        <Card className="overflow-hidden hover:shadow-md transition-shadow gap-0 p-0">
-            {/* Product Image */}
-            <div className="aspect-square h-32 bg-gray-100 relative">
-                {product.image ? (
-                    <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-full h-full object-cover"
-                    />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                        <Package className="h-12 w-12 text-gray-300" />
-                    </div>
-                )}
-                {/* Status badges */}
-                <div className="absolute top-2 left-2 flex flex-col gap-1">
-                    {!product.is_active && (
-                        <Badge variant="secondary" className="text-xs">
-                            Inactif
-                        </Badge>
-                    )}
-                    {product.is_featured && (
-                        <Badge className="bg-orange-500 text-xs">
-                            Vedette
-                        </Badge>
-                    )}
-                    {isLowStock && (
-                        <Badge variant="destructive" className="text-xs">
-                            Stock bas
-                        </Badge>
-                    )}
-                </div>
-                {/* Actions menu */}
-                <div className="absolute top-2 right-2">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="secondary" size="icon" className="h-8 w-8">
-                                <MoreVertical className="h-4 w-4" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={onView}>
-                                <Eye className="h-4 w-4 mr-2" />
-                                Voir
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={onEdit}>
-                                <Edit className="h-4 w-4 mr-2" />
-                                Modifier
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={onDelete} className="text-red-600">
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Supprimer
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                </div>
-            </div>
-
-            {/* Product Info */}
-            <CardContent className="p-4">
-                <div className="space-y-2">
-                    <div>
-                        <h3 className="font-medium text-gray-900 line-clamp-1">{product.name}</h3>
-                        <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                            <Barcode className="h-3 w-3" />
-                            <span>{product.sku}</span>
-                        </div>
-                    </div>
-
-                    {product.category_name && (
-                        <div className="flex items-center gap-1">
-                            <Tag className="h-3 w-3 text-gray-400" />
-                            <span className="text-xs text-gray-500">{product.category_name}</span>
+        <Link href={href}>
+            <Card className="overflow-hidden hover:shadow-md transition-shadow gap-0 p-0">
+                {/* Product Image */}
+                <div className="aspect-square h-32 bg-gray-100 relative">
+                    {product.image ? (
+                        <img
+                            src={product.image}
+                            alt={product.name}
+                            className="w-full h-full object-cover"
+                        />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                            <Package className="h-12 w-12 text-gray-300" />
                         </div>
                     )}
+                    {/* Status badges */}
+                    <div className="absolute top-2 left-2 flex flex-col gap-1">
+                        {!product.is_active && (
+                            <Badge variant="secondary" className="text-xs">
+                                Inactif
+                            </Badge>
+                        )}
+                        {product.is_featured && (
+                            <Badge className="bg-orange-500 text-xs">
+                                Vedette
+                            </Badge>
+                        )}
+                        {isLowStock && (
+                            <Badge variant="destructive" className="text-xs">
+                                Stock bas
+                            </Badge>
+                        )}
+                    </div>
+                    {/* Actions menu */}
+                    <div className="absolute top-2 right-2">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="secondary" size="icon" className="h-8 w-8">
+                                    <MoreVertical className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={onView}>
+                                    <Eye className="h-4 w-4 mr-2" />
+                                    Voir
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={onEdit}>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Modifier
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={onDelete} className="text-red-600">
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Supprimer
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                </div>
 
-                    <div className="flex items-center justify-between pt-2">
+                {/* Product Info */}
+                <CardContent className="p-4">
+                    <div className="space-y-2">
                         <div>
-                            <p className="text-lg font-bold text-orange-600">
-                                {formatPrice(product.selling_price)}
-                            </p>
-                            {product.track_inventory && (
-                                <p className={cn(
-                                    "text-xs",
-                                    isLowStock ? "text-red-500" : "text-gray-500"
-                                )}>
-                                    Stock: {stockQuantity} {product.unit_symbol || ""}
+                            <h3 className="font-medium text-gray-900 line-clamp-1">{product.name}</h3>
+                            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                                <Barcode className="h-3 w-3" />
+                                <span>{product.sku}</span>
+                            </div>
+                        </div>
+
+                        {product.category_name && (
+                            <div className="flex items-center gap-1">
+                                <Tag className="h-3 w-3 text-gray-400" />
+                                <span className="text-xs text-gray-500">{product.category_name}</span>
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2">
+                            <div>
+                                <p className="text-lg font-bold text-orange-600">
+                                    {formatPrice(product.selling_price)}
                                 </p>
-                            )}
+                                {product.track_inventory && (
+                                    <p className={cn(
+                                        "text-xs",
+                                        isLowStock ? "text-red-500" : "text-gray-500"
+                                    )}>
+                                        Stock: {stockQuantity} {product.unit_symbol || ""}
+                                    </p>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            </CardContent>
-        </Card>
+                </CardContent>
+            </Card>
+        </Link>
     );
 }
 
@@ -685,19 +691,21 @@ function ProductListItem({
     formatPrice,
     onEdit,
     onView,
+    href,
     onDelete,
 }: {
     product: Product;
     formatPrice: (price: string | number) => string;
     onEdit: () => void;
     onView: () => void;
+    href: string;
     onDelete: () => void;
 }) {
     const stockQuantity = product.stock_quantity ?? 0;
     const isLowStock = product.track_inventory && stockQuantity <= product.reorder_point;
 
     return (
-        <div className="flex items-center rounded-xl gap-4 hover:bg-gray-50">
+        <Link href={href} className="flex items-center rounded-xl gap-4 hover:bg-gray-50">
             {/* Image */}
             <div className="w-16 h-16 bg-gray-100 rounded-lg flex-shrink-0 overflow-hidden">
                 {product.image ? (
@@ -768,6 +776,6 @@ function ProductListItem({
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
-        </div>
+        </Link>
     );
 }

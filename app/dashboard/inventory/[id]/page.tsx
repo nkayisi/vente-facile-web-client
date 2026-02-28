@@ -61,6 +61,7 @@ import {
   Timer,
   Ban,
   BarChart3,
+  CircleDollarSign,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -350,15 +351,13 @@ export default function InventoryDetailPage() {
           item.notes || "",
         ]),
         theme: "grid",
+        tableWidth: 'auto',
         styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
         headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
         columnStyles: {
-          0: { cellWidth: 50 },
-          1: { cellWidth: 25 },
-          2: { halign: "right", cellWidth: 22 },
-          3: { halign: "right", cellWidth: 22, fontStyle: "bold" },
-          4: { halign: "right", cellWidth: 18 },
-          5: { cellWidth: 40 },
+          2: { halign: "right" },
+          3: { halign: "right", fontStyle: "bold" },
+          4: { halign: "right" },
         },
         margin: { left: 14, right: 14 },
         didParseCell: (hookData) => {
@@ -505,7 +504,7 @@ export default function InventoryDetailPage() {
           formatCurrencyForPDF(item.difference_value),
         ]),
         theme: "grid",
-        tableWidth: "wrap",
+        tableWidth: 'auto',
         styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
         headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
         columnStyles: {
@@ -560,7 +559,7 @@ export default function InventoryDetailPage() {
         item.notes || "",
       ]),
       theme: "grid",
-      tableWidth: "wrap",
+      tableWidth: 'auto',
       styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
       headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
       columnStyles: {
@@ -772,24 +771,46 @@ export default function InventoryDetailPage() {
                   <p className="text-xs text-gray-500">Écarts</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                <div className="p-2 bg-gray-200 rounded-lg">
-                  <ArrowUpDown className="h-4 w-4 text-gray-600" />
+              {/* Écart quantité */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="p-2 bg-gray-200 rounded-lg">
+                    <ArrowUpDown className="h-4 w-4 text-gray-600" />
+                  </div>
+                  <p className="text-xs font-medium text-gray-600">Écart quantité</p>
                 </div>
-                <div>
-                  <p className="text-xl font-bold leading-tight">{formatDecimal(inventorySession.total_difference_quantity)}</p>
-                  <p className="text-xs text-gray-500">Écart qté</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-green-100 rounded p-1">
+                    <p className="text-xs text-center text-green-600">
+                      +{formatDecimal(counts.filter(c => c.is_counted && parseFloat(c.quantity_difference) > 0).reduce((sum, c) => sum + parseFloat(c.quantity_difference), 0))}
+                    </p>
+                  </div>
+                  <div className="bg-red-100 rounded p-1">
+                    <p className="text-xs text-center text-red-600">
+                      {formatDecimal(counts.filter(c => c.is_counted && parseFloat(c.quantity_difference) < 0).reduce((sum, c) => sum + parseFloat(c.quantity_difference), 0))}
+                    </p>
+                  </div>
                 </div>
               </div>
-              <div className={`flex items-center gap-3 rounded-lg p-3 ${parseFloat(inventorySession.total_difference_value) < 0 ? "bg-red-50" : parseFloat(inventorySession.total_difference_value) > 0 ? "bg-green-50" : "bg-gray-50"}`}>
-                <div className={`p-2 rounded-lg ${parseFloat(inventorySession.total_difference_value) < 0 ? "bg-red-200" : parseFloat(inventorySession.total_difference_value) > 0 ? "bg-green-200" : "bg-gray-200"}`}>
-                  <BarChart3 className={`h-4 w-4 ${parseFloat(inventorySession.total_difference_value) < 0 ? "text-red-600" : parseFloat(inventorySession.total_difference_value) > 0 ? "text-green-600" : "text-gray-600"}`} />
+              {/* Écart valeur */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="p-2 bg-gray-200 rounded-lg">
+                    <CircleDollarSign className="h-4 w-4 text-gray-600" />
+                  </div>
+                  <p className="text-xs font-medium text-gray-600">Écart valeur</p>
                 </div>
-                <div>
-                  <p className={`text-xl font-bold leading-tight ${parseFloat(inventorySession.total_difference_value) < 0 ? "text-red-600" : parseFloat(inventorySession.total_difference_value) > 0 ? "text-green-600" : ""}`}>
-                    {formatPrice(inventorySession.total_difference_value)}
-                  </p>
-                  <p className="text-xs text-gray-500">Écart valeur</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-green-100 rounded p-1">
+                    <p className="text-xs text-center text-green-600">
+                      +{formatPrice(counts.filter(c => c.is_counted && parseFloat(c.difference_value) > 0).reduce((sum, c) => sum + parseFloat(c.difference_value), 0))}
+                    </p>
+                  </div>
+                  <div className="bg-red-100 rounded p-1">
+                    <p className="text-xs text-center text-red-600">
+                      {formatPrice(counts.filter(c => c.is_counted && parseFloat(c.difference_value) < 0).reduce((sum, c) => sum + parseFloat(c.difference_value), 0))}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1055,15 +1076,58 @@ export default function InventoryDetailPage() {
               Tous les produits ont été comptés. Soumettez l'inventaire pour révision avant validation.
             </DialogDescription>
           </DialogHeader>
-          {inventorySession.items_with_difference > 0 && (
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex gap-3">
-              <AlertTriangle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
-              <div className="text-sm text-orange-800">
-                <p className="font-medium">{inventorySession.items_with_difference} produit(s) avec écart</p>
-                <p>Écart total en valeur : {formatPrice(inventorySession.total_difference_value)}</p>
+          {inventorySession.items_with_difference > 0 && (() => {
+            // Calculer les écarts positifs et négatifs
+            const positiveValue = counts
+              .filter(c => c.is_counted && parseFloat(c.difference_value) > 0)
+              .reduce((sum, c) => sum + parseFloat(c.difference_value), 0);
+            const negativeValue = counts
+              .filter(c => c.is_counted && parseFloat(c.difference_value) < 0)
+              .reduce((sum, c) => sum + parseFloat(c.difference_value), 0);
+            const positiveCount = counts.filter(c => c.is_counted && parseFloat(c.quantity_difference) > 0).length;
+            const negativeCount = counts.filter(c => c.is_counted && parseFloat(c.quantity_difference) < 0).length;
+
+            return (
+              <div className="space-y-3">
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex gap-3">
+                  <AlertTriangle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
+                  <div className="text-sm text-orange-800">
+                    <p className="font-medium">{inventorySession.items_with_difference} produit(s) avec écart</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Écart positif (surplus) */}
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Plus className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-800">Surplus</span>
+                    </div>
+                    <p className="text-lg font-bold text-green-600">+{formatPrice(positiveValue)}</p>
+                    <p className="text-xs text-green-700">{positiveCount} produit(s) en plus</p>
+                  </div>
+
+                  {/* Écart négatif (manquant) */}
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Minus className="h-4 w-4 text-red-600" />
+                      <span className="text-sm font-medium text-red-800">Manquant</span>
+                    </div>
+                    <p className="text-lg font-bold text-red-600">{formatPrice(negativeValue)}</p>
+                    <p className="text-xs text-red-700">{negativeCount} produit(s) en moins</p>
+                  </div>
+                </div>
+
+                {/* Écart net */}
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center">
+                  <p className="text-sm text-gray-600">Écart net en valeur</p>
+                  <p className={`text-xl font-bold ${parseFloat(inventorySession.total_difference_value) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {parseFloat(inventorySession.total_difference_value) >= 0 ? '+' : ''}{formatPrice(inventorySession.total_difference_value)}
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>Annuler</Button>
             <Button onClick={handleSubmitForReview} disabled={isSubmitting} className="bg-orange-500 hover:bg-orange-600">
@@ -1085,12 +1149,69 @@ export default function InventoryDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-              <p><strong>Résumé des ajustements :</strong></p>
-              <p>Produits avec écart : {inventorySession.items_with_difference}</p>
-              <p>Écart quantité total : {formatDecimal(inventorySession.total_difference_quantity)}</p>
-              <p>Écart valeur total : {formatPrice(inventorySession.total_difference_value)}</p>
-            </div>
+            {inventorySession.items_with_difference > 0 && (() => {
+              // Calculer les écarts positifs et négatifs
+              const positiveQty = counts
+                .filter(c => c.is_counted && parseFloat(c.quantity_difference) > 0)
+                .reduce((sum, c) => sum + parseFloat(c.quantity_difference), 0);
+              const negativeQty = counts
+                .filter(c => c.is_counted && parseFloat(c.quantity_difference) < 0)
+                .reduce((sum, c) => sum + parseFloat(c.quantity_difference), 0);
+              const positiveValue = counts
+                .filter(c => c.is_counted && parseFloat(c.difference_value) > 0)
+                .reduce((sum, c) => sum + parseFloat(c.difference_value), 0);
+              const negativeValue = counts
+                .filter(c => c.is_counted && parseFloat(c.difference_value) < 0)
+                .reduce((sum, c) => sum + parseFloat(c.difference_value), 0);
+
+              return (
+                <div className="space-y-3">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                    <p className="font-medium mb-2">Résumé des ajustements :</p>
+                    <p>{inventorySession.items_with_difference} produit(s) avec écart</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Quantité en plus */}
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Plus className="h-4 w-4 text-green-600" />
+                        <span className="text-sm font-medium text-green-800">Qté surplus</span>
+                      </div>
+                      <p className="text-lg font-bold text-green-600">+{formatDecimal(positiveQty)}</p>
+                    </div>
+
+                    {/* Quantité en moins */}
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Minus className="h-4 w-4 text-red-600" />
+                        <span className="text-sm font-medium text-red-800">Qté manquant</span>
+                      </div>
+                      <p className="text-lg font-bold text-red-600">{formatDecimal(negativeQty)}</p>
+                    </div>
+
+                    {/* Valeur en plus */}
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <CircleDollarSign className="h-4 w-4 text-green-600" />
+                        <span className="text-sm font-medium text-green-800">Valeur surplus</span>
+                      </div>
+                      <p className="text-lg font-bold text-green-600">+{formatPrice(positiveValue)}</p>
+                    </div>
+
+                    {/* Valeur en moins */}
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <CircleDollarSign className="h-4 w-4 text-red-600" />
+                        <span className="text-sm font-medium text-red-800">Valeur manquant</span>
+                      </div>
+                      <p className="text-lg font-bold text-red-600">{formatPrice(negativeValue)}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex gap-3">
               <Unlock className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
               <div className="text-sm text-green-800">

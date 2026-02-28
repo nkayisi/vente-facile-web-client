@@ -355,12 +355,17 @@ export async function getInventoryCounts(
     if (filters?.search) params.append("search", filters.search);
     if (filters?.category) params.append("category", filters.category);
 
+    // Désactiver la pagination pour cette action en demandant une grande page
+    params.append("page_size", "10000");
+
     const response = await axios.get(
       `${API_BASE_URL}/inventory-sessions/${sessionId}/counts/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 
-    return { success: true, data: response.data };
+    // Si la réponse est paginée, extraire les résultats
+    const data = response.data.results ? response.data.results : response.data;
+    return { success: true, data };
   } catch (error: any) {
     console.error("[inventory] Get counts error:", error.response?.data || error.message);
     return { success: false, message: "Erreur lors de la récupération des comptages" };
@@ -382,5 +387,34 @@ export async function getInventoryPrintData(
   } catch (error: any) {
     console.error("[inventory] Get print data error:", error.response?.data || error.message);
     return { success: false, message: "Erreur lors de la récupération des données d'impression" };
+  }
+}
+
+export interface LockedProductsResponse {
+  locked_product_ids: string[];
+  active_sessions: {
+    id: string;
+    reference: string;
+    name: string;
+    warehouse__name: string;
+    status: string;
+  }[];
+  has_active_inventory: boolean;
+}
+
+export async function getLockedProducts(
+  accessToken: string,
+  organizationId: string
+): Promise<ApiResponse<LockedProductsResponse>> {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/inventory-sessions/locked-products/`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    console.error("[inventory] Get locked products error:", error.response?.data || error.message);
+    return { success: false, message: "Erreur lors de la récupération des produits bloqués" };
   }
 }

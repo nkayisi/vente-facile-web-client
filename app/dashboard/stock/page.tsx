@@ -471,82 +471,84 @@ export default function StockPage() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {filteredWarehouses.map(warehouse => (
-                  <Card key={warehouse.id} className="p-0 hover:shadow-md transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-blue-100 rounded-lg">
-                            <WarehouseIcon className="h-5 w-5 text-blue-600" />
+                  <Link key={warehouse.id} href={`/dashboard/stock/warehouses/${warehouse.id}`}>
+                    <Card className="p-0 hover:shadow-md transition-shadow">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-100 rounded-lg">
+                              <WarehouseIcon className="h-5 w-5 text-blue-600" />
+                            </div>
+                            <div>
+                              <h3 className="font-medium text-gray-900">{warehouse.name}</h3>
+                              <p className="text-xs text-gray-500">{warehouse.code}</p>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="font-medium text-gray-900">{warehouse.name}</h3>
-                            <p className="text-xs text-gray-500">{warehouse.code}</p>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  router.push(`/dashboard/stock/warehouses/${warehouse.id}`)
+                                }
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                Voir détails
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => openEditDialog(warehouse)}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Modifier
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedWarehouse(warehouse);
+                                  setShowDeleteDialog(true);
+                                }}
+                                className="text-red-600"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Supprimer
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+
+                        {warehouse.address && (
+                          <div className="flex items-start gap-2 text-sm text-gray-500 mb-3">
+                            <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                            <span className="line-clamp-1">{warehouse.address}</span>
                           </div>
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() =>
-                                router.push(`/dashboard/stock/warehouses/${warehouse.id}`)
-                              }
-                            >
-                              <Eye className="h-4 w-4 mr-2" />
-                              Voir détails
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => openEditDialog(warehouse)}>
-                              <Pencil className="h-4 w-4 mr-2" />
-                              Modifier
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedWarehouse(warehouse);
-                                setShowDeleteDialog(true);
-                              }}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Supprimer
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-
-                      {warehouse.address && (
-                        <div className="flex items-start gap-2 text-sm text-gray-500 mb-3">
-                          <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                          <span className="line-clamp-1">{warehouse.address}</span>
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2 mb-3">
-                        {warehouse.is_default && (
-                          <Badge variant="secondary" className="text-xs">
-                            Par défaut
-                          </Badge>
                         )}
-                        <Badge
-                          variant={warehouse.is_active ? "default" : "secondary"}
-                          className={warehouse.is_active ? "bg-green-100 text-green-700" : ""}
-                        >
-                          {warehouse.is_active ? "Actif" : "Inactif"}
-                        </Badge>
-                      </div>
 
-                      <div className="pt-3 border-t">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">Valeur du stock</span>
-                          <span className="font-semibold">
-                            {formatPrice(warehouse.stock_value || "0")}
-                          </span>
+                        <div className="flex items-center gap-2 mb-3">
+                          {warehouse.is_default && (
+                            <Badge variant="secondary" className="text-xs">
+                              Par défaut
+                            </Badge>
+                          )}
+                          <Badge
+                            variant={warehouse.is_active ? "default" : "secondary"}
+                            className={warehouse.is_active ? "bg-green-100 text-green-700" : ""}
+                          >
+                            {warehouse.is_active ? "Actif" : "Inactif"}
+                          </Badge>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+
+                        <div className="pt-3 border-t">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-500">Valeur du stock</span>
+                            <span className="font-semibold">
+                              {formatPrice(warehouse.stock_value || "0")}
+                            </span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
                 ))}
               </div>
             )}

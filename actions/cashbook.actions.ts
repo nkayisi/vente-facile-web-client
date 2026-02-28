@@ -192,7 +192,13 @@ export interface DailyReport {
     total: string;
     count: number;
   }>;
-  movements: CashMovement[];
+  movements: {
+    results: CashMovement[];
+    count: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+  };
 }
 
 export interface MonthlyReport {
@@ -877,16 +883,21 @@ export async function getCashSummary(
 export async function getDailyReport(
   accessToken: string,
   organizationId: string,
-  date?: string
+  date?: string,
+  page?: number,
+  pageSize?: number
 ): Promise<ApiResponse<DailyReport>> {
   try {
     const params = new URLSearchParams();
     if (date) params.append("date", date);
+    if (page) params.append("page", page.toString());
+    if (pageSize) params.append("page_size", pageSize.toString());
 
     const response = await axios.get(
       `${API_BASE_URL}/cash-movements/daily-report/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+
     return { success: true, data: response.data };
   } catch (error: any) {
     return {

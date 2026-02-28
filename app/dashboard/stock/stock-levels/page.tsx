@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 import {
   getStocks,
   getWarehouses,
@@ -46,6 +47,10 @@ export default function StocksPage() {
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [showLowStock, setShowLowStock] = useState(searchParams.get("filter") === "low");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   // Fetch data
   useEffect(() => {
@@ -97,6 +102,15 @@ export default function StocksPage() {
       selectedWarehouse === "all" || stock.warehouse === selectedWarehouse;
     return matchesSearch && matchesWarehouse;
   });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredStocks.length / pageSize);
+  const paginatedStocks = filteredStocks.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedWarehouse, showLowStock]);
 
 
   // Get stock status
@@ -307,7 +321,7 @@ export default function StocksPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredStocks.map(stock => {
+                {paginatedStocks.map(stock => {
                   const status = getStockStatus(stock);
                   return (
                     <tr key={stock.id} className="hover:bg-gray-50">
@@ -350,57 +364,83 @@ export default function StocksPage() {
               </tbody>
             </table>
           </div>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={currentPage < totalPages}
+                hasPrevious={currentPage > 1}
+              />
+            </div>
+          )}
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredStocks.map(stock => {
-            const status = getStockStatus(stock);
-            return (
-              <Card key={stock.id} className="p-0">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="font-medium text-gray-900">{stock.product_name}</h3>
-                      <p className="text-xs text-gray-500">{stock.product_sku}</p>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {paginatedStocks.map(stock => {
+              const status = getStockStatus(stock);
+              return (
+                <Card key={stock.id} className="p-0">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h3 className="font-medium text-gray-900">{stock.product_name}</h3>
+                        <p className="text-xs text-gray-500">{stock.product_sku}</p>
+                      </div>
+                      <Badge className={status.color}>{status.label}</Badge>
                     </div>
-                    <Badge className={status.color}>{status.label}</Badge>
-                  </div>
 
-                  <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-                    <WarehouseIcon className="h-4 w-4" />
-                    <span>{stock.warehouse_name}</span>
-                  </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+                      <WarehouseIcon className="h-4 w-4" />
+                      <span>{stock.warehouse_name}</span>
+                    </div>
 
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">
-                        {parseFloat(stock.quantity).toFixed(0)}
-                      </p>
-                      <p className="text-xs text-gray-500">Total</p>
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {parseFloat(stock.quantity).toFixed(0)}
+                        </p>
+                        <p className="text-xs text-gray-500">Total</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-orange-600">
+                          {parseFloat(stock.reserved_quantity).toFixed(0)}
+                        </p>
+                        <p className="text-xs text-gray-500">Réservé</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-green-600">
+                          {parseFloat(stock.available_quantity).toFixed(0)}
+                        </p>
+                        <p className="text-xs text-gray-500">Disponible</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-2xl font-bold text-orange-600">
-                        {parseFloat(stock.reserved_quantity).toFixed(0)}
-                      </p>
-                      <p className="text-xs text-gray-500">Réservé</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-green-600">
-                        {parseFloat(stock.available_quantity).toFixed(0)}
-                      </p>
-                      <p className="text-xs text-gray-500">Disponible</p>
-                    </div>
-                  </div>
 
-                  <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Valeur</span>
-                    <span className="font-medium">{formatPrice(stock.stock_value || "0")}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                    <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Valeur</span>
+                      <span className="font-medium">{formatPrice(stock.stock_value || "0")}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-4">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                hasNext={currentPage < totalPages}
+                hasPrevious={currentPage > 1}
+              />
+            </div>
+          )}
+        </>
       )}
     </div>
   );

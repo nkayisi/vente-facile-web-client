@@ -147,7 +147,7 @@ export default function SalesHistoryPage() {
 
       {/* Filters */}
       <div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <div className="relative lg:col-span-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
@@ -241,7 +241,7 @@ export default function SalesHistoryPage() {
                 {sales.map((sale: Sale) => {
                   const statusConfig = STATUS_CONFIG[sale.status as SaleStatus];
                   return (
-                    <tr key={sale.id} className="hover:bg-gray-50">
+                    <tr key={sale.id} className="hover:bg-gray-50" onClick={() => router.push(`/dashboard/sales/${sale.id}`)}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Receipt className="h-4 w-4 text-gray-400" />

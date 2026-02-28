@@ -74,6 +74,7 @@ import {
   getProductProfits,
   getStockDetails,
   getStockMovementsSummary,
+  getProductSupplies,
   DashboardSummary,
   SalesByPeriod,
   SalesByCategory,
@@ -87,9 +88,19 @@ import {
   ProductProfit,
   StockDetail,
   StockMovementSummary,
+  ProductSupplies,
+  PaginatedResponse,
 } from "@/actions/reports.actions";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import {
+  createPDFDocument,
+  addTable,
+  addSummarySection,
+  addSignatureSection,
+  formatNumberForPDF,
+  formatCurrencyForPDF,
+} from "@/lib/pdf-utils";
 import {
   Table,
   TableBody,
@@ -98,6 +109,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DataPagination } from "@/components/shared/DataPagination";
 import { FileText, FileSpreadsheet, Printer, ArrowDown, ArrowUp, Minus } from "lucide-react";
 
 const PERIOD_OPTIONS = [
@@ -125,21 +137,37 @@ export default function ReportsPage() {
   // Data
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [salesByPeriod, setSalesByPeriod] = useState<SalesByPeriod[]>([]);
+  const [salesByPeriodTotal, setSalesByPeriodTotal] = useState(0);
   const [salesByCategory, setSalesByCategory] = useState<SalesByCategory[]>([]);
+  const [salesByCategoryTotal, setSalesByCategoryTotal] = useState(0);
   const [salesByPaymentMethod, setSalesByPaymentMethod] = useState<SalesByPaymentMethod[]>([]);
+  const [salesByPaymentMethodTotal, setSalesByPaymentMethodTotal] = useState(0);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+  const [topProductsTotal, setTopProductsTotal] = useState(0);
   const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([]);
+  const [topCustomersTotal, setTopCustomersTotal] = useState(0);
   const [cashFlow, setCashFlow] = useState<CashFlowByPeriod[]>([]);
+  const [cashFlowTotal, setCashFlowTotal] = useState(0);
 
   // Nouveaux états
   const [dailyCashReport, setDailyCashReport] = useState<DailyCashReportResponse | null>(null);
   const [isLoadingDailyReport, setIsLoadingDailyReport] = useState(false);
   const [profitMargins, setProfitMargins] = useState<ProfitMargins | null>(null);
   const [productProfits, setProductProfits] = useState<ProductProfit[]>([]);
+  const [productProfitsTotal, setProductProfitsTotal] = useState(0);
   const [stockDetails, setStockDetails] = useState<StockDetail[]>([]);
+  const [stockDetailsTotal, setStockDetailsTotal] = useState(0);
   const [stockMovementsSummary, setStockMovementsSummary] = useState<StockMovementSummary | null>(null);
+  const [productSupplies, setProductSupplies] = useState<ProductSupplies>({});
   const [selectedReportDate, setSelectedReportDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [activeTab, setActiveTab] = useState("overview");
+  const [productsPage, setProductsPage] = useState(1);
+  const [salesByArticlePage, setSalesByArticlePage] = useState(1);
+  const [salesByCategoryPage, setSalesByCategoryPage] = useState(1);
+  const [stockPage, setStockPage] = useState(1);
+  const [profitsPage, setProfitsPage] = useState(1);
+  const [customersPage, setCustomersPage] = useState(1);
+  const [dailyReportMovementsPage, setDailyReportMovementsPage] = useState(1);
 
   // Build filters
   const getFilters = useCallback((): ReportFilters => {
@@ -169,50 +197,72 @@ export default function ReportsPage() {
         productProfitsResult,
         stockDetailsResult,
         stockMovementsResult,
+        productSuppliesResult,
       ] = await Promise.all([
         getDashboardSummary(session.accessToken, organization.id, filters),
         getSalesByPeriod(session.accessToken, organization.id, filters),
-        getSalesByCategory(session.accessToken, organization.id, filters),
+        getSalesByCategory(session.accessToken, organization.id, { ...filters, page: salesByCategoryPage, page_size: 20 }),
         getSalesByPaymentMethod(session.accessToken, organization.id, filters),
-        getTopProducts(session.accessToken, organization.id, { ...filters, limit: 10 }),
+        getTopProducts(session.accessToken, organization.id, { ...filters, page: salesByArticlePage, page_size: 20 }),
         getTopCustomers(session.accessToken, organization.id, { ...filters, limit: 10 }),
         getCashFlow(session.accessToken, organization.id, filters),
         getProfitMargins(session.accessToken, organization.id, filters),
-        getProductProfits(session.accessToken, organization.id, { ...filters, limit: 20 }),
-        getStockDetails(session.accessToken, organization.id),
+        getProductProfits(session.accessToken, organization.id, { ...filters, page: profitsPage, page_size: 20 }),
+        getStockDetails(session.accessToken, organization.id, { page: stockPage, page_size: 20 }),
         getStockMovementsSummary(session.accessToken, organization.id, filters),
+        getProductSupplies(session.accessToken, organization.id, filters),
       ]);
 
       if (summaryResult.success && summaryResult.data) setSummary(summaryResult.data);
-      if (salesPeriodResult.success && salesPeriodResult.data) setSalesByPeriod(salesPeriodResult.data);
-      if (salesCategoryResult.success && salesCategoryResult.data) {
-        console.log('[Reports] Sales by category data:', salesCategoryResult.data);
-        setSalesByCategory(salesCategoryResult.data);
-      } else {
-        console.error('[Reports] Sales by category failed:', salesCategoryResult.message);
+      if (salesPeriodResult.success && salesPeriodResult.data) {
+        setSalesByPeriod(salesPeriodResult.data.results);
+        setSalesByPeriodTotal(salesPeriodResult.data.count);
       }
-      if (salesPaymentResult.success && salesPaymentResult.data) setSalesByPaymentMethod(salesPaymentResult.data);
-      if (topProductsResult.success && topProductsResult.data) setTopProducts(topProductsResult.data);
-      if (topCustomersResult.success && topCustomersResult.data) setTopCustomers(topCustomersResult.data);
-      if (cashFlowResult.success && cashFlowResult.data) setCashFlow(cashFlowResult.data);
+      if (salesCategoryResult.success && salesCategoryResult.data) {
+        setSalesByCategory(salesCategoryResult.data.results);
+        setSalesByCategoryTotal(salesCategoryResult.data.count);
+      }
+      if (salesPaymentResult.success && salesPaymentResult.data) {
+        setSalesByPaymentMethod(salesPaymentResult.data.results);
+        setSalesByPaymentMethodTotal(salesPaymentResult.data.count);
+      }
+      if (topProductsResult.success && topProductsResult.data) {
+        setTopProducts(topProductsResult.data.results);
+        setTopProductsTotal(topProductsResult.data.count);
+      }
+      if (topCustomersResult.success && topCustomersResult.data) {
+        setTopCustomers(topCustomersResult.data.results);
+        setTopCustomersTotal(topCustomersResult.data.count);
+      }
+      if (cashFlowResult.success && cashFlowResult.data) {
+        setCashFlow(cashFlowResult.data.results);
+        setCashFlowTotal(cashFlowResult.data.count);
+      }
       if (profitResult.success && profitResult.data) setProfitMargins(profitResult.data);
-      if (productProfitsResult.success && productProfitsResult.data) setProductProfits(productProfitsResult.data);
-      if (stockDetailsResult.success && stockDetailsResult.data) setStockDetails(stockDetailsResult.data);
+      if (productProfitsResult.success && productProfitsResult.data) {
+        setProductProfits(productProfitsResult.data.results);
+        setProductProfitsTotal(productProfitsResult.data.count);
+      }
+      if (stockDetailsResult.success && stockDetailsResult.data) {
+        setStockDetails(stockDetailsResult.data.results);
+        setStockDetailsTotal(stockDetailsResult.data.count);
+      }
       if (stockMovementsResult.success && stockMovementsResult.data) setStockMovementsSummary(stockMovementsResult.data);
+      if (productSuppliesResult.success && productSuppliesResult.data) setProductSupplies(productSuppliesResult.data);
     } catch (error) {
       console.error("Error fetching reports:", error);
       toast.error("Erreur lors du chargement des rapports");
     } finally {
       setIsLoading(false);
     }
-  }, [session?.accessToken, organization?.id, getFilters]);
+  }, [session?.accessToken, organization?.id, getFilters, salesByCategoryPage, salesByArticlePage, profitsPage, stockPage]);
 
   // Fetch daily cash report
-  const fetchDailyCashReport = useCallback(async (date: string) => {
+  const fetchDailyCashReport = useCallback(async (date: string, page: number = 1) => {
     if (!session?.accessToken || !organization?.id) return;
     setIsLoadingDailyReport(true);
     try {
-      const result = await getDailyCashReport(session.accessToken, organization.id, date);
+      const result = await getDailyCashReport(session.accessToken, organization.id, date, page);
       if (result.success && result.data) {
         setDailyCashReport(result.data);
       } else {
@@ -225,9 +275,9 @@ export default function ReportsPage() {
 
   useEffect(() => {
     if (organization && activeTab === "daily-cash" && selectedReportDate) {
-      fetchDailyCashReport(selectedReportDate);
+      fetchDailyCashReport(selectedReportDate, dailyReportMovementsPage);
     }
-  }, [organization, activeTab, selectedReportDate, fetchDailyCashReport]);
+  }, [organization, activeTab, selectedReportDate, dailyReportMovementsPage, fetchDailyCashReport]);
 
   // Fetch organization
   useEffect(() => {
@@ -241,6 +291,16 @@ export default function ReportsPage() {
     }
     fetchOrganization();
   }, [session]);
+
+  // Reset pages when filters change
+  useEffect(() => {
+    setSalesByArticlePage(1);
+    setSalesByCategoryPage(1);
+    setStockPage(1);
+    setProfitsPage(1);
+    setProductsPage(1);
+    setCustomersPage(1);
+  }, [period, dateFrom, dateTo]);
 
   // Fetch data when organization or filters change
   useEffect(() => {
@@ -281,159 +341,345 @@ export default function ReportsPage() {
     return <span className="text-gray-500 text-sm">0%</span>;
   };
 
-  // Export PDF - Rapport journalier de caisse
+  // Export PDF - Rapport journalier de caisse (style uniforme)
   const exportDailyCashPDF = () => {
     if (!dailyCashReport) return;
 
-    const doc = new jsPDF();
     const report = dailyCashReport.report;
-    const reportDate = new Date(report.date).toLocaleDateString("fr-FR", {
+    const reportDate = new Date(report.date).toLocaleDateString("fr-CD", {
       weekday: "long", year: "numeric", month: "long", day: "numeric"
     });
 
-    doc.setFontSize(18);
-    doc.text("RAPPORT JOURNALIER DE CAISSE", 105, 20, { align: "center" });
-    doc.setFontSize(12);
-    doc.text(reportDate, 105, 30, { align: "center" });
-    doc.text(organization?.name || "", 105, 38, { align: "center" });
-
-    // Résumé
-    const summaryData = [
-      ["Solde d'ouverture", formatPrice(parseFloat(report.opening_balance))],
-      ["Solde de clôture", formatPrice(parseFloat(report.closing_balance))],
-      ["", ""],
-      ["Ventes totales", `${formatPrice(parseFloat(report.total_sales))} (${report.total_sales_count} ventes)`],
-      ["- Espèces", formatPrice(parseFloat(report.cash_sales))],
-      ["- Mobile Money", formatPrice(parseFloat(report.mobile_money_sales))],
-      ["- Carte", formatPrice(parseFloat(report.card_sales))],
-      ["- Crédit", formatPrice(parseFloat(report.credit_sales))],
-      ["", ""],
-      ["Recouvrements", formatPrice(parseFloat(report.debt_collections))],
-      ["Dépenses", `${formatPrice(parseFloat(report.expenses))} (${report.expenses_count})`],
-      ["", ""],
-      ["Flux net", formatPrice(parseFloat(report.net_cash_flow))],
-    ];
-
-    autoTable(doc, {
-      startY: 50,
-      head: [["Description", "Montant"]],
-      body: summaryData,
-      theme: "grid",
-      headStyles: { fillColor: [249, 115, 22] },
+    const { doc, y, pageWidth } = createPDFDocument({
+      title: "RAPPORT JOURNALIER DE CAISSE",
+      subtitle: reportDate,
+      organizationName: organization?.name || "",
     });
 
-    // Mouvements
-    if (dailyCashReport.movements.length > 0) {
-      const movementsData = dailyCashReport.movements.map(m => [
+    let currentY = y;
+
+    // Résumé des soldes
+    currentY = addSummarySection(doc, currentY, pageWidth, [
+      { label: "Solde d'ouverture", value: formatCurrencyForPDF(report.opening_balance) },
+      { label: "Ventes du jour", value: formatCurrencyForPDF(report.total_sales), color: "green" },
+      { label: "Dépenses", value: formatCurrencyForPDF(report.expenses), color: "red" },
+      { label: "Solde de clôture", value: formatCurrencyForPDF(report.closing_balance), color: "blue" },
+    ]);
+
+    // Détail des paiements
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("DÉTAIL DES PAIEMENTS", 14, currentY);
+    currentY += 5;
+
+    const paymentData = [
+      ["Espèces", formatCurrencyForPDF(report.cash_sales)],
+      ["Mobile Money", formatCurrencyForPDF(report.mobile_money_sales)],
+      ["Carte", formatCurrencyForPDF(report.card_sales)],
+      ["Crédit", formatCurrencyForPDF(report.credit_sales)],
+      ["Recouvrements", formatCurrencyForPDF(report.debt_collections)],
+    ];
+
+    currentY = addTable(doc, currentY,
+      [["Mode de paiement", "Montant"]],
+      paymentData,
+      {
+        columnStyles: {
+          0: { cellWidth: 80 },
+          1: { halign: 'right', cellWidth: 50 },
+        },
+      }
+    );
+    currentY += 10;
+
+    // Mouvements du jour
+    if (dailyCashReport.movements.results && dailyCashReport.movements.results.length > 0) {
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("MOUVEMENTS DU JOUR", 14, currentY);
+      currentY += 5;
+
+      const movementsData = dailyCashReport.movements.results.map(m => [
         m.time,
         m.type_display,
         m.description || "-",
-        m.direction === "in" ? formatPrice(parseFloat(m.amount)) : "",
-        m.direction === "out" ? formatPrice(parseFloat(m.amount)) : "",
-        formatPrice(parseFloat(m.balance_after)),
+        m.direction === "in" ? formatCurrencyForPDF(m.amount) : "",
+        m.direction === "out" ? formatCurrencyForPDF(m.amount) : "",
+        formatCurrencyForPDF(m.balance_after),
       ]);
 
-      autoTable(doc, {
-        startY: (doc as any).lastAutoTable.finalY + 15,
-        head: [["Heure", "Type", "Description", "Entrée", "Sortie", "Solde"]],
-        body: movementsData,
-        theme: "striped",
-        headStyles: { fillColor: [249, 115, 22] },
-      });
+      currentY = addTable(doc, currentY,
+        [["Heure", "Type", "Description", "Entrée", "Sortie", "Solde"]],
+        movementsData,
+        {
+          columnStyles: {
+            0: { cellWidth: 18 },
+            1: { cellWidth: 28 },
+            2: { cellWidth: 45 },
+            3: { halign: 'right', cellWidth: 28 },
+            4: { halign: 'right', cellWidth: 28 },
+            5: { halign: 'right', cellWidth: 28 },
+          },
+          useAlternateRowColors: true,
+          highlightColumn: 5,
+        }
+      );
     }
+
+    // Signatures
+    addSignatureSection(doc, currentY + 10, pageWidth, ["Caissier", "Superviseur"]);
 
     doc.save(`rapport-caisse-${report.date}.pdf`);
     toast.success("Rapport PDF exporté");
   };
 
-  // Export PDF - Bénéfices par produit
-  const exportProfitsPDF = () => {
-    const doc = new jsPDF();
+  // Export PDF - Ventes (style uniforme avec tableaux complets)
+  const exportSalesPDF = () => {
+    const { doc, y, pageWidth } = createPDFDocument({
+      title: "RAPPORT DES VENTES",
+      subtitle: `Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`,
+      organizationName: organization?.name || "",
+    });
 
-    doc.setFontSize(18);
-    doc.text("RAPPORT DES BÉNÉFICES PAR PRODUIT", 105, 20, { align: "center" });
-    doc.setFontSize(12);
-    doc.text(organization?.name || "", 105, 30, { align: "center" });
+    let currentY = y;
 
-    if (profitMargins) {
-      const summaryData = [
-        ["Chiffre d'affaires", formatPrice(parseFloat(profitMargins.total_revenue))],
-        ["Coût des marchandises", formatPrice(parseFloat(profitMargins.total_cost))],
-        ["Bénéfice brut", formatPrice(parseFloat(profitMargins.gross_profit))],
-        ["Marge brute", `${profitMargins.gross_margin_percentage}%`],
-        ["Dépenses", formatPrice(parseFloat(profitMargins.total_expenses))],
-        ["Bénéfice net", formatPrice(parseFloat(profitMargins.net_profit))],
-        ["Marge nette", `${profitMargins.net_margin_percentage}%`],
-      ];
-
-      autoTable(doc, {
-        startY: 40,
-        head: [["Indicateur", "Valeur"]],
-        body: summaryData,
-        theme: "grid",
-        headStyles: { fillColor: [34, 197, 94] },
-      });
+    // Résumé des ventes
+    if (summary) {
+      currentY = addSummarySection(doc, currentY, pageWidth, [
+        { label: "Chiffre d'affaires", value: formatCurrencyForPDF(summary.sales.total_sales), color: "green" },
+        { label: "Nombre de ventes", value: summary.sales.total_orders.toString() },
+        { label: "Panier moyen", value: formatCurrencyForPDF(summary.sales.average_order_value) },
+        { label: "Articles vendus", value: summary.sales.total_items_sold.toString() },
+      ]);
     }
 
+    // Tableau 1: Ventes par article (complet)
+    if (topProducts.length > 0) {
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("VENTES PAR ARTICLE", 14, currentY);
+      currentY += 5;
+
+      const articlesData = topProducts.map((p, i) => [
+        (i + 1).toString(),
+        p.product_name,
+        p.product_sku,
+        formatNumberForPDF(p.quantity_sold, 0),
+        formatCurrencyForPDF(p.total_revenue),
+      ]);
+
+      currentY = addTable(doc, currentY,
+        [['#', 'Article', 'SKU', 'Quantité', 'Revenus']],
+        articlesData,
+        {
+          columnStyles: {
+            0: { cellWidth: 10, halign: 'center' },
+            1: { cellWidth: 60 },
+            2: { cellWidth: 30 },
+            3: { halign: 'right', cellWidth: 25 },
+            4: { halign: 'right', cellWidth: 35 },
+          },
+          useAlternateRowColors: true,
+        }
+      );
+      currentY += 10;
+    }
+
+    // Tableau 2: Ventes par catégorie (complet)
+    if (salesByCategory.length > 0) {
+      // Vérifier si on a besoin d'une nouvelle page
+      if (currentY > 250) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("VENTES PAR CATÉGORIE", 14, currentY);
+      currentY += 5;
+
+      const totalRevenue = salesByCategory.reduce((sum, c) => sum + parseFloat(c.total_revenue), 0);
+      const categoriesData = salesByCategory.map(cat => {
+        const percentage = totalRevenue > 0 ? (parseFloat(cat.total_revenue) / totalRevenue * 100).toFixed(1) : '0';
+        return [
+          cat.category_name || 'Sans catégorie',
+          formatNumberForPDF(cat.quantity_sold, 0),
+          formatCurrencyForPDF(cat.total_revenue),
+          `${percentage}%`,
+        ];
+      });
+
+      currentY = addTable(doc, currentY,
+        [['Catégorie', 'Quantité', 'Revenus', '% du total']],
+        categoriesData,
+        {
+          columnStyles: {
+            0: { cellWidth: 60 },
+            1: { halign: 'right', cellWidth: 30 },
+            2: { halign: 'right', cellWidth: 40 },
+            3: { halign: 'right', cellWidth: 30 },
+          },
+          useAlternateRowColors: true,
+        }
+      );
+    }
+
+    // Signatures
+    addSignatureSection(doc, currentY + 10, pageWidth, ["Établi par", "Vérifié par"]);
+
+    doc.save(`rapport-ventes-${new Date().toISOString().split("T")[0]}.pdf`);
+    toast.success("Rapport PDF exporté");
+  };
+
+  // Export PDF - Produits vendus (style uniforme)
+  const exportProductsPDF = () => {
+    const { doc, y, pageWidth } = createPDFDocument({
+      title: "RAPPORT DES PRODUITS VENDUS",
+      subtitle: `Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`,
+      organizationName: organization?.name || "",
+    });
+
+    // Préparer les données avec stock de départ, approvisionnement et restant
+    const productsData = topProducts.map(p => {
+      const stockInfo = stockDetails.find(s => s.product_id === p.product_id);
+      const currentStock = stockInfo ? parseFloat(stockInfo.current_stock) : 0;
+      const startingStock = currentStock + p.quantity_sold;
+      const stockValue = stockInfo ? parseFloat(stockInfo.stock_value) : 0;
+      const supply = productSupplies[p.product_id] || 0;
+      return [
+        p.product_name,
+        formatNumberForPDF(startingStock, 0),
+        supply > 0 ? formatNumberForPDF(supply, 0) : '-',
+        formatNumberForPDF(p.quantity_sold, 0),
+        formatCurrencyForPDF(p.total_revenue),
+        formatNumberForPDF(currentStock, 0),
+        formatCurrencyForPDF(stockValue),
+      ];
+    });
+
+    // Tableau des produits (pleine largeur)
+    addTable(doc, y,
+      [['Produit', 'Stock départ', 'Approv.', 'Qté vendue', 'Valeur vendue', 'Qté restante', 'Valeur restante']],
+      productsData,
+      {
+        useAlternateRowColors: true,
+      }
+    );
+
+    // Signatures
+    addSignatureSection(doc, (doc as any).lastAutoTable.finalY + 10, pageWidth, ["Établi par", "Vérifié par"]);
+
+    doc.save(`rapport-produits-${new Date().toISOString().split("T")[0]}.pdf`);
+    toast.success("Rapport PDF exporté");
+  };
+
+  // Export PDF - Bénéfices par produit (style uniforme)
+  const exportProfitsPDF = () => {
+    const { doc, y, pageWidth } = createPDFDocument({
+      title: "RAPPORT DES BÉNÉFICES PAR PRODUIT",
+      subtitle: `Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`,
+      organizationName: organization?.name || "",
+    });
+
+    let currentY = y;
+
+    // Résumé des marges
+    if (profitMargins) {
+      currentY = addSummarySection(doc, currentY, pageWidth, [
+        { label: "Chiffre d'affaires", value: formatCurrencyForPDF(profitMargins.total_revenue), color: "blue" },
+        { label: "Bénéfice brut", value: formatCurrencyForPDF(profitMargins.gross_profit), color: "green" },
+        { label: "Marge brute", value: `${profitMargins.gross_margin_percentage}%` },
+        { label: "Bénéfice net", value: formatCurrencyForPDF(profitMargins.net_profit), color: "green" },
+      ]);
+    }
+
+    // Tableau des bénéfices par produit (complet)
     if (productProfits.length > 0) {
       const productsData = productProfits.map(p => [
         p.product_name,
         p.product_sku,
-        p.quantity_sold,
-        formatPrice(parseFloat(p.total_revenue)),
-        formatPrice(parseFloat(p.total_cost)),
-        formatPrice(parseFloat(p.profit)),
+        formatNumberForPDF(p.quantity_sold, 0),
+        formatCurrencyForPDF(p.total_revenue),
+        formatCurrencyForPDF(p.total_cost),
+        formatCurrencyForPDF(p.profit),
         `${p.margin_percentage}%`,
       ]);
 
-      autoTable(doc, {
-        startY: (doc as any).lastAutoTable.finalY + 15,
-        head: [["Produit", "SKU", "Qté", "CA", "Coût", "Bénéfice", "Marge"]],
-        body: productsData,
-        theme: "striped",
-        headStyles: { fillColor: [34, 197, 94] },
-      });
+      currentY = addTable(doc, currentY,
+        [["Produit", "SKU", "Qté", "CA", "Coût", "Bénéfice", "Marge"]],
+        productsData,
+        {
+          columnStyles: {
+            0: { cellWidth: 40 },
+            1: { cellWidth: 22 },
+            2: { halign: 'right', cellWidth: 15 },
+            3: { halign: 'right', cellWidth: 28 },
+            4: { halign: 'right', cellWidth: 28 },
+            5: { halign: 'right', cellWidth: 28 },
+            6: { halign: 'right', cellWidth: 18 },
+          },
+          useAlternateRowColors: true,
+        }
+      );
     }
+
+    // Signatures
+    addSignatureSection(doc, currentY + 10, pageWidth, ["Établi par", "Vérifié par"]);
 
     doc.save(`rapport-benefices-${new Date().toISOString().split("T")[0]}.pdf`);
     toast.success("Rapport PDF exporté");
   };
 
-  // Export PDF - Stock
+  // Export PDF - Stock (style uniforme)
   const exportStockPDF = () => {
-    const doc = new jsPDF();
+    const { doc, y, pageWidth } = createPDFDocument({
+      title: "RAPPORT DE STOCK",
+      subtitle: new Date().toLocaleDateString("fr-CD"),
+      organizationName: organization?.name || "",
+    });
 
-    doc.setFontSize(18);
-    doc.text("RAPPORT DE STOCK", 105, 20, { align: "center" });
-    doc.setFontSize(12);
-    doc.text(organization?.name || "", 105, 30, { align: "center" });
-    doc.text(new Date().toLocaleDateString("fr-FR"), 105, 38, { align: "center" });
+    // Résumé du stock
+    const totalValue = stockDetails.reduce((sum, s) => sum + parseFloat(s.stock_value), 0);
+    const outOfStock = stockDetails.filter(s => s.status === "out_of_stock").length;
+    const lowStock = stockDetails.filter(s => s.status === "low_stock").length;
 
+    let currentY = addSummarySection(doc, y, pageWidth, [
+      { label: "Total produits", value: stockDetails.length.toString() },
+      { label: "Valeur totale", value: formatCurrencyForPDF(totalValue), color: "blue" },
+      { label: "Ruptures", value: outOfStock.toString(), color: "red" },
+      { label: "Stock bas", value: lowStock.toString() },
+    ]);
+
+    // Tableau des stocks (complet)
     const stockData = stockDetails.map(s => [
       s.product_name,
       s.product_sku,
       s.category_name || "-",
-      parseFloat(s.current_stock).toFixed(0),
-      parseFloat(s.available_stock).toFixed(0),
-      formatPrice(parseFloat(s.stock_value)),
+      formatNumberForPDF(s.current_stock, 0),
+      formatNumberForPDF(s.available_stock, 0),
+      formatCurrencyForPDF(s.stock_value),
       s.status === "out_of_stock" ? "Rupture" : s.status === "low_stock" ? "Bas" : "OK",
     ]);
 
-    autoTable(doc, {
-      startY: 50,
-      head: [["Produit", "SKU", "Catégorie", "Stock", "Dispo", "Valeur", "Statut"]],
-      body: stockData,
-      theme: "striped",
-      headStyles: { fillColor: [59, 130, 246] },
-      didParseCell: (data) => {
-        if (data.column.index === 6 && data.section === "body") {
-          const status = data.cell.raw;
-          if (status === "Rupture") data.cell.styles.textColor = [239, 68, 68];
-          else if (status === "Bas") data.cell.styles.textColor = [234, 179, 8];
-          else data.cell.styles.textColor = [34, 197, 94];
-        }
-      },
-    });
+    addTable(doc, currentY,
+      [["Produit", "SKU", "Catégorie", "Stock", "Dispo", "Valeur", "Statut"]],
+      stockData,
+      {
+        columnStyles: {
+          0: { cellWidth: 40 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 30 },
+          3: { halign: 'right', cellWidth: 18 },
+          4: { halign: 'right', cellWidth: 18 },
+          5: { halign: 'right', cellWidth: 28 },
+          6: { halign: 'center', cellWidth: 18 },
+        },
+        useAlternateRowColors: true,
+      }
+    );
+
+    // Signatures
+    addSignatureSection(doc, (doc as any).lastAutoTable.finalY + 10, pageWidth, ["Établi par", "Vérifié par"]);
 
     doc.save(`rapport-stock-${new Date().toISOString().split("T")[0]}.pdf`);
     toast.success("Rapport PDF exporté");
@@ -583,8 +829,8 @@ export default function ReportsPage() {
       {summary && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Ventes */}
-          <Card className="border-l-4 border-l-orange-500">
-            <CardContent>
+          <Card className="py-1">
+            <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500">Chiffre d'affaires</p>
@@ -606,8 +852,8 @@ export default function ReportsPage() {
           </Card>
 
           {/* Panier moyen */}
-          <Card className="border-l-4 border-l-blue-500">
-            <CardContent>
+          <Card className="py-1">
+            <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500">Panier moyen</p>
@@ -626,8 +872,8 @@ export default function ReportsPage() {
           </Card>
 
           {/* Solde caisse */}
-          <Card className="border-l-4 border-l-green-500">
-            <CardContent>
+          <Card className="py-1">
+            <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500">Solde caisse</p>
@@ -646,8 +892,8 @@ export default function ReportsPage() {
           </Card>
 
           {/* Créances clients */}
-          <Card className="border-l-4 border-l-red-500">
-            <CardContent>
+          <Card className="py-1">
+            <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500">Créances clients</p>
@@ -671,13 +917,13 @@ export default function ReportsPage() {
       {summary && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
           <Card>
-            <CardContent className="py-3 text-center">
+            <CardContent className="px-4">
               <p className="text-xs text-gray-500">Produits actifs</p>
               <p className="text-xl font-semibold">{summary.stock.total_products}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="py-3 text-center">
+            <CardContent className="px-4">
               <p className="text-xs text-gray-500">Valeur stock</p>
               <p className="text-xl font-semibold">
                 {formatPrice(parseFloat(summary.stock.total_stock_value))}
@@ -685,7 +931,7 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="py-3 text-center">
+            <CardContent className="px-4">
               <p className="text-xs text-gray-500">Stock bas</p>
               <p className="text-xl font-semibold text-yellow-600">
                 {summary.stock.low_stock_count}
@@ -693,7 +939,7 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="py-3 text-center">
+            <CardContent className="px-4">
               <p className="text-xs text-gray-500">Ruptures</p>
               <p className="text-xl font-semibold text-red-600">
                 {summary.stock.out_of_stock_count}
@@ -701,13 +947,13 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="py-3 text-center">
+            <CardContent className="px-4">
               <p className="text-xs text-gray-500">Clients</p>
               <p className="text-xl font-semibold">{summary.customers.total_customers}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="py-3 text-center">
+            <CardContent className="px-4">
               <p className="text-xs text-gray-500">Nouveaux clients</p>
               <p className="text-xl font-semibold text-green-600">
                 +{summary.customers.new_customers_period}
@@ -732,26 +978,7 @@ export default function ReportsPage() {
         {/* Sales Tab */}
         <TabsContent value="sales" className="space-y-4">
           <div className="flex justify-end gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={() => {
-              const doc = new jsPDF();
-              doc.setFontSize(18);
-              doc.text("Rapport des Ventes", 14, 20);
-              doc.setFontSize(10);
-              doc.text(`Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`, 14, 28);
-
-              autoTable(doc, {
-                startY: 35,
-                head: [['Période', 'Montant', 'Nb Ventes']],
-                body: salesByPeriod.map(s => [
-                  formatChartDate(s.period),
-                  formatPrice(parseFloat(s.total)),
-                  s.count.toString()
-                ]),
-              });
-
-              doc.save(`ventes-${new Date().toISOString().split('T')[0]}.pdf`);
-              toast.success("PDF exporté avec succès");
-            }}>
+            <Button variant="outline" size="sm" onClick={exportSalesPDF}>
               <FileText className="h-4 w-4 mr-2" />
               Export PDF
             </Button>
@@ -760,6 +987,150 @@ export default function ReportsPage() {
               Export Excel
             </Button>
           </div>
+
+          {/* Tableau 1: Ventes par article (en premier, avec pagination) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Package className="h-5 w-5 text-orange-500" />
+                Ventes par article ({topProducts.length} articles)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">#</TableHead>
+                    <TableHead>Article</TableHead>
+                    <TableHead>SKU</TableHead>
+                    <TableHead className="text-right">Quantité</TableHead>
+                    <TableHead className="text-right">Revenus</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {topProducts.length > 0 ? (
+                    topProducts.map((product, index) => (
+                      <TableRow key={product.product_id}>
+                        <TableCell>
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-medium">
+                            {(salesByArticlePage - 1) * 20 + index + 1}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-medium">{product.product_name}</TableCell>
+                        <TableCell className="text-gray-500">{product.product_sku}</TableCell>
+                        <TableCell className="text-right font-semibold">{product.quantity_sold} unités</TableCell>
+                        <TableCell className="text-right font-semibold text-orange-600">
+                          {formatPrice(parseFloat(product.total_revenue))}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+                        Aucune donnée pour cette période
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              {/* Pagination */}
+              {topProductsTotal > 20 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <p className="text-sm text-gray-500">
+                    Affichage {((salesByArticlePage - 1) * 20) + 1} - {Math.min(salesByArticlePage * 20, topProductsTotal)} sur {topProductsTotal}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSalesByArticlePage(p => Math.max(1, p - 1))}
+                      disabled={salesByArticlePage === 1}
+                    >
+                      Précédent
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSalesByArticlePage(p => p + 1)}
+                      disabled={salesByArticlePage * 20 >= topProductsTotal}
+                    >
+                      Suivant
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Tableau 2: Ventes par catégorie (avec pagination) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <PieChart className="h-5 w-5 text-blue-500" />
+                Ventes par catégorie ({salesByCategory.length} catégories)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Catégorie</TableHead>
+                    <TableHead className="text-right">Quantité</TableHead>
+                    <TableHead className="text-right">Revenus</TableHead>
+                    <TableHead className="text-right">% du total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {salesByCategory.length > 0 ? (
+                    salesByCategory.map((cat) => (
+                      <TableRow key={cat.category_id || 'uncategorized'}>
+                        <TableCell className="font-medium">{cat.category_name || 'Sans catégorie'}</TableCell>
+                        <TableCell className="text-right">{cat.quantity_sold} unités</TableCell>
+                        <TableCell className="text-right font-semibold text-blue-600">
+                          {formatPrice(parseFloat(cat.total_revenue))}
+                        </TableCell>
+                        <TableCell className="text-right text-gray-600">{cat.percentage}%</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-gray-500 py-8">
+                        Aucune donnée pour cette période
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              {/* Pagination */}
+              {salesByCategoryTotal > 20 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <p className="text-sm text-gray-500">
+                    Affichage {((salesByCategoryPage - 1) * 20) + 1} - {Math.min(salesByCategoryPage * 20, salesByCategoryTotal)} sur {salesByCategoryTotal}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSalesByCategoryPage(p => Math.max(1, p - 1))}
+                      disabled={salesByCategoryPage === 1}
+                    >
+                      Précédent
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSalesByCategoryPage(p => p + 1)}
+                      disabled={salesByCategoryPage * 20 >= salesByCategoryTotal}
+                    >
+                      Suivant
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Graphiques (en dessous des tableaux) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Sales Evolution */}
             <Card>
@@ -770,7 +1141,7 @@ export default function ReportsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-[300px]">
+                <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={salesByPeriod}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -800,56 +1171,6 @@ export default function ReportsPage() {
               </CardContent>
             </Card>
 
-            {/* Sales by Category */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <PieChart className="h-5 w-5 text-blue-500" />
-                  Ventes par catégorie ({salesByCategory.length} catégories)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  {(() => {
-                    console.log('[Reports] Rendering sales by category, length:', salesByCategory.length, 'data:', salesByCategory);
-                    return salesByCategory.length === 0;
-                  })() ? (
-                    <div className="flex items-center justify-center h-full text-gray-500">
-                      <div className="text-center">
-                        <PieChart className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-                        <p>Aucune donnée disponible</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RechartsPieChart>
-                        <Pie
-                          data={salesByCategory.map(item => ({
-                            ...item,
-                            total_revenue: Number(item.total_revenue)
-                          }))}
-                          dataKey="total_revenue"
-                          nameKey="category_name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={100}
-                          label={({ name, percent }) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`}
-                          labelLine={false}
-                        >
-                          {salesByCategory.map((_, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value) => formatPrice(Number(value))}
-                        />
-                      </RechartsPieChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
             {/* Sales by Payment Method */}
             <Card>
               <CardHeader>
@@ -859,7 +1180,7 @@ export default function ReportsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-[300px]">
+                <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={salesByPaymentMethod} layout="vertical">
                       <CartesianGrid strokeDasharray="3 3" />
@@ -877,170 +1198,37 @@ export default function ReportsPage() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Orders Count */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <ShoppingCart className="h-5 w-5 text-purple-500" />
-                  Nombre de commandes
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={salesByPeriod}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="period"
-                        tickFormatter={formatChartDate}
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip
-                        formatter={(value) => [Number(value), "Commandes"]}
-                        labelFormatter={(label) => formatChartDate(String(label))}
-                      />
-                      <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
           </div>
-
-          {/* Top Products Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Package className="h-5 w-5 text-orange-500" />
-                Ventes par article (Top 20)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">#</TableHead>
-                    <TableHead>Article</TableHead>
-                    <TableHead>SKU</TableHead>
-                    <TableHead className="text-right">Quantité</TableHead>
-                    <TableHead className="text-right">Revenus</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topProducts.length > 0 ? (
-                    topProducts.map((product, index) => (
-                      <TableRow key={product.product_id}>
-                        <TableCell>
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-medium">
-                            {index + 1}
-                          </span>
-                        </TableCell>
-                        <TableCell className="font-medium">{product.product_name}</TableCell>
-                        <TableCell className="text-gray-500">{product.product_sku}</TableCell>
-                        <TableCell className="text-right font-semibold">{product.quantity_sold} unités</TableCell>
-                        <TableCell className="text-right font-semibold text-orange-600">
-                          {formatPrice(parseFloat(product.total_revenue))}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-gray-500 py-8">
-                        Aucune donnée pour cette période
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Sales by Category Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <PieChart className="h-5 w-5 text-blue-500" />
-                Ventes par catégorie (Détails)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Catégorie</TableHead>
-                    <TableHead className="text-right">Quantité</TableHead>
-                    <TableHead className="text-right">Revenus</TableHead>
-                    <TableHead className="text-right">% du total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {salesByCategory.length > 0 ? (
-                    salesByCategory.map((cat) => {
-                      const totalRevenue = salesByCategory.reduce((sum, c) => sum + parseFloat(c.total_revenue), 0);
-                      const percentage = totalRevenue > 0 ? (parseFloat(cat.total_revenue) / totalRevenue * 100).toFixed(1) : '0';
-                      return (
-                        <TableRow key={cat.category_id || 'uncategorized'}>
-                          <TableCell className="font-medium">{cat.category_name || 'Sans catégorie'}</TableCell>
-                          <TableCell className="text-right">{cat.quantity_sold} unités</TableCell>
-                          <TableCell className="text-right font-semibold text-blue-600">
-                            {formatPrice(parseFloat(cat.total_revenue))}
-                          </TableCell>
-                          <TableCell className="text-right text-gray-600">{percentage}%</TableCell>
-                        </TableRow>
-                      );
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-gray-500 py-8">
-                        Aucune donnée pour cette période
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
         </TabsContent>
 
         {/* Products Tab */}
         <TabsContent value="products" className="space-y-4">
           <div className="flex justify-end gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={() => {
-              const doc = new jsPDF();
-              doc.setFontSize(18);
-              doc.text("Top Produits", 14, 20);
-              doc.setFontSize(10);
-              doc.text(`Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`, 14, 28);
-
-              autoTable(doc, {
-                startY: 35,
-                head: [['#', 'Produit', 'SKU', 'Quantité', 'Revenus']],
-                body: topProducts.map((p, i) => [
-                  (i + 1).toString(),
-                  p.product_name,
-                  p.product_sku,
-                  p.quantity_sold.toString(),
-                  formatPrice(parseFloat(p.total_revenue))
-                ]),
-              });
-
-              doc.save(`produits-${new Date().toISOString().split('T')[0]}.pdf`);
-              toast.success("PDF exporté avec succès");
-            }}>
+            <Button variant="outline" size="sm" onClick={exportProductsPDF}>
               <FileText className="h-4 w-4 mr-2" />
               Export PDF
             </Button>
             <Button variant="outline" size="sm" onClick={() => {
-              const data = topProducts.map((p, i) => ({
-                '#': (i + 1).toString(),
-                'Produit': p.product_name,
-                'SKU': p.product_sku,
-                'Quantité': p.quantity_sold.toString(),
-                'Revenus': parseFloat(p.total_revenue).toFixed(2)
-              }));
-              exportToCSV(data, `produits-${new Date().toISOString().split('T')[0]}`, ['#', 'Produit', 'SKU', 'Quantité', 'Revenus']);
+              // Combiner les données de vente avec les données de stock et approvisionnements
+              const productsWithStock = topProducts.map(p => {
+                const stockInfo = stockDetails.find(s => s.product_id === p.product_id);
+                const currentStock = stockInfo ? parseFloat(stockInfo.current_stock) : 0;
+                const startingStock = currentStock + p.quantity_sold;
+                const stockValue = stockInfo ? parseFloat(stockInfo.stock_value) : 0;
+                const supply = productSupplies[p.product_id] || 0;
+                return {
+                  'Produit': p.product_name,
+                  'SKU': p.product_sku,
+                  'Stock départ': startingStock.toFixed(0),
+                  'Approv.': supply > 0 ? supply.toFixed(0) : '',
+                  'Qté vendue': p.quantity_sold.toString(),
+                  'Valeur vendue': parseFloat(p.total_revenue).toFixed(2),
+                  'Qté restante': currentStock.toFixed(0),
+                  'Valeur restante': stockValue.toFixed(2),
+                };
+              });
+              exportToCSV(productsWithStock, `produits-vendus-${new Date().toISOString().split('T')[0]}`,
+                ['Produit', 'SKU', 'Stock départ', 'Approv.', 'Qté vendue', 'Valeur vendue', 'Qté restante', 'Valeur restante']);
             }}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Export Excel
@@ -1062,114 +1250,86 @@ export default function ReportsPage() {
               </CardContent>
             </Card>
           ) : (
-            <>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Top Products by Quantity Chart */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Package className="h-5 w-5 text-orange-500" />
-                      Top 10 produits (quantité)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="h-[350px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={topProducts.slice(0, 10)} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis type="number" />
-                          <YAxis
-                            type="category"
-                            dataKey="product_name"
-                            width={100}
-                            tick={{ fontSize: 10 }}
-                          />
-                          <Tooltip formatter={(value) => [Number(value), "Unités"]} />
-                          <Bar dataKey="quantity_sold" fill="#f97316" radius={[0, 4, 4, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Package className="h-5 w-5 text-orange-500" />
+                  Détails des produits vendus ({topProducts.length} produits)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produit</TableHead>
+                      <TableHead className="text-right">Stock départ</TableHead>
+                      <TableHead className="text-right">Approv.</TableHead>
+                      <TableHead className="text-right">Qté vendue</TableHead>
+                      <TableHead className="text-right">Valeur vendue</TableHead>
+                      <TableHead className="text-right">Qté restante</TableHead>
+                      <TableHead className="text-right">Valeur restante</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {topProducts.map((product) => {
+                      const stockInfo = stockDetails.find(s => s.product_id === product.product_id);
+                      const currentStock = stockInfo ? parseFloat(stockInfo.current_stock) : 0;
+                      const startingStock = currentStock + product.quantity_sold;
+                      const stockValue = stockInfo ? parseFloat(stockInfo.stock_value) : 0;
+                      const supply = productSupplies[product.product_id] || 0;
+                      return (
+                        <TableRow key={product.product_id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{product.product_name}</p>
+                              <p className="text-xs text-gray-500">{product.product_sku}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">{startingStock.toFixed(0)}</TableCell>
+                          <TableCell className="text-right text-purple-600">
+                            {supply > 0 ? supply.toFixed(0) : '-'}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-orange-600">{product.quantity_sold}</TableCell>
+                          <TableCell className="text-right font-semibold text-green-600">
+                            {formatPrice(parseFloat(product.total_revenue))}
+                          </TableCell>
+                          <TableCell className="text-right">{currentStock.toFixed(0)}</TableCell>
+                          <TableCell className="text-right text-blue-600">
+                            {formatPrice(stockValue)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+                {/* Pagination */}
+                {topProductsTotal > 20 && (
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                    <p className="text-sm text-gray-500">
+                      Affichage {((productsPage - 1) * 20) + 1} - {Math.min(productsPage * 20, topProductsTotal)} sur {topProductsTotal}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setProductsPage(p => Math.max(1, p - 1))}
+                        disabled={productsPage === 1}
+                      >
+                        Précédent
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setProductsPage(p => p + 1)}
+                        disabled={productsPage * 20 >= topProductsTotal}
+                      >
+                        Suivant
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
-
-                {/* Top Products by Revenue Chart */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <BarChart3 className="h-5 w-5 text-blue-500" />
-                      Top 10 produits (revenus)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="h-[350px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={topProducts.slice(0, 10)} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis type="number" tickFormatter={(v) => formatPrice(v)} />
-                          <YAxis
-                            type="category"
-                            dataKey="product_name"
-                            width={100}
-                            tick={{ fontSize: 10 }}
-                          />
-                          <Tooltip formatter={(value) => formatPrice(Number(value))} />
-                          <Bar dataKey="total_revenue" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Detailed Products Table */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Package className="h-5 w-5 text-purple-500" />
-                    Détails des produits vendus
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12">#</TableHead>
-                        <TableHead>Produit</TableHead>
-                        <TableHead>SKU</TableHead>
-                        <TableHead className="text-right">Quantité</TableHead>
-                        <TableHead className="text-right">Revenus</TableHead>
-                        <TableHead className="text-right">Prix moyen</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {topProducts.map((product, index) => {
-                        const avgPrice = product.quantity_sold > 0
-                          ? parseFloat(product.total_revenue) / product.quantity_sold
-                          : 0;
-                        return (
-                          <TableRow key={product.product_id}>
-                            <TableCell>
-                              <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-xs font-medium">
-                                {index + 1}
-                              </span>
-                            </TableCell>
-                            <TableCell className="font-medium">{product.product_name}</TableCell>
-                            <TableCell className="text-gray-500">{product.product_sku}</TableCell>
-                            <TableCell className="text-right font-semibold">{product.quantity_sold} unités</TableCell>
-                            <TableCell className="text-right font-semibold text-blue-600">
-                              {formatPrice(parseFloat(product.total_revenue))}
-                            </TableCell>
-                            <TableCell className="text-right text-gray-600">
-                              {formatPrice(avgPrice)}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 
@@ -1320,7 +1480,7 @@ export default function ReportsPage() {
                   className="w-[180px]"
                 />
               </div>
-              <Button variant="outline" size="sm" onClick={() => fetchDailyCashReport(selectedReportDate)} className="mt-5" disabled={isLoadingDailyReport}>
+              <Button variant="outline" size="sm" onClick={() => fetchDailyCashReport(selectedReportDate, dailyReportMovementsPage)} className="mt-5" disabled={isLoadingDailyReport}>
                 {isLoadingDailyReport ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
                 {isLoadingDailyReport ? "Chargement..." : "Charger"}
               </Button>
@@ -1344,30 +1504,30 @@ export default function ReportsPage() {
             <div className="space-y-4">
               {/* Summary Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <Card>
-                  <CardContent>
+                <Card className="p-0">
+                  <CardContent className="p-4">
                     <p className="text-xs text-gray-500">Solde d'ouverture</p>
-                    <p className="text-xl font-bold">{formatPrice(parseFloat(dailyCashReport.report.opening_balance))}</p>
+                    <p className="text-xl mt-1 font-bold">{formatPrice(parseFloat(dailyCashReport.report.opening_balance))}</p>
                   </CardContent>
                 </Card>
-                <Card>
-                  <CardContent>
+                <Card className="p-0">
+                  <CardContent className="p-4">
                     <p className="text-xs text-gray-500">Solde de clôture</p>
-                    <p className="text-xl font-bold">{formatPrice(parseFloat(dailyCashReport.report.closing_balance))}</p>
+                    <p className="text-xl mt-1 font-bold">{formatPrice(parseFloat(dailyCashReport.report.closing_balance))}</p>
                   </CardContent>
                 </Card>
-                <Card className="border-l-4 border-l-green-500">
-                  <CardContent>
+                <Card className="p-0">
+                  <CardContent className="p-4">
                     <p className="text-xs text-gray-500">Ventes du jour</p>
-                    <p className="text-xl font-bold text-green-600">{formatPrice(parseFloat(dailyCashReport.report.total_sales))}</p>
-                    <p className="text-xs text-gray-500">{dailyCashReport.report.total_sales_count} ventes</p>
+                    <p className="text-xl mt-1 font-bold text-green-600">{formatPrice(parseFloat(dailyCashReport.report.total_sales))}</p>
+                    <p className="text-xs float-right text-gray-500">{dailyCashReport.report.total_sales_count} ventes</p>
                   </CardContent>
                 </Card>
-                <Card className="border-l-4 border-l-red-500">
-                  <CardContent>
+                <Card className="p-0">
+                  <CardContent className="p-4">
                     <p className="text-xs text-gray-500">Dépenses</p>
-                    <p className="text-xl font-bold text-red-600">{formatPrice(parseFloat(dailyCashReport.report.expenses))}</p>
-                    <p className="text-xs text-gray-500">{dailyCashReport.report.expenses_count} dépenses</p>
+                    <p className="text-xl mt-1 font-bold text-red-600">{formatPrice(parseFloat(dailyCashReport.report.expenses))}</p>
+                    <p className="text-xs float-right text-gray-500">{dailyCashReport.report.expenses_count} dépenses</p>
                   </CardContent>
                 </Card>
               </div>
@@ -1417,7 +1577,7 @@ export default function ReportsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {dailyCashReport.movements.map((m) => (
+                      {dailyCashReport.movements.results && dailyCashReport.movements.results.map((m) => (
                         <TableRow key={m.id}>
                           <TableCell className="text-sm">{m.time}</TableCell>
                           <TableCell>
@@ -1435,7 +1595,7 @@ export default function ReportsPage() {
                           <TableCell className="text-right font-medium">{formatPrice(parseFloat(m.balance_after))}</TableCell>
                         </TableRow>
                       ))}
-                      {dailyCashReport.movements.length === 0 && (
+                      {(!dailyCashReport.movements.results || dailyCashReport.movements.results.length === 0) && (
                         <TableRow>
                           <TableCell colSpan={6} className="text-center text-gray-500 py-8">
                             Aucun mouvement pour cette date
@@ -1446,6 +1606,19 @@ export default function ReportsPage() {
                   </Table>
                 </CardContent>
               </Card>
+
+              {/* Pagination des mouvements */}
+              {dailyCashReport.movements.results && dailyCashReport.movements.results.length > 0 && (
+                <div className="mt-4">
+                  <DataPagination
+                    currentPage={dailyReportMovementsPage}
+                    totalPages={dailyCashReport.movements.total_pages || 1}
+                    onPageChange={setDailyReportMovementsPage}
+                    hasNext={dailyCashReport.movements.page < (dailyCashReport.movements.total_pages || 1)}
+                    hasPrevious={dailyCashReport.movements.page > 1}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <Card>
@@ -1518,44 +1691,68 @@ export default function ReportsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="max-h-[400px] overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Produit</TableHead>
-                      <TableHead>Catégorie</TableHead>
-                      <TableHead className="text-right">Stock</TableHead>
-                      <TableHead className="text-right">Disponible</TableHead>
-                      <TableHead className="text-right">Valeur</TableHead>
-                      <TableHead>Statut</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produit</TableHead>
+                    <TableHead>Catégorie</TableHead>
+                    <TableHead className="text-right">Stock</TableHead>
+                    <TableHead className="text-right">Disponible</TableHead>
+                    <TableHead className="text-right">Valeur</TableHead>
+                    <TableHead>Statut</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stockDetails.map((s) => (
+                    <TableRow key={s.product_id}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium text-sm">{s.product_name}</p>
+                          <p className="text-xs text-gray-500">{s.product_sku}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">{s.category_name || "-"}</TableCell>
+                      <TableCell className="text-right font-medium">{parseFloat(s.current_stock).toFixed(0)}</TableCell>
+                      <TableCell className="text-right">{parseFloat(s.available_stock).toFixed(0)}</TableCell>
+                      <TableCell className="text-right">{formatPrice(parseFloat(s.stock_value))}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={s.status === "out_of_stock" ? "destructive" : s.status === "low_stock" ? "outline" : "default"}
+                          className={s.status === "low_stock" ? "border-yellow-500 text-yellow-600" : s.status === "available" ? "bg-green-500" : ""}
+                        >
+                          {s.status === "out_of_stock" ? "Rupture" : s.status === "low_stock" ? "Bas" : "OK"}
+                        </Badge>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stockDetails.map((s) => (
-                      <TableRow key={s.product_id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium text-sm">{s.product_name}</p>
-                            <p className="text-xs text-gray-500">{s.product_sku}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm">{s.category_name || "-"}</TableCell>
-                        <TableCell className="text-right font-medium">{parseFloat(s.current_stock).toFixed(0)}</TableCell>
-                        <TableCell className="text-right">{parseFloat(s.available_stock).toFixed(0)}</TableCell>
-                        <TableCell className="text-right">{formatPrice(parseFloat(s.stock_value))}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={s.status === "out_of_stock" ? "destructive" : s.status === "low_stock" ? "outline" : "default"}
-                            className={s.status === "low_stock" ? "border-yellow-500 text-yellow-600" : s.status === "available" ? "bg-green-500" : ""}
-                          >
-                            {s.status === "out_of_stock" ? "Rupture" : s.status === "low_stock" ? "Bas" : "OK"}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
+              {/* Pagination */}
+              {stockDetailsTotal > 20 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <p className="text-sm text-gray-500">
+                    Affichage {((stockPage - 1) * 20) + 1} - {Math.min(stockPage * 20, stockDetailsTotal)} sur {stockDetailsTotal}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setStockPage(p => Math.max(1, p - 1))}
+                      disabled={stockPage === 1}
+                    >
+                      Précédent
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setStockPage(p => p + 1)}
+                      disabled={stockPage * 20 >= stockDetailsTotal}
+                    >
+                      Suivant
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1576,30 +1773,30 @@ export default function ReportsPage() {
           {/* Profit Summary */}
           {profitMargins && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Card className="border-l-4 border-l-blue-500">
-                <CardContent>
+              <Card className="p-0">
+                <CardContent className="p-4">
                   <p className="text-xs text-gray-500">Chiffre d'affaires</p>
-                  <p className="text-xl font-bold">{formatPrice(parseFloat(profitMargins.total_revenue))}</p>
+                  <p className="text-xl mt-1 font-bold">{formatPrice(parseFloat(profitMargins.total_revenue))}</p>
                 </CardContent>
               </Card>
-              <Card className="border-l-4 border-l-orange-500">
-                <CardContent>
+              <Card className="p-0">
+                <CardContent className="p-4">
                   <p className="text-xs text-gray-500">Coût des marchandises</p>
-                  <p className="text-xl font-bold">{formatPrice(parseFloat(profitMargins.total_cost))}</p>
+                  <p className="text-xl mt-1 font-bold">{formatPrice(parseFloat(profitMargins.total_cost))}</p>
                 </CardContent>
               </Card>
-              <Card className="border-l-4 border-l-green-500">
-                <CardContent>
+              <Card className="p-0">
+                <CardContent className="p-4">
                   <p className="text-xs text-gray-500">Bénéfice brut</p>
-                  <p className="text-xl font-bold text-green-600">{formatPrice(parseFloat(profitMargins.gross_profit))}</p>
-                  <p className="text-xs text-green-600">Marge: {profitMargins.gross_margin_percentage}%</p>
+                  <p className="text-xl mt-1 font-bold text-green-600">{formatPrice(parseFloat(profitMargins.gross_profit))}</p>
+                  <p className="text-xs float-right text-green-600">Marge: {profitMargins.gross_margin_percentage}%</p>
                 </CardContent>
               </Card>
-              <Card className="border-l-4 border-l-purple-500">
-                <CardContent>
+              <Card className="p-0">
+                <CardContent className="p-4">
                   <p className="text-xs text-gray-500">Bénéfice net</p>
-                  <p className="text-xl font-bold text-purple-600">{formatPrice(parseFloat(profitMargins.net_profit))}</p>
-                  <p className="text-xs text-purple-600">Marge: {profitMargins.net_margin_percentage}%</p>
+                  <p className="text-xl mt-1 font-bold text-purple-600">{formatPrice(parseFloat(profitMargins.net_profit))}</p>
+                  <p className="text-xs float-right text-purple-600">Marge: {profitMargins.net_margin_percentage}%</p>
                 </CardContent>
               </Card>
             </div>
@@ -1610,24 +1807,24 @@ export default function ReportsPage() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-green-500" />
-                Bénéfices par produit
+                Bénéfices par produit ({productProfits.length} produits)
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="max-h-[400px] overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Produit</TableHead>
-                      <TableHead className="text-right">Qté vendue</TableHead>
-                      <TableHead className="text-right">CA</TableHead>
-                      <TableHead className="text-right">Coût</TableHead>
-                      <TableHead className="text-right">Bénéfice</TableHead>
-                      <TableHead className="text-right">Marge</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {productProfits.map((p) => (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produit</TableHead>
+                    <TableHead className="text-right">Qté vendue</TableHead>
+                    <TableHead className="text-right">CA</TableHead>
+                    <TableHead className="text-right">Coût</TableHead>
+                    <TableHead className="text-right">Bénéfice</TableHead>
+                    <TableHead className="text-right">Marge</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {productProfits.length > 0 ? (
+                    productProfits.map((p) => (
                       <TableRow key={p.product_id}>
                         <TableCell>
                           <div>
@@ -1646,17 +1843,42 @@ export default function ReportsPage() {
                           </Badge>
                         </TableCell>
                       </TableRow>
-                    ))}
-                    {productProfits.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-gray-500 py-8">
-                          Aucune donnée pour cette période
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-gray-500 py-8">
+                        Aucune donnée pour cette période
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              {/* Pagination */}
+              {productProfitsTotal > 20 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <p className="text-sm text-gray-500">
+                    Affichage {((profitsPage - 1) * 20) + 1} - {Math.min(profitsPage * 20, productProfitsTotal)} sur {productProfitsTotal}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProfitsPage(p => Math.max(1, p - 1))}
+                      disabled={profitsPage === 1}
+                    >
+                      Précédent
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProfitsPage(p => p + 1)}
+                      disabled={profitsPage * 20 >= productProfitsTotal}
+                    >
+                      Suivant
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

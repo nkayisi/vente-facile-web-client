@@ -59,6 +59,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   sale: "Vente",
@@ -89,6 +90,7 @@ export default function CashbookReportsPage() {
     new Date().toISOString().split("T")[0]
   );
   const [dailyReport, setDailyReport] = useState<DailyReport | null>(null);
+  const [dailyMovementsPage, setDailyMovementsPage] = useState(1);
 
   // Monthly report
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -129,13 +131,13 @@ export default function CashbookReportsPage() {
       else if (activeTab === "annual") fetchAnnualReport();
       else if (activeTab === "custom") fetchCustomReport();
     }
-  }, [organization, session, activeTab, selectedDate, selectedYear, selectedMonth, annualYear, customDateFrom, customDateTo]);
+  }, [organization, session, activeTab, selectedDate, selectedYear, selectedMonth, annualYear, customDateFrom, customDateTo, dailyMovementsPage]);
 
   async function fetchDailyReport() {
     if (!session?.accessToken || !organization) return;
     setIsLoading(true);
     try {
-      const res = await getDailyReport(session.accessToken, organization.id, selectedDate);
+      const res = await getDailyReport(session.accessToken, organization.id, selectedDate, dailyMovementsPage);
       if (res.success && res.data) setDailyReport(res.data);
     } catch {
       toast.error("Erreur lors du chargement du rapport");
@@ -229,7 +231,7 @@ export default function CashbookReportsPage() {
     ]);
 
     let runningBalance = parseFloat(dailyReport.opening_balance);
-    const tableData = dailyReport.movements.map((m) => {
+    const tableData = dailyReport.movements.results.map((m) => {
       const amount = parseFloat(m.amount);
       if (m.direction === "in") runningBalance += amount;
       else runningBalance -= amount;
@@ -555,7 +557,7 @@ export default function CashbookReportsPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
-                    Détail des mouvements ({dailyReport.movements.length})
+                    Détail des mouvements ({dailyReport.movements.count})
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -571,14 +573,14 @@ export default function CashbookReportsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {dailyReport.movements.length === 0 ? (
+                      {dailyReport.movements.results.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={6} className="text-center py-8 text-gray-500">
                             Aucun mouvement ce jour
                           </TableCell>
                         </TableRow>
                       ) : (
-                        dailyReport.movements.map((m) => (
+                        dailyReport.movements.results.map((m) => (
                           <TableRow key={m.id}>
                             <TableCell className="text-sm text-gray-600">
                               {new Date(m.movement_date).toLocaleTimeString("fr-CD", {
@@ -618,6 +620,17 @@ export default function CashbookReportsPage() {
                       )}
                     </TableBody>
                   </Table>
+                  {dailyReport.movements.total_pages > 1 && (
+                    <div className="p-4 border-t">
+                      <DataPagination
+                        currentPage={dailyReport.movements.page}
+                        totalPages={dailyReport.movements.total_pages}
+                        onPageChange={setDailyMovementsPage}
+                        hasNext={dailyReport.movements.page < dailyReport.movements.total_pages}
+                        hasPrevious={dailyReport.movements.page > 1}
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </>

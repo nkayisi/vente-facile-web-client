@@ -49,6 +49,7 @@ import {
   AddPaymentData,
 } from "@/actions/sales.actions";
 import Link from "next/link";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 export default function PendingPaymentsPage() {
   const { data: session } = useSession();
@@ -59,6 +60,10 @@ export default function PendingPaymentsPage() {
   const [pendingSales, setPendingSales] = useState<Sale[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   // Payment dialog
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
@@ -252,6 +257,15 @@ export default function PendingPaymentsPage() {
       (sale.customer_name && sale.customer_name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  // Pagination
+  const totalPages = Math.ceil(filteredSales.length / pageSize);
+  const paginatedSales = filteredSales.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  // Reset page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -377,7 +391,7 @@ export default function PendingPaymentsPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredSales.map((sale) => (
+              {paginatedSales.map((sale) => (
                 <div
                   key={sale.id}
                   className="flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors"
@@ -435,6 +449,18 @@ export default function PendingPaymentsPage() {
                   </div>
                 </div>
               ))}
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="mt-4">
+                  <DataPagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    hasNext={currentPage < totalPages}
+                    hasPrevious={currentPage > 1}
+                  />
+                </div>
+              )}
             </div>
           )}
         </CardContent>

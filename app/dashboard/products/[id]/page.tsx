@@ -141,7 +141,7 @@ export default function ProductDetailPage() {
   const profitMargin = costPrice > 0 ? ((sellingPrice - costPrice) / costPrice) * 100 : 0;
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
@@ -186,7 +186,7 @@ export default function ProductDetailPage() {
         {/* Main Info Card */}
         <Card className="p-0">
           <CardContent className="p-0">
-            <div className="flex flex-col md:flex-row">
+            <div className="flex flex-col md:flex-row h-52">
               {/* Product Image */}
               <div className="w-full md:w-1/3 aspect-square bg-gray-100 rounded-xl flex items-center justify-center">
                 {product.image ? (

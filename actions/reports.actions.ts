@@ -110,6 +110,16 @@ export interface ReportFilters {
   date_to?: string;
   group_by?: "day" | "week" | "month";
   limit?: number;
+  page?: number;
+  page_size?: number;
+}
+
+export interface PaginatedResponse<T> {
+  results: T[];
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 }
 
 interface ApiResponse<T> {
@@ -172,13 +182,15 @@ export async function getSalesByPeriod(
   accessToken: string,
   organizationId: string,
   filters?: ReportFilters
-): Promise<ApiResponse<SalesByPeriod[]>> {
+): Promise<ApiResponse<PaginatedResponse<SalesByPeriod>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.period) params.append("period", filters.period);
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);
     if (filters?.group_by) params.append("group_by", filters.group_by);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/sales_by_period/?${params.toString()}`,
@@ -196,12 +208,14 @@ export async function getSalesByCategory(
   accessToken: string,
   organizationId: string,
   filters?: ReportFilters
-): Promise<ApiResponse<SalesByCategory[]>> {
+): Promise<ApiResponse<PaginatedResponse<SalesByCategory>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.period) params.append("period", filters.period);
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/sales_by_category/?${params.toString()}`,
@@ -219,12 +233,14 @@ export async function getSalesByPaymentMethod(
   accessToken: string,
   organizationId: string,
   filters?: ReportFilters
-): Promise<ApiResponse<SalesByPaymentMethod[]>> {
+): Promise<ApiResponse<PaginatedResponse<SalesByPaymentMethod>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.period) params.append("period", filters.period);
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/sales_by_payment_method/?${params.toString()}`,
@@ -242,13 +258,14 @@ export async function getTopProducts(
   accessToken: string,
   organizationId: string,
   filters?: ReportFilters
-): Promise<ApiResponse<TopProduct[]>> {
+): Promise<ApiResponse<PaginatedResponse<TopProduct>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.period) params.append("period", filters.period);
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.limit) params.append("limit", String(filters.limit));
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/top_products/?${params.toString()}`,
@@ -266,12 +283,14 @@ export async function getTopCustomers(
   accessToken: string,
   organizationId: string,
   filters?: ReportFilters
-): Promise<ApiResponse<TopCustomer[]>> {
+): Promise<ApiResponse<PaginatedResponse<TopCustomer>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.period) params.append("period", filters.period);
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
     if (filters?.limit) params.append("limit", String(filters.limit));
 
     const response = await axios.get(
@@ -330,13 +349,15 @@ export async function getCashFlow(
   accessToken: string,
   organizationId: string,
   filters?: ReportFilters
-): Promise<ApiResponse<CashFlowByPeriod[]>> {
+): Promise<ApiResponse<PaginatedResponse<CashFlowByPeriod>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.period) params.append("period", filters.period);
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);
     if (filters?.group_by) params.append("group_by", filters.group_by);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/cash_flow/?${params.toString()}`,
@@ -407,17 +428,20 @@ export interface DailyCashMovement {
 
 export interface DailyCashReportResponse {
   report: DailyCashReport;
-  movements: DailyCashMovement[];
+  movements: PaginatedResponse<DailyCashMovement>;
 }
 
 export async function getDailyCashReport(
   accessToken: string,
   organizationId: string,
-  date?: string
+  date?: string,
+  page?: number
 ): Promise<ApiResponse<DailyCashReportResponse>> {
   try {
     const params = new URLSearchParams();
     if (date) params.append("date", date);
+    if (page) params.append("page", String(page));
+    params.append("page_size", "20");
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/daily_cash_report/?${params.toString()}`,
@@ -483,13 +507,14 @@ export async function getProductProfits(
   accessToken: string,
   organizationId: string,
   filters?: ReportFilters
-): Promise<ApiResponse<ProductProfit[]>> {
+): Promise<ApiResponse<PaginatedResponse<ProductProfit>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.period) params.append("period", filters.period);
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.limit) params.append("limit", String(filters.limit));
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/product_profits/?${params.toString()}`,
@@ -535,11 +560,13 @@ export interface StockMovementSummary {
 export async function getStockDetails(
   accessToken: string,
   organizationId: string,
-  status?: "low" | "out" | "available"
-): Promise<ApiResponse<StockDetail[]>> {
+  filters?: ReportFilters & { status?: "low" | "out" | "available" }
+): Promise<ApiResponse<PaginatedResponse<StockDetail>>> {
   try {
     const params = new URLSearchParams();
-    if (status) params.append("status", status);
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/stock_details/?${params.toString()}`,
@@ -573,5 +600,31 @@ export async function getStockMovementsSummary(
   } catch (error: any) {
     console.error("[Reports] Get stock movements summary error:", error.response?.data || error.message);
     return { success: false, message: "Erreur lors de la récupération du résumé des mouvements" };
+  }
+}
+
+// Approvisionnements par produit (dictionnaire product_id -> quantity)
+export type ProductSupplies = Record<string, number>;
+
+export async function getProductSupplies(
+  accessToken: string,
+  organizationId: string,
+  filters?: ReportFilters
+): Promise<ApiResponse<ProductSupplies>> {
+  try {
+    const params = new URLSearchParams();
+    if (filters?.period) params.append("period", filters.period);
+    if (filters?.date_from) params.append("date_from", filters.date_from);
+    if (filters?.date_to) params.append("date_to", filters.date_to);
+
+    const response = await axios.get(
+      `${API_BASE_URL}/reports/statistics/product_supplies/?${params.toString()}`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    console.error("[Reports] Get product supplies error:", error.response?.data || error.message);
+    return { success: false, message: "Erreur lors de la récupération des approvisionnements" };
   }
 }
