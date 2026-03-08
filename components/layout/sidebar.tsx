@@ -25,6 +25,7 @@ import {
   X,
   Store,
   Settings,
+  Crown,
 } from "lucide-react";
 
 const menuItems = [
@@ -90,6 +91,13 @@ const menuItems = [
     href: "/dashboard/users",
     badge: null,
     permission: "users.view",
+  },
+  {
+    label: "Abonnement",
+    icon: Crown,
+    href: "/dashboard/subscription",
+    badge: null,
+    permission: "settings.view",
   },
   {
     label: "Paramètres",

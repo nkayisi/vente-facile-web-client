@@ -131,16 +131,6 @@ export default function LandingPage() {
             transition={{ duration: 0.6 }}
             className="text-center space-y-8"
           >
-            {/* Badge */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2 }}
-              className="inline-flex items-center gap-2 bg-orange-50 text-orange-700 px-4 py-2 rounded-full text-sm font-medium"
-            >
-              <Star className="h-4 w-4 fill-orange-500 text-orange-500" />
-              <span>Solution #1 de gestion commerciale en RDC</span>
-            </motion.div>
 
             <h1 className="text-5xl md:text-7xl font-bold text-slate-900 leading-[1.1] tracking-tight">
               Gérez votre commerce
@@ -152,7 +142,7 @@ export default function LandingPage() {
 
             <p className="text-xl md:text-2xl text-slate-600 max-w-3xl mx-auto leading-relaxed">
               La plateforme tout-en-un pour les entrepreneurs congolais.
-              Ventes, stocks, clients, factures — tout au même endroit.
+              Ventes, stocks, factures : tout au même endroit.
             </p>
 
             <motion.div
@@ -401,98 +391,6 @@ export default function LandingPage() {
                 <p className="text-slate-400">{item.desc}</p>
               </motion.div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* App Preview Section */}
-      <section className="py-24 px-6 bg-gradient-to-b from-white to-slate-50">
-        <div className="max-w-7xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <span className="text-orange-600 font-semibold text-sm uppercase tracking-wider">Interface moderne</span>
-            <h2 className="text-4xl md:text-5xl font-bold text-slate-900 mt-4 mb-6">
-              Découvrez l'application
-            </h2>
-            <p className="text-xl text-slate-600 max-w-2xl mx-auto">
-              Une interface intuitive, disponible sur tous vos appareils
-            </p>
-          </motion.div>
-
-          <div className="grid lg:grid-cols-3 gap-8 items-center">
-            {/* Mobile Preview Left */}
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              className="hidden lg:flex justify-center"
-            >
-              <div className="bg-slate-900 rounded-[3rem] p-3 shadow-2xl w-56">
-                <div className="bg-slate-800 rounded-t-[2.5rem] pt-6 pb-2 px-4">
-                  <div className="w-20 h-1 bg-slate-600 rounded-full mx-auto" />
-                </div>
-                <div className="bg-gradient-to-br from-orange-50 to-white rounded-b-[2.5rem] aspect-[9/16] flex items-center justify-center">
-                  <div className="text-center p-4">
-                    <Smartphone className="h-12 w-12 text-orange-300 mx-auto mb-3" />
-                    <p className="text-slate-500 text-sm font-medium">Version Mobile</p>
-                    <p className="text-slate-400 text-xs mt-1">Capture à remplacer</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Desktop Preview Center */}
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              className="lg:col-span-1"
-            >
-              <div className="bg-slate-200 rounded-2xl p-3 shadow-2xl">
-                <div className="bg-slate-800 rounded-t-xl px-4 py-3 flex items-center gap-2">
-                  <div className="flex gap-1.5">
-                    <div className="w-3 h-3 rounded-full bg-red-500" />
-                    <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                    <div className="w-3 h-3 rounded-full bg-green-500" />
-                  </div>
-                  <div className="flex-1 text-center">
-                    <span className="text-slate-400 text-sm">app.ventefacile.com</span>
-                  </div>
-                </div>
-                <div className="bg-gradient-to-br from-orange-50 to-white rounded-b-xl aspect-video flex items-center justify-center">
-                  <div className="text-center p-8">
-                    <BarChart3 className="h-16 w-16 text-orange-300 mx-auto mb-4" />
-                    <p className="text-slate-500 font-medium">Tableau de bord</p>
-                    <p className="text-slate-400 text-sm mt-1">Capture d'écran à remplacer</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Mobile Preview Right */}
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              className="hidden lg:flex justify-center"
-            >
-              <div className="bg-slate-900 rounded-[3rem] p-3 shadow-2xl w-56">
-                <div className="bg-slate-800 rounded-t-[2.5rem] pt-6 pb-2 px-4">
-                  <div className="w-20 h-1 bg-slate-600 rounded-full mx-auto" />
-                </div>
-                <div className="bg-gradient-to-br from-orange-50 to-white rounded-b-[2.5rem] aspect-[9/16] flex items-center justify-center">
-                  <div className="text-center p-4">
-                    <ShoppingCart className="h-12 w-12 text-orange-300 mx-auto mb-3" />
-                    <p className="text-slate-500 text-sm font-medium">Point de Vente</p>
-                    <p className="text-slate-400 text-xs mt-1">Capture à remplacer</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
           </div>
         </div>
       </section>
