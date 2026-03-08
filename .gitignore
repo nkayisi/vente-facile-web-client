@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# docker local (pour dev uniquement)
+Dockerfile.local
+docker-compose.yml
