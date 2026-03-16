@@ -957,7 +957,7 @@ export default function SettingsPage() {
                 <Label>Valeur d&apos;un point ({primaryCurrency?.currency_symbol || "FC"})</Label>
                 <Input
                   type="number"
-                  step="0.01"
+                  step="any"
                   value={loyaltyForm.point_value}
                   onChange={(e) => setLoyaltyForm({ ...loyaltyForm, point_value: e.target.value })}
                 />

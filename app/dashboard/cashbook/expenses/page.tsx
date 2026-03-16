@@ -666,7 +666,7 @@ export default function ExpensesPage() {
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="any"
                   value={createForm.amount}
                   onChange={(e) =>
                     setCreateForm({ ...createForm, amount: e.target.value })

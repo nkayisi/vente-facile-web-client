@@ -21,21 +21,21 @@ export function getDefaultCurrency() {
 /**
  * Formate un prix avec séparateur de milliers et symbole de devise.
  * Utilise la devise par défaut de l'organisation si aucun paramètre n'est fourni.
+ * Affiche les décimales exactes de la valeur stockée (ex: 2.3 → "2,3").
  * Ex: formatPrice(20000) → "20 000 FC"
- * Ex: formatPrice(10, "$", 2) → "10,00 $"
+ * Ex: formatPrice(2.3) → "2,3 FC"
+ * Ex: formatPrice(10.50) → "10,5 FC"
  */
 export function formatPrice(
   price: string | number,
-  symbol?: string,
-  decimalPlaces?: number
+  symbol?: string
 ): string {
   const num = typeof price === "string" ? parseFloat(price) : price;
   const sym = symbol || _defaultSymbol;
-  const decimals = decimalPlaces ?? _defaultDecimals;
   if (isNaN(num)) return `0 ${sym}`;
   const formatted = new Intl.NumberFormat("fr-CD", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: decimals,
+    maximumFractionDigits: 6,
   }).format(num);
   return `${formatted} ${sym}`;
 }
@@ -64,6 +64,19 @@ export function formatDecimal(num: number | string, decimals: number = 3): strin
     minimumFractionDigits: 0,
     maximumFractionDigits: decimals,
   }).format(n);
+}
+
+/**
+ * Formate un prix sans le symbole de devise (pour les exports CSV).
+ * Affiche les décimales telles quelles sans forcer un nombre fixe.
+ * Ex: formatPriceValue(20000.50) → "20000.5"
+ * Ex: formatPriceValue(2.3) → "2.3"
+ */
+export function formatPriceValue(price: string | number): string {
+  const num = typeof price === "string" ? parseFloat(price) : price;
+  if (isNaN(num)) return "0";
+  // Utilise toString() pour garder les décimales telles quelles
+  return num.toString();
 }
 
 /**

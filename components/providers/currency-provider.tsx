@@ -44,7 +44,7 @@ export function CurrencyProvider({
 
       const formatted = new Intl.NumberFormat("fr-CD", {
         minimumFractionDigits: 0,
-        maximumFractionDigits: currency.decimal_places,
+        maximumFractionDigits: 6,
       }).format(num);
 
       return `${formatted} ${currency.symbol}`;
@@ -56,7 +56,7 @@ export function CurrencyProvider({
 
       const formatted = new Intl.NumberFormat("fr-CD", {
         minimumFractionDigits: 0,
-        maximumFractionDigits: currency.decimal_places,
+        maximumFractionDigits: 6,
       }).format(num);
 
       return { value: formatted, symbol: currency.symbol };

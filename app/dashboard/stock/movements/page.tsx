@@ -470,7 +470,7 @@ export default function MovementsPage() {
                   value={formData.unit_cost}
                   onChange={e => setFormData({ ...formData, unit_cost: parseFloat(e.target.value) || 0 })}
                   min="0"
-                  step="0.01"
+                  step="any"
                 />
               </div>
             </div>

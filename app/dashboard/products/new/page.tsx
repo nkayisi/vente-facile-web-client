@@ -466,7 +466,7 @@ export default function NewProductPage() {
                     id="cost_price"
                     type="number"
                     min="0"
-                    step="0.01"
+                    step="any"
                     value={formData.cost_price}
                     onChange={(e) => handleChange("cost_price", parseFloat(e.target.value) || 0)}
                     className={errors.cost_price ? "border-red-500" : ""}
@@ -479,7 +479,7 @@ export default function NewProductPage() {
                     id="selling_price"
                     type="number"
                     min="0"
-                    step="0.01"
+                    step="any"
                     value={formData.selling_price}
                     onChange={(e) => handleChange("selling_price", parseFloat(e.target.value) || 0)}
                     className={errors.selling_price ? "border-red-500" : ""}
@@ -495,7 +495,7 @@ export default function NewProductPage() {
                   id="wholesale_price"
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="any"
                   value={formData.wholesale_price || ""}
                   onChange={(e) => handleChange("wholesale_price", e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Optionnel"

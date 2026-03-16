@@ -881,7 +881,7 @@ export default function CustomerDetailPage() {
               <Input
                 id="credit-limit"
                 type="number"
-                step="0.01"
+                step="any"
                 min="0"
                 value={creditLimitValue}
                 onChange={e => setCreditLimitValue(e.target.value)}

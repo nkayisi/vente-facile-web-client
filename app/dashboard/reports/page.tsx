@@ -59,7 +59,7 @@ import {
   Area,
 } from "recharts";
 import { toast } from "sonner";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatNumber, formatDate, formatDateTime, formatPriceValue } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getDashboardSummary,
@@ -1222,9 +1222,9 @@ export default function ReportsPage() {
                   'Stock départ': startingStock.toFixed(0),
                   'Approv.': supply > 0 ? supply.toFixed(0) : '',
                   'Qté vendue': p.quantity_sold.toString(),
-                  'Valeur vendue': parseFloat(p.total_revenue).toFixed(2),
+                  'Valeur vendue': formatPriceValue(p.total_revenue),
                   'Qté restante': currentStock.toFixed(0),
-                  'Valeur restante': stockValue.toFixed(2),
+                  'Valeur restante': formatPriceValue(stockValue),
                 };
               });
               exportToCSV(productsWithStock, `produits-vendus-${new Date().toISOString().split('T')[0]}`,

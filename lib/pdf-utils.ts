@@ -222,18 +222,19 @@ export function formatNumberForPDF(value: string | number, decimals: number = 2)
 
 /**
  * Formate un montant dans la devise par défaut pour l'affichage PDF (espace comme séparateur)
+ * Affiche les décimales exactes de la valeur stockée.
  */
 export function formatCurrencyForPDF(value: string | number, currencySymbol?: string): string {
   const defaults = getDefaultCurrency();
   const symbol = currencySymbol || defaults.symbol;
   const num = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(num)) return `0,00 ${symbol}`;
+  if (isNaN(num)) return `0 ${symbol}`;
 
   // Utiliser fr-FR puis remplacer l'espace fine insécable (U+202F) par un espace normal
   // (jsPDF affiche l'espace fine insécable comme un "/")
   const formatted = num.toLocaleString("fr-FR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
   });
 
   return formatted.replace(/\u202F/g, " ") + " " + symbol;

@@ -651,6 +651,7 @@ export default function RegistersPage() {
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   type="number"
+                  step="any"
                   value={openingBalance}
                   onChange={e => setOpeningBalance(e.target.value)}
                   placeholder="0"
@@ -716,6 +717,7 @@ export default function RegistersPage() {
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   type="number"
+                  step="any"
                   value={closingBalance}
                   onChange={e => setClosingBalance(e.target.value)}
                   placeholder="0"

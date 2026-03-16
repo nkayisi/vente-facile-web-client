@@ -797,10 +797,10 @@ export default function POSPage() {
                   <Card
                     key={product.id}
                     className={`cursor-pointer hover:shadow-md transition-shadow py-0 ${isLocked
-                        ? 'opacity-60 cursor-not-allowed border-red-300 bg-red-50'
-                        : product.track_inventory && getRemainingStock(product) <= 0
-                          ? 'opacity-50'
-                          : ''
+                      ? 'opacity-60 cursor-not-allowed border-red-300 bg-red-50'
+                      : product.track_inventory && getRemainingStock(product) <= 0
+                        ? 'opacity-50'
+                        : ''
                       }`}
                     onClick={() => addToCart(product)}
                   >
@@ -1463,6 +1463,7 @@ export default function POSPage() {
                 <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <Input
                   type="number"
+                  step="any"
                   value={paymentAmount}
                   onChange={e => setPaymentAmount(e.target.value)}
                   className="h-14 text-2xl text-center font-bold pl-10 pr-16"
@@ -1613,6 +1614,7 @@ export default function POSPage() {
               <Label>Solde de fermeture ({defaultCurrency.symbol})</Label>
               <Input
                 type="number"
+                step="any"
                 value={closingBalance}
                 onChange={e => setClosingBalance(e.target.value)}
                 placeholder="Comptez l'argent en caisse..."

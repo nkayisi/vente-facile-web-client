@@ -611,7 +611,7 @@ export default function CustomersPage() {
               <Input
                 id="credit_limit"
                 type="number"
-                step="0.01"
+                step="any"
                 min="0"
                 value={formData.credit_limit || ""}
                 onChange={e => setFormData({ ...formData, credit_limit: e.target.value ? parseFloat(e.target.value) : undefined })}

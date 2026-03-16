@@ -241,7 +241,7 @@ export default function CashbookReportsPage() {
         m.description.substring(0, 35),
         m.direction === "in" ? `+${formatCurrencyForPDF(m.amount)}` : "",
         m.direction === "out" ? `-${formatCurrencyForPDF(m.amount)}` : "",
-        formatCurrencyForPDF(runningBalance.toFixed(2)),
+        formatCurrencyForPDF(runningBalance),
       ];
     });
 
@@ -279,7 +279,7 @@ export default function CashbookReportsPage() {
         formatDateForPDF(day.day),
         `+${formatCurrencyForPDF(day.total_in)}`,
         `-${formatCurrencyForPDF(day.total_out)}`,
-        formatCurrencyForPDF(runningBalance.toFixed(2)),
+        formatCurrencyForPDF(runningBalance),
       ];
     });
 
@@ -317,7 +317,7 @@ export default function CashbookReportsPage() {
         formatMonthForPDF(m.month),
         `+${formatCurrencyForPDF(m.total_in)}`,
         `-${formatCurrencyForPDF(m.total_out)}`,
-        formatCurrencyForPDF(runningBalance.toFixed(2)),
+        formatCurrencyForPDF(runningBalance),
       ];
     });
 
@@ -355,7 +355,7 @@ export default function CashbookReportsPage() {
         formatDateForPDF(day.day),
         `+${formatCurrencyForPDF(day.total_in)}`,
         `-${formatCurrencyForPDF(day.total_out)}`,
-        formatCurrencyForPDF(runningBalance.toFixed(2)),
+        formatCurrencyForPDF(runningBalance),
       ];
     });
 
@@ -758,7 +758,7 @@ export default function CashbookReportsPage() {
                               <TableCell className="text-right text-green-600">+{formatPrice(day.total_in)}</TableCell>
                               <TableCell className="text-right text-red-600">-{formatPrice(day.total_out)}</TableCell>
                               <TableCell className="text-right font-semibold text-blue-600">
-                                {formatPrice(runningBalance.toFixed(2))}
+                                {formatPrice(runningBalance)}
                               </TableCell>
                             </TableRow>
                           );
@@ -879,7 +879,7 @@ export default function CashbookReportsPage() {
                               <TableCell className="text-right text-green-600">+{formatPrice(m.total_in)}</TableCell>
                               <TableCell className="text-right text-red-600">-{formatPrice(m.total_out)}</TableCell>
                               <TableCell className="text-right font-semibold text-blue-600">
-                                {formatPrice(runningBalance.toFixed(2))}
+                                {formatPrice(runningBalance)}
                               </TableCell>
                             </TableRow>
                           );
@@ -1007,7 +1007,7 @@ export default function CashbookReportsPage() {
                               <TableCell className="text-right text-green-600">+{formatPrice(day.total_in)}</TableCell>
                               <TableCell className="text-right text-red-600">-{formatPrice(day.total_out)}</TableCell>
                               <TableCell className="text-right font-semibold text-blue-600">
-                                {formatPrice(runningBalance.toFixed(2))}
+                                {formatPrice(runningBalance)}
                               </TableCell>
                             </TableRow>
                           );
