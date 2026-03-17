@@ -793,3 +793,121 @@ export async function deleteUnit(
     };
   }
 }
+
+// =============================================================================
+// IMPORT / EXPORT
+// =============================================================================
+
+export interface ImportResult {
+  success: boolean;
+  error?: string;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: Array<{
+    row: number;
+    name: string;
+    errors: string[];
+  }>;
+}
+
+export interface DuplicateCheckResult {
+  has_duplicate: boolean;
+  duplicates: {
+    sku: { id: string; name: string } | null;
+    barcode: { id: string; name: string } | null;
+  };
+}
+
+export async function downloadImportTemplate(
+  accessToken: string,
+  organizationId: string
+): Promise<{ data: number[]; contentType: string } | null> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/products/import-template/`, {
+      headers: getHeaders(accessToken, organizationId),
+      responseType: 'arraybuffer',
+    });
+
+    // Vérifier le content-type de la réponse
+    const contentType = response.headers['content-type'] || '';
+
+    // Si c'est du JSON, c'est une erreur
+    if (contentType.includes('application/json')) {
+      const text = new TextDecoder().decode(response.data);
+      const errorData = JSON.parse(text);
+      console.error("[Products] Download template error:", errorData);
+      throw new Error(errorData.detail || errorData.error || "Erreur lors du téléchargement");
+    }
+
+    // Convertir ArrayBuffer en tableau de nombres pour la sérialisation
+    const uint8Array = new Uint8Array(response.data);
+    return {
+      data: Array.from(uint8Array),
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    };
+  } catch (error: any) {
+    console.error("[Products] Download template error:", error.response?.data || error.message);
+    throw error;
+  }
+}
+
+export async function importProducts(
+  accessToken: string,
+  organizationId: string,
+  file: File
+): Promise<ApiResponse<ImportResult>> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await axios.post(`${API_BASE_URL}/products/import/`, formData, {
+      headers: {
+        ...getHeaders(accessToken, organizationId),
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    return {
+      success: true,
+      message: "Importation terminée",
+      data: response.data,
+    };
+  } catch (error: any) {
+    console.error("[Products] Import error:", error.response?.data || error.message);
+    return {
+      success: false,
+      message: error.response?.data?.error || "Erreur lors de l'importation",
+      data: error.response?.data,
+    };
+  }
+}
+
+export async function checkProductDuplicate(
+  accessToken: string,
+  organizationId: string,
+  sku?: string,
+  barcode?: string,
+  excludeId?: string
+): Promise<ApiResponse<DuplicateCheckResult>> {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/products/check-duplicate/`, {
+      sku,
+      barcode,
+      exclude_id: excludeId,
+    }, {
+      headers: getHeaders(accessToken, organizationId),
+    });
+
+    return {
+      success: true,
+      data: response.data,
+    };
+  } catch (error: any) {
+    console.error("[Products] Check duplicate error:", error.response?.data || error.message);
+    return {
+      success: false,
+      message: error.response?.data?.detail || "Erreur lors de la vérification des doublons",
+    };
+  }
+}

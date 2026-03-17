@@ -41,6 +41,14 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
     Package,
     Plus,
     Search,
@@ -60,6 +68,11 @@ import {
     X,
     FolderTree,
     Ruler,
+    Download,
+    Upload,
+    FileSpreadsheet,
+    CheckCircle2,
+    XCircle,
 } from "lucide-react";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
@@ -68,10 +81,13 @@ import {
     getBrands,
     getUnits,
     deleteProduct,
+    downloadImportTemplate,
+    importProducts,
     Product,
     Category,
     Brand,
     ProductFilters,
+    ImportResult,
 } from "@/actions/products.actions";
 import { cn } from "@/lib/utils";
 import { DataPagination } from "@/components/shared/DataPagination";
@@ -117,6 +133,13 @@ export default function ProductsPage() {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [productToDelete, setProductToDelete] = useState<Product | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    // Import dialog
+    const [importDialogOpen, setImportDialogOpen] = useState(false);
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [isImporting, setIsImporting] = useState(false);
+    const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+    const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
     // Fetch organization
     useEffect(() => {
@@ -233,6 +256,73 @@ export default function ProductsPage() {
     const hasActiveFilters = searchQuery || selectedCategory !== "all" || selectedBrand !== "all" || selectedStatus !== "all";
     const activeFilterCount = [selectedCategory !== "all", selectedBrand !== "all", selectedStatus !== "all"].filter(Boolean).length;
 
+    // Handle download template
+    const handleDownloadTemplate = async () => {
+        if (!session?.accessToken || !organization?.id) return;
+
+        setIsDownloadingTemplate(true);
+        try {
+            const result = await downloadImportTemplate(session.accessToken, organization.id);
+            if (result && result.data) {
+                // Convertir le tableau de nombres en Uint8Array puis en Blob
+                const uint8Array = new Uint8Array(result.data);
+                const blob = new Blob([uint8Array], { type: result.contentType });
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'template_import_produits.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                toast.success("Template téléchargé avec succès");
+            } else {
+                toast.error("Erreur lors du téléchargement du template. Vérifiez vos permissions.");
+            }
+        } catch (error: any) {
+            console.error("Download template error:", error);
+            toast.error(error?.message || "Erreur lors du téléchargement du template");
+        } finally {
+            setIsDownloadingTemplate(false);
+        }
+    };
+
+    // Handle import
+    const handleImport = async () => {
+        if (!session?.accessToken || !organization?.id || !importFile) return;
+
+        setIsImporting(true);
+        setImportResult(null);
+
+        const result = await importProducts(session.accessToken, organization.id, importFile);
+
+        if (result.success && result.data) {
+            setImportResult(result.data);
+            if (result.data.created > 0) {
+                toast.success(`${result.data.created} produit(s) importé(s) avec succès`);
+                fetchProducts();
+            }
+        } else {
+            setImportResult(result.data || {
+                success: false,
+                error: result.message,
+                created: 0,
+                updated: 0,
+                skipped: 0,
+                errors: []
+            });
+        }
+
+        setIsImporting(false);
+    };
+
+    // Reset import dialog
+    const resetImportDialog = () => {
+        setImportFile(null);
+        setImportResult(null);
+        setImportDialogOpen(false);
+    };
 
     // Calculate total pages
     const totalPages = Math.ceil(totalCount / pageSize);
@@ -240,19 +330,42 @@ export default function ProductsPage() {
     return (
         <div className="space-y-4 lg:space-y-6">
             {/* Header */}
-            <div className="flex flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-xl lg:text-2xl font-bold text-gray-900">Produits</h1>
                     <p className="text-sm text-gray-500 mt-1">
                         {totalCount} produit{totalCount > 1 ? "s" : ""} au total
                     </p>
                 </div>
-                <Link href="/dashboard/products/new">
-                    <Button className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Nouveau produit
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDownloadTemplate}
+                        disabled={isDownloadingTemplate}
+                    >
+                        {isDownloadingTemplate ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                        )}
+                        Télécharger le Template Excel
                     </Button>
-                </Link>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setImportDialogOpen(true)}
+                    >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Importer les Produits
+                    </Button>
+                    <Link href="/dashboard/products/new">
+                        <Button className="bg-orange-500 hover:bg-orange-600" size="sm">
+                            <Plus className="h-4 w-4 mr-2" />
+                            Nouveau produit
+                        </Button>
+                    </Link>
+                </div>
             </div>
 
             {/* Quick Links */}
@@ -561,6 +674,20 @@ export default function ProductsPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Import Dialog */}
+            <ImportDialog
+                open={importDialogOpen}
+                onOpenChange={setImportDialogOpen}
+                importFile={importFile}
+                setImportFile={setImportFile}
+                isImporting={isImporting}
+                importResult={importResult}
+                onImport={handleImport}
+                onReset={resetImportDialog}
+                onDownloadTemplate={handleDownloadTemplate}
+                isDownloadingTemplate={isDownloadingTemplate}
+            />
         </div>
     );
 }
@@ -682,6 +809,207 @@ function ProductCard({
                 </CardContent>
             </Card>
         </Link>
+    );
+}
+
+// Import Dialog Component
+function ImportDialog({
+    open,
+    onOpenChange,
+    importFile,
+    setImportFile,
+    isImporting,
+    importResult,
+    onImport,
+    onReset,
+    onDownloadTemplate,
+    isDownloadingTemplate,
+}: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    importFile: File | null;
+    setImportFile: (file: File | null) => void;
+    isImporting: boolean;
+    importResult: ImportResult | null;
+    onImport: () => void;
+    onReset: () => void;
+    onDownloadTemplate: () => void;
+    isDownloadingTemplate: boolean;
+}) {
+    return (
+        <Dialog open={open} onOpenChange={(isOpen) => {
+            if (!isOpen) onReset();
+            else onOpenChange(isOpen);
+        }}>
+            <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-5 w-5 text-orange-500" />
+                        Importer des produits
+                    </DialogTitle>
+                    <DialogDescription>
+                        Importez vos produits depuis un fichier Excel basé sur notre template.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4 py-4">
+                    {!importResult ? (
+                        <>
+                            {/* Instructions */}
+                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-sm">
+                                <p className="font-medium text-orange-800 mb-2">Instructions :</p>
+                                <ol className="list-decimal list-inside space-y-1 text-orange-700">
+                                    <li>Téléchargez le template Excel officiel</li>
+                                    <li>Remplissez vos produits dans le fichier</li>
+                                    <li>Ne modifiez pas les en-têtes ni la structure</li>
+                                    <li>Importez le fichier complété ici</li>
+                                </ol>
+                            </div>
+
+                            {/* Download template button */}
+                            <Button
+                                variant="outline"
+                                className="w-full"
+                                onClick={onDownloadTemplate}
+                                disabled={isDownloadingTemplate}
+                            >
+                                {isDownloadingTemplate ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                    <Download className="h-4 w-4 mr-2" />
+                                )}
+                                Télécharger le template Excel
+                            </Button>
+
+                            {/* File input */}
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Fichier Excel à importer
+                                </label>
+                                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-orange-400 transition-colors">
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                                        className="hidden"
+                                        id="import-file"
+                                    />
+                                    <label htmlFor="import-file" className="cursor-pointer">
+                                        {importFile ? (
+                                            <div className="flex items-center justify-center gap-2 text-green-600">
+                                                <CheckCircle2 className="h-8 w-8" />
+                                                <div className="text-left">
+                                                    <p className="font-medium">{importFile.name}</p>
+                                                    <p className="text-xs text-gray-500">
+                                                        {(importFile.size / 1024).toFixed(1)} Ko
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="text-gray-500">
+                                                <Upload className="h-8 w-8 mx-auto mb-2" />
+                                                <p>Cliquez pour sélectionner un fichier</p>
+                                                <p className="text-xs">ou glissez-déposez ici</p>
+                                            </div>
+                                        )}
+                                    </label>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        /* Import Results */
+                        <div className="space-y-4">
+                            {importResult.success !== false ? (
+                                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                    <div className="flex items-center gap-2 text-green-700 font-medium mb-2">
+                                        <CheckCircle2 className="h-5 w-5" />
+                                        Importation terminée
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-4 text-center">
+                                        <div>
+                                            <p className="text-2xl font-bold text-green-600">{importResult.created}</p>
+                                            <p className="text-xs text-gray-600">Créé(s)</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-2xl font-bold text-blue-600">{importResult.updated}</p>
+                                            <p className="text-xs text-gray-600">Mis à jour</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-2xl font-bold text-orange-600">{importResult.skipped}</p>
+                                            <p className="text-xs text-gray-600">Ignoré(s)</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                    <div className="flex items-center gap-2 text-red-700 font-medium mb-2">
+                                        <XCircle className="h-5 w-5" />
+                                        Erreur d&apos;importation
+                                    </div>
+                                    <p className="text-sm text-red-600">{importResult.error}</p>
+                                </div>
+                            )}
+
+                            {/* Error details */}
+                            {importResult.errors && importResult.errors.length > 0 && (
+                                <div className="border rounded-lg overflow-hidden">
+                                    <div className="bg-gray-50 px-4 py-2 border-b">
+                                        <p className="font-medium text-sm">
+                                            Erreurs détectées ({importResult.errors.length})
+                                        </p>
+                                    </div>
+                                    <div className="max-h-48 overflow-y-auto">
+                                        {importResult.errors.map((err, idx) => (
+                                            <div key={idx} className="px-4 py-2 border-b last:border-0 text-sm">
+                                                <p className="font-medium text-gray-700">
+                                                    Ligne {err.row}: {err.name}
+                                                </p>
+                                                <ul className="list-disc list-inside text-red-600 text-xs mt-1">
+                                                    {err.errors.map((e, i) => (
+                                                        <li key={i}>{e}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <DialogFooter>
+                    {!importResult ? (
+                        <>
+                            <Button variant="outline" onClick={onReset}>
+                                Annuler
+                            </Button>
+                            <Button
+                                onClick={onImport}
+                                disabled={!importFile || isImporting}
+                                className="bg-orange-500 hover:bg-orange-600"
+                            >
+                                {isImporting ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        Importation...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload className="h-4 w-4 mr-2" />
+                                        Importer
+                                    </>
+                                )}
+                            </Button>
+                        </>
+                    ) : (
+                        <Button onClick={onReset} className="bg-orange-500 hover:bg-orange-600">
+                            Fermer
+                        </Button>
+                    )}
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 

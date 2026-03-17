@@ -27,6 +27,7 @@ import {
   Settings,
   Save,
   Check,
+  AlertTriangle,
 } from "lucide-react";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
@@ -34,10 +35,12 @@ import {
   getCategories,
   getBrands,
   getUnits,
+  checkProductDuplicate,
   Category,
   Brand,
   Unit,
   CreateProductData,
+  DuplicateCheckResult,
 } from "@/actions/products.actions";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/format";
@@ -86,6 +89,13 @@ export default function NewProductPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<"general" | "pricing" | "stock" | "settings">("general");
   const [completedTabs, setCompletedTabs] = useState<Set<string>>(new Set());
+
+  // Duplicate check state
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    sku: { id: string; name: string } | null;
+    barcode: { id: string; name: string } | null;
+  }>({ sku: null, barcode: null });
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
 
   // Fetch organization
   useEffect(() => {
@@ -141,6 +151,33 @@ export default function NewProductPage() {
       setFormData((prev) => ({ ...prev, sku }));
     }
   };
+
+  // Check for duplicates when SKU or barcode changes
+  useEffect(() => {
+    const checkDuplicates = async () => {
+      if (!session?.accessToken || !organization?.id) return;
+      if (!formData.sku && !formData.barcode) {
+        setDuplicateWarning({ sku: null, barcode: null });
+        return;
+      }
+
+      setIsCheckingDuplicate(true);
+      const result = await checkProductDuplicate(
+        session.accessToken,
+        organization.id,
+        formData.sku || undefined,
+        formData.barcode || undefined
+      );
+
+      if (result.success && result.data) {
+        setDuplicateWarning(result.data.duplicates);
+      }
+      setIsCheckingDuplicate(false);
+    };
+
+    const timer = setTimeout(checkDuplicates, 500);
+    return () => clearTimeout(timer);
+  }, [formData.sku, formData.barcode, session, organization]);
 
   // Handle input change
   const handleChange = (field: keyof CreateProductData, value: any) => {
@@ -369,13 +406,19 @@ export default function NewProductPage() {
                       value={formData.sku}
                       onChange={(e) => handleChange("sku", e.target.value.toUpperCase())}
                       placeholder="Ex: COCA-33CL"
-                      className={cn("flex-1", errors.sku ? "border-red-500" : "")}
+                      className={cn("flex-1", errors.sku ? "border-red-500" : duplicateWarning.sku ? "border-orange-500" : "")}
                     />
                     <Button type="button" color="primary" variant="outline" onClick={generateSKU}>
                       Auto
                     </Button>
                   </div>
                   {errors.sku && <p className="text-sm text-red-500">{errors.sku}</p>}
+                  {duplicateWarning.sku && !errors.sku && (
+                    <div className="flex items-center gap-2 text-orange-600 text-sm">
+                      <AlertTriangle className="h-4 w-4" />
+                      <span>Ce SKU existe déjà pour le produit &quot;{duplicateWarning.sku.name}&quot;</span>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="barcode">Code-barres</Label>
@@ -384,7 +427,14 @@ export default function NewProductPage() {
                     value={formData.barcode || ""}
                     onChange={(e) => handleChange("barcode", e.target.value)}
                     placeholder="Ex: 5449000000996"
+                    className={duplicateWarning.barcode ? "border-orange-500" : ""}
                   />
+                  {duplicateWarning.barcode && (
+                    <div className="flex items-center gap-2 text-orange-600 text-sm">
+                      <AlertTriangle className="h-4 w-4" />
+                      <span>Ce code-barres existe déjà pour le produit &quot;{duplicateWarning.barcode.name}&quot;</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
