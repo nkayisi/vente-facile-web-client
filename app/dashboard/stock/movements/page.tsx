@@ -45,8 +45,10 @@ import {
   getStockMovements,
   createStockMovement,
   getWarehouses,
+  getLocationsByWarehouse,
   StockMovement,
   Warehouse,
+  StockLocation,
   MovementType,
   CreateStockMovementData,
 } from "@/actions/stock.actions";
@@ -76,6 +78,8 @@ export default function MovementsPage() {
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [locations, setLocations] = useState<StockLocation[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
@@ -99,7 +103,49 @@ export default function MovementsPage() {
     quantity: 0,
     unit_cost: 0,
     notes: "",
+    location: "",
+    expiry_date: "",
   });
+
+  // Charger les emplacements quand l'entrepôt change
+  useEffect(() => {
+    const loadLocations = async () => {
+      if (!session?.accessToken || !organization || !formData.warehouse) {
+        setLocations([]);
+        return;
+      }
+
+      const result = await getLocationsByWarehouse(
+        session.accessToken,
+        organization.id,
+        formData.warehouse
+      );
+
+      if (result.success && result.data) {
+        setLocations(result.data);
+      } else {
+        setLocations([]);
+      }
+    };
+
+    loadLocations();
+  }, [session?.accessToken, organization, formData.warehouse]);
+
+  // Pré-remplir unit_cost quand le produit change
+  useEffect(() => {
+    if (formData.product) {
+      const product = products.find(p => p.id === formData.product);
+      if (product) {
+        setSelectedProduct(product);
+        // Pré-remplir le coût unitaire avec le cost_price du produit
+        if (product.cost_price && formData.unit_cost === 0) {
+          setFormData(prev => ({ ...prev, unit_cost: parseFloat(product.cost_price) }));
+        }
+      }
+    } else {
+      setSelectedProduct(null);
+    }
+  }, [formData.product, products]);
 
   // Fetch data
   useEffect(() => {
@@ -183,6 +229,13 @@ export default function MovementsPage() {
       return;
     }
 
+    // Vérifier si la date d'expiration est requise pour les produits périssables
+    const isStockIn = ["purchase", "initial", "return_in", "transfer_in", "adjustment_in"].includes(formData.movement_type);
+    if (isStockIn && selectedProduct?.has_expiry_date && !formData.expiry_date) {
+      toast.error("La date d'expiration est obligatoire pour ce produit périssable");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -198,6 +251,8 @@ export default function MovementsPage() {
           quantity: 0,
           unit_cost: 0,
           notes: "",
+          location: "",
+          expiry_date: "",
         });
       } else {
         toast.error(result.message || "Erreur lors de la création");
@@ -416,36 +471,38 @@ export default function MovementsPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="warehouse">Entrepôt *</Label>
-              <SearchableSelect
-                options={warehouses.map(warehouse => ({ value: warehouse.id, label: warehouse.name }))}
-                value={formData.warehouse || undefined}
-                onValueChange={value => setFormData({ ...formData, warehouse: value })}
-                placeholder="Sélectionner un entrepôt"
-                searchPlaceholder="Rechercher un entrepôt..."
-              />
-            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="warehouse">Entrepôt *</Label>
+                <SearchableSelect
+                  options={warehouses.map(warehouse => ({ value: warehouse.id, label: warehouse.name }))}
+                  value={formData.warehouse || undefined}
+                  onValueChange={value => setFormData({ ...formData, warehouse: value })}
+                  placeholder="Sélectionner un entrepôt"
+                  searchPlaceholder="Rechercher un entrepôt..."
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="movement_type">Type de mouvement *</Label>
-              <Select
-                value={formData.movement_type}
-                onValueChange={value =>
-                  setFormData({ ...formData, movement_type: value as MovementType })
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Sélectionner le type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MOVEMENT_TYPES.map(type => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Label htmlFor="movement_type">Type de mouvement *</Label>
+                <Select
+                  value={formData.movement_type}
+                  onValueChange={value =>
+                    setFormData({ ...formData, movement_type: value as MovementType })
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Sélectionner le type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MOVEMENT_TYPES.map(type => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -474,6 +531,55 @@ export default function MovementsPage() {
                 />
               </div>
             </div>
+
+            {/* Champs pour les entrées de stock (lots) */}
+            {["purchase", "initial", "return_in", "transfer_in", "adjustment_in"].includes(formData.movement_type) && (
+              <div className="space-y-4">
+
+                <div className="space-y-2">
+                  <Label htmlFor="location">Emplacement (optionnel)</Label>
+                  <Select
+                    value={formData.location || "none"}
+                    onValueChange={value => setFormData({ ...formData, location: value === "none" ? "" : value })}
+                  >
+                    <SelectTrigger id="location" className="w-full">
+                      <SelectValue placeholder="Sélectionner un emplacement" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Aucun emplacement</SelectItem>
+                      {locations.map(location => (
+                        <SelectItem key={location.id} value={location.id}>
+                          {location.name} ({location.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {locations.length === 0 && formData.warehouse && (
+                    <p className="text-xs text-gray-500">Aucun emplacement disponible pour cet entrepôt</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="expiry_date">
+                    Date d'expiration {selectedProduct?.has_expiry_date ? "*" : "(optionnel)"}
+                  </Label>
+                  <Input
+                    id="expiry_date"
+                    type="date"
+                    value={formData.expiry_date || ""}
+                    onChange={e => setFormData({ ...formData, expiry_date: e.target.value })}
+                    required={selectedProduct?.has_expiry_date}
+                  />
+                  {selectedProduct?.has_expiry_date ? (
+                    <p className="text-xs text-orange-600 font-medium">
+                      ⚠️ Ce produit est périssable, la date d'expiration est obligatoire
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500">Pour les produits périssables uniquement</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>

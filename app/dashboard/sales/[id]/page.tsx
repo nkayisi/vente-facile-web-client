@@ -99,9 +99,15 @@ export default function SaleDetailPage() {
     setIsPrinting(true);
 
     try {
+      // Charger les paramètres de l'organisation pour l'en-tête/pied de page
+      const { getOrganizationSettings } = await import("@/actions/settings.actions");
+      const settingsResult = await getOrganizationSettings(session.accessToken, organization.id);
+
       // Generate receipt data
       const receiptData: ReceiptData = {
         orgName: organization.name || "Vente Facile",
+        orgAddress: organization.address || undefined,
+        orgPhone: organization.phone || undefined,
         registerName: sale.register_name || undefined,
         cashierName: sale.sold_by_name,
         reference: sale.reference,
@@ -128,12 +134,15 @@ export default function SaleDetailPage() {
         amountPaid: parseFloat(sale.amount_paid),
         change: parseFloat(sale.change_amount),
         currency: sale.currency,
+        receiptHeader: settingsResult.success && settingsResult.data?.receipt_header ? settingsResult.data.receipt_header : undefined,
+        receiptFooter: settingsResult.success && settingsResult.data?.receipt_footer ? settingsResult.data.receipt_footer : undefined,
         isCreditSale: sale.sale_type === "credit",
         amountDue: parseFloat(sale.amount_due),
       };
 
-      // Print receipt
-      printReceipt(receiptData);
+      // Print receipt avec la largeur de papier configurée
+      const paperWidth = (settingsResult.success && settingsResult.data?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
+      printReceipt(receiptData, paperWidth);
 
       // Mark as printed
       const result = await markReceiptPrinted(session.accessToken, organization.id, sale.id);

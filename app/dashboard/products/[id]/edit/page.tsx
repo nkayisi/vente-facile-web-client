@@ -119,6 +119,7 @@ export default function EditProductPage() {
           is_taxable: product.is_taxable,
           track_inventory: product.track_inventory,
           allow_negative_stock: product.allow_negative_stock,
+          has_expiry_date: product.has_expiry_date,
           min_stock_level: product.min_stock_level,
           reorder_point: product.reorder_point,
           reorder_quantity: product.reorder_quantity,
@@ -524,6 +525,19 @@ export default function EditProductPage() {
                       id="allow_negative_stock"
                       checked={formData.allow_negative_stock ?? false}
                       onCheckedChange={(checked: boolean) => handleChange("allow_negative_stock", checked)}
+                    />
+                  </div>
+
+                  {/* Has Expiry Date */}
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <Label htmlFor="has_expiry_date">Produit périssable</Label>
+                      <p className="text-sm text-gray-500">Ce produit a une date d'expiration (FEFO sera utilisé)</p>
+                    </div>
+                    <Switch
+                      id="has_expiry_date"
+                      checked={formData.has_expiry_date ?? false}
+                      onCheckedChange={(checked: boolean) => handleChange("has_expiry_date", checked)}
                     />
                   </div>
 

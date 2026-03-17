@@ -20,6 +20,7 @@ import {
   Trash2,
   Settings,
   BarChart3,
+  Plus,
 } from "lucide-react";
 import {
   Dialog,
@@ -29,6 +30,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
@@ -37,11 +40,13 @@ import {
   getWarehouseStockSummary,
   getStockByWarehouse,
   getStockLocations,
+  createStockLocation,
   deleteWarehouse,
   Warehouse,
   Stock,
   StockLocation,
   WarehouseStockSummary,
+  CreateStockLocationData,
 } from "@/actions/stock.actions";
 
 export default function WarehouseDetailPage() {
@@ -59,6 +64,13 @@ export default function WarehouseDetailPage() {
   const [locations, setLocations] = useState<StockLocation[]>([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showCreateLocationDialog, setShowCreateLocationDialog] = useState(false);
+  const [isCreatingLocation, setIsCreatingLocation] = useState(false);
+  const [locationFormData, setLocationFormData] = useState<CreateStockLocationData>({
+    name: "",
+    code: "",
+    warehouse: warehouseId,
+  });
 
   // Fetch data
   useEffect(() => {
@@ -109,6 +121,40 @@ export default function WarehouseDetailPage() {
 
     fetchData();
   }, [session, warehouseId]);
+
+  // Handle create location
+  const handleCreateLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.accessToken || !organization?.id) return;
+
+    setIsCreatingLocation(true);
+
+    try {
+      const result = await createStockLocation(
+        session.accessToken,
+        organization.id,
+        { ...locationFormData, warehouse: warehouseId }
+      );
+
+      if (result.success) {
+        toast.success("Emplacement créé avec succès");
+        setShowCreateLocationDialog(false);
+        setLocationFormData({ name: "", code: "", warehouse: warehouseId });
+
+        // Refresh locations
+        const locationsResult = await getStockLocations(session.accessToken, organization.id, warehouseId);
+        if (locationsResult.success && locationsResult.data) {
+          setLocations(locationsResult.data);
+        }
+      } else {
+        toast.error(result.message || "Erreur lors de la création");
+      }
+    } catch (error) {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setIsCreatingLocation(false);
+    }
+  };
 
   // Handle delete
   const handleDelete = async () => {
@@ -399,6 +445,19 @@ export default function WarehouseDetailPage() {
 
         {/* Locations Tab */}
         <TabsContent value="locations" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-gray-500">
+              {locations.length} emplacement{locations.length > 1 ? 's' : ''}
+            </p>
+            <Button
+              onClick={() => setShowCreateLocationDialog(true)}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Nouvel emplacement
+            </Button>
+          </div>
+
           {locations.length === 0 ? (
             <Card className="p-0">
               <CardContent className="p-8 text-center">
@@ -410,7 +469,7 @@ export default function WarehouseDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {locations.map(location => (
                 <Card key={location.id} className="p-0">
                   <CardContent className="p-4">
@@ -456,6 +515,60 @@ export default function WarehouseDetailPage() {
               Supprimer
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Location Dialog */}
+      <Dialog open={showCreateLocationDialog} onOpenChange={setShowCreateLocationDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvel emplacement</DialogTitle>
+            <DialogDescription>
+              Créer un nouvel emplacement de stockage pour {warehouse.name}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateLocation} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="location-name">Nom de l'emplacement *</Label>
+              <Input
+                id="location-name"
+                value={locationFormData.name}
+                onChange={e => setLocationFormData({ ...locationFormData, name: e.target.value })}
+                placeholder="Ex: Allée A, Étagère 1, Zone froide..."
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="location-code">Code *</Label>
+              <Input
+                id="location-code"
+                value={locationFormData.code}
+                onChange={e => setLocationFormData({ ...locationFormData, code: e.target.value })}
+                placeholder="Ex: A1, ETG-01, ZF-1..."
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowCreateLocationDialog(false);
+                  setLocationFormData({ name: "", code: "", warehouse: warehouseId });
+                }}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="submit"
+                disabled={isCreatingLocation}
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                {isCreatingLocation && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Créer
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

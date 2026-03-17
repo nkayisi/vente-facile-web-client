@@ -8,7 +8,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { getUserOrganizations } from "@/actions/organization.actions";
 import { getUserPermissions } from "@/actions/permissions.actions";
 import type {
@@ -70,6 +70,14 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
       // Récupérer l'organisation active
       const orgsResult = await getUserOrganizations(session.accessToken);
+
+      // Si l'utilisateur n'existe pas, déconnecter automatiquement
+      if (!orgsResult.success && orgsResult.errorCode === 'user_not_found') {
+        console.warn("User not found, signing out...");
+        await signOut({ callbackUrl: '/auth/login' });
+        return;
+      }
+
       if (!orgsResult.success || !orgsResult.data || orgsResult.data.length === 0) {
         setIsLoading(false);
         return;

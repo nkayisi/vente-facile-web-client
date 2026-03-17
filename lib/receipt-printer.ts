@@ -55,19 +55,21 @@ type PaperWidth = 58 | 80;
 // Font sizes in points
 const FONT_SIZE_NORMAL = 9;
 const FONT_SIZE_SMALL = 7.5;
-const FONT_SIZE_LARGE = 11;
-const FONT_SIZE_XLARGE = 13;
 const LINE_HEIGHT = 3.5; // mm per line
 const LINE_HEIGHT_SMALL = 3; // mm per line for small text
 const MARGIN = 3; // mm margins
 
-function formatAmount(amount: number): string {
-  const rounded = Math.round(amount);
-  return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+function formatAmount(amount: number, decimals: number = 2): string {
+  // Utiliser toFixed pour conserver les décimales exactes sans arrondi
+  const formatted = amount.toFixed(decimals);
+  // Séparer les milliers avec des espaces
+  const parts = formatted.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return parts.join('.');
 }
 
-function formatAmountWithCurrency(amount: number, currency: string): string {
-  return `${formatAmount(amount)} ${currency}`;
+function formatAmountWithCurrency(amount: number, currency: string, decimals: number = 2): string {
+  return `${formatAmount(amount, decimals)} ${currency}`;
 }
 
 /**
@@ -190,11 +192,14 @@ export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): vo
   };
 
   // === HEADER ===
-  drawCenteredText(data.orgName.toUpperCase(), FONT_SIZE_XLARGE, true);
-  if (data.orgAddress) drawCenteredText(data.orgAddress, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
-  if (data.orgPhone) drawCenteredText(`Tel: ${data.orgPhone}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   if (data.receiptHeader) {
+    // Si un en-tête personnalisé existe, afficher uniquement celui-ci
     data.receiptHeader.split("\n").forEach(line => drawCenteredText(line.trim(), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL));
+  } else {
+    // Sinon, afficher les informations par défaut
+    drawCenteredText(data.orgName.toUpperCase(), FONT_SIZE_NORMAL, true);
+    if (data.orgAddress) drawCenteredText(data.orgAddress, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    if (data.orgPhone) drawCenteredText(`Tel: ${data.orgPhone}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
   y += 1; // spacing
   drawSeparator("=");
@@ -243,8 +248,8 @@ export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): vo
     doc.setFontSize(FONT_SIZE_SMALL);
     doc.text(name, leftX, y);
     doc.text(item.quantity.toString(), leftX + contentWidth * 0.45, y, { align: "right" });
-    doc.text(formatAmount(item.unit_price), leftX + contentWidth * 0.7, y, { align: "right" });
-    doc.text(formatAmount(item.total), rightX, y, { align: "right" });
+    doc.text(formatAmount(item.unit_price, 2), leftX + contentWidth * 0.7, y, { align: "right" });
+    doc.text(formatAmount(item.total, 2), rightX, y, { align: "right" });
     y += LINE_HEIGHT_SMALL;
 
     if (item.discount_percentage > 0) {
@@ -258,34 +263,34 @@ export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): vo
 
   // === TOTALS ===
   y += 1;
-  drawLeftRightText("Sous-total", formatAmount(data.subtotal), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+  drawLeftRightText("Sous-total", formatAmount(data.subtotal, 2), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
 
   if (data.discountAmount > 0) {
     const discLabel = data.globalDiscountPercent > 0 ? `Remise (${data.globalDiscountPercent}%)` : "Remises";
-    drawLeftRightText(discLabel, `-${formatAmount(data.discountAmount)}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    drawLeftRightText(discLabel, `-${formatAmount(data.discountAmount, 2)}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
 
   if (data.taxAmount > 0) {
-    drawLeftRightText("Taxes (TVA)", `+${formatAmount(data.taxAmount)}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    drawLeftRightText("Taxes (TVA)", `+${formatAmount(data.taxAmount, 2)}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
 
   y += 1;
   drawSeparator("=");
-  drawLeftRightText("Total a payer", formatAmountWithCurrency(data.total, data.currency), FONT_SIZE_LARGE);
+  drawLeftRightText("Total a payer", formatAmountWithCurrency(data.total, data.currency, 2), FONT_SIZE_NORMAL);
   drawSeparator("=");
 
   // === PAYMENTS ===
   y += 1.5;
   data.payments.forEach(p => {
-    drawLeftRightText(p.method, formatAmountWithCurrency(p.amount, p.currency), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    drawLeftRightText(p.method, formatAmountWithCurrency(p.amount, p.currency, 2), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   });
 
   if (data.change > 0) {
-    drawLeftRightText("Monnaie a rendre", formatAmountWithCurrency(data.change, data.currency), FONT_SIZE_SMALL);
+    drawLeftRightText("Monnaie a rendre", formatAmountWithCurrency(data.change, data.currency, 2), FONT_SIZE_SMALL);
   }
 
   if (data.isCreditSale && data.amountDue && data.amountDue > 0) {
-    drawLeftRightText("Reste a payer", formatAmountWithCurrency(data.amountDue, data.currency), FONT_SIZE_SMALL); // reset to black
+    drawLeftRightText("Reste a payer", formatAmountWithCurrency(data.amountDue, data.currency, 2), FONT_SIZE_SMALL);
   }
 
   // === LOYALTY POINTS ===
@@ -414,7 +419,7 @@ export function printPaymentReceipt(data: PaymentReceiptData, paperWidth: PaperW
 
   // Header
   doc.setTextColor(0, 0, 0);
-  drawCenteredText(data.orgName.toUpperCase(), FONT_SIZE_XLARGE, true);
+  drawCenteredText(data.orgName.toUpperCase(), FONT_SIZE_NORMAL, true);
   if (data.orgAddress) drawCenteredText(data.orgAddress, FONT_SIZE_SMALL);
   if (data.orgPhone) drawCenteredText(`Tél: ${data.orgPhone}`, FONT_SIZE_SMALL);
 
@@ -422,7 +427,7 @@ export function printPaymentReceipt(data: PaymentReceiptData, paperWidth: PaperW
   drawSeparator("=");
 
   // Receipt type
-  drawCenteredText("REÇU DE PAIEMENT", FONT_SIZE_LARGE, true);
+  drawCenteredText("REÇU DE PAIEMENT", FONT_SIZE_NORMAL, true);
   drawSeparator();
 
   // Receipt info
@@ -463,7 +468,7 @@ export function printPaymentReceipt(data: PaymentReceiptData, paperWidth: PaperW
   drawLeftRightText("Mode:", data.paymentMethod, FONT_SIZE_SMALL);
   y += 1;
   drawSeparator("=");
-  drawLeftRightText("Montant payé", formatAmountWithCurrency(data.amountPaid, data.currency), FONT_SIZE_LARGE);
+  drawLeftRightText("Montant payé", formatAmountWithCurrency(data.amountPaid, data.currency), FONT_SIZE_NORMAL);
   drawSeparator("=");
 
   if (data.paymentReference) {

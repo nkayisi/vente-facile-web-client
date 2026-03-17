@@ -217,6 +217,8 @@ export interface CreateStockMovementData {
   quantity: number;
   unit_cost?: number;
   notes?: string;
+  location?: string;
+  expiry_date?: string;
 }
 
 export interface CreateStockTransferData {
@@ -482,6 +484,24 @@ export async function getStockLocations(
   }
 }
 
+export async function getLocationsByWarehouse(
+  accessToken: string,
+  organizationId: string,
+  warehouseId: string
+): Promise<ApiResponse<StockLocation[]>> {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/stock-locations/by-warehouse/${warehouseId}/`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    console.error("[stock] Get locations by warehouse error:", error.response?.data || error.message);
+    return { success: false, message: "Erreur lors de la récupération des emplacements" };
+  }
+}
+
 export async function createStockLocation(
   accessToken: string,
   organizationId: string,
@@ -690,9 +710,18 @@ export async function createStockMovement(
   data: CreateStockMovementData
 ): Promise<ApiResponse<StockMovement>> {
   try {
+    // Nettoyer les champs optionnels vides
+    const cleanedData = { ...data };
+    if (!cleanedData.location || cleanedData.location === "") {
+      delete cleanedData.location;
+    }
+    if (!cleanedData.expiry_date || cleanedData.expiry_date === "") {
+      delete cleanedData.expiry_date;
+    }
+
     const response = await axios.post(
       `${API_BASE_URL}/stock-movements/`,
-      data,
+      cleanedData,
       { headers: getHeaders(accessToken, organizationId) }
     );
 

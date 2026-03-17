@@ -87,6 +87,7 @@ export interface Product {
   profit_margin?: string;
   track_inventory: boolean;
   allow_negative_stock: boolean;
+  has_expiry_date: boolean;
   min_stock_level: number;
   max_stock_level?: number | null;
   reorder_point: number;
@@ -131,6 +132,7 @@ export interface CreateProductData {
   is_taxable?: boolean;
   track_inventory?: boolean;
   allow_negative_stock?: boolean;
+  has_expiry_date?: boolean;
   min_stock_level?: number;
   max_stock_level?: number | null;
   reorder_point?: number;

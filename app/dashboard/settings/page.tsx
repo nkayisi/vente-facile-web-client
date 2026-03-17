@@ -131,6 +131,7 @@ export default function SettingsPage() {
   const [settingsForm, setSettingsForm] = useState({
     receipt_header: "",
     receipt_footer: "",
+    receipt_paper_width: 58,
     show_loyalty_points_on_receipt: true,
     low_stock_threshold: 10,
   });
@@ -166,6 +167,7 @@ export default function SettingsPage() {
         setSettingsForm({
           receipt_header: settingsRes.data.receipt_header || "",
           receipt_footer: settingsRes.data.receipt_footer || "",
+          receipt_paper_width: settingsRes.data.receipt_paper_width || 58,
           show_loyalty_points_on_receipt: settingsRes.data.show_loyalty_points_on_receipt,
           low_stock_threshold: settingsRes.data.low_stock_threshold,
         });
@@ -768,6 +770,20 @@ export default function SettingsPage() {
                       rows={3}
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Largeur du papier du ticket</Label>
+                  <select
+                    value={settingsForm.receipt_paper_width}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, receipt_paper_width: parseInt(e.target.value) })}
+                    className="flex h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <option value={58}>58mm (Ticket étroit)</option>
+                    <option value={80}>80mm (Ticket standard)</option>
+                  </select>
+                  <p className="text-xs text-gray-500">
+                    Choisissez la largeur selon votre imprimante thermique
+                  </p>
                 </div>
               </div>
 

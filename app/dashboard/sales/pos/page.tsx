@@ -553,6 +553,8 @@ export default function POSPage() {
 
         const receiptData: ReceiptData = {
           orgName: organization.name || "Vente Facile",
+          orgAddress: organization.address || undefined,
+          orgPhone: organization.phone || undefined,
           registerName: currentSession.register_name,
           cashierName: currentSession.opened_by_name,
           reference: result.data.reference,
@@ -575,6 +577,8 @@ export default function POSPage() {
           amountPaid: amountInPrimary,
           change: !isCreditSale ? Math.max(0, amountInPrimary - (total - pointsDiscount)) : 0,
           currency: primaryCode,
+          receiptHeader: orgSettings?.receipt_header || undefined,
+          receiptFooter: orgSettings?.receipt_footer || undefined,
           isCreditSale: creditAmount > 0,
           amountDue: creditAmount > 0 ? creditAmount : 0,
           // Loyalty points on receipt
@@ -583,7 +587,9 @@ export default function POSPage() {
           loyaltyPointsBalance: customerLoyalty ? (customerLoyalty.current_points - (usePoints ? pointsToUse : 0) + Math.floor((total - pointsDiscount) * (loyaltyProgram?.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1) / 100)) : 0,
         };
 
-        printReceipt(receiptData);
+        // Utiliser la largeur de papier configurée ou 58mm par défaut
+        const paperWidth = (orgSettings?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
+        printReceipt(receiptData, paperWidth);
 
         // Mark receipt as printed
         markReceiptPrinted(session.accessToken, organization.id, result.data.id).catch((err: any) => {

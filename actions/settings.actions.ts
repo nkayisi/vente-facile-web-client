@@ -114,6 +114,7 @@ export interface OrganizationSettings {
   id: string;
   receipt_header: string;
   receipt_footer: string;
+  receipt_paper_width: number;
   show_loyalty_points_on_receipt: boolean;
   low_stock_threshold: number;
   created_at: string;

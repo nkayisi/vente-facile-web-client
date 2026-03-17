@@ -75,6 +75,7 @@ interface OrganizationsListResponse {
   message?: string;
   data?: Organization[];
   errors?: Record<string, string>;
+  errorCode?: string;
 }
 
 /**
@@ -100,9 +101,13 @@ export async function getUserOrganizations(accessToken: string): Promise<Organiz
   } catch (error: any) {
     console.error("[Server Action] Get organizations error:", error.response?.data || error.message);
 
+    const errorCode = error.response?.data?.code;
+    const errorMessage = error.response?.data?.detail || error.message || "Impossible de récupérer les organisations";
+
     return {
       success: false,
-      message: error.message || "Impossible de récupérer les organisations",
+      message: errorMessage,
+      errorCode: errorCode,
     };
   }
 }

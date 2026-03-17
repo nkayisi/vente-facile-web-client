@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { getUserOrganizations, Organization, CurrencyInfo } from "@/actions/organization.actions";
 import { CurrencyProvider } from "@/components/providers/currency-provider";
 import { Loader2 } from "lucide-react";
@@ -31,6 +31,14 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
     if (!session?.accessToken) return;
     try {
       const result = await getUserOrganizations(session.accessToken);
+
+      // Si l'utilisateur n'existe pas, déconnecter automatiquement
+      if (!result.success && result.errorCode === 'user_not_found') {
+        console.warn("User not found, signing out...");
+        await signOut({ callbackUrl: '/auth/login' });
+        return;
+      }
+
       if (result.success && result.data && result.data.length > 0) {
         setOrganization(result.data[0]);
       }
@@ -53,6 +61,13 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
       if (status === "authenticated" && session?.accessToken) {
         try {
           const result = await getUserOrganizations(session.accessToken);
+
+          // Si l'utilisateur n'existe pas, déconnecter automatiquement
+          if (!result.success && result.errorCode === 'user_not_found') {
+            console.warn("User not found, signing out...");
+            await signOut({ callbackUrl: '/auth/login' });
+            return;
+          }
 
           if (result.success && result.data) {
             if (result.data.length === 0) {
