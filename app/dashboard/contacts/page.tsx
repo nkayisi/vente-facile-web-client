@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getCustomers,
@@ -126,8 +127,8 @@ export default function ContactsPage() {
               <div className="p-2 bg-blue-100 rounded-lg">
                 <Users className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.total || customers.length}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(stats?.total || customers.length)} />
                 <p className="text-xs text-gray-500">Clients</p>
               </div>
             </div>
@@ -140,8 +141,8 @@ export default function ContactsPage() {
               <div className="p-2 bg-purple-100 rounded-lg">
                 <Truck className="h-5 w-5 text-purple-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{suppliers.length}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(suppliers.length)} />
                 <p className="text-xs text-gray-500">Fournisseurs</p>
               </div>
             </div>
@@ -154,8 +155,8 @@ export default function ContactsPage() {
               <div className="p-2 bg-orange-100 rounded-lg">
                 <CreditCard className="h-5 w-5 text-orange-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-orange-600">{stats?.with_balance || 0}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(stats?.with_balance || 0)} color="text-orange-600" />
                 <p className="text-xs text-gray-500">Avec solde</p>
               </div>
             </div>
@@ -168,8 +169,8 @@ export default function ContactsPage() {
               <div className="p-2 bg-green-100 rounded-lg">
                 <TrendingUp className="h-5 w-5 text-green-600" />
               </div>
-              <div>
-                <p className="text-lg font-bold">{formatPrice(stats?.total_balance || "0")}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={formatPrice(stats?.total_balance || "0")} />
                 <p className="text-xs text-gray-500">Solde total</p>
               </div>
             </div>

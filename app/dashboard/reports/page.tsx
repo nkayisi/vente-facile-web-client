@@ -60,6 +60,7 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 import { formatPrice, formatNumber, formatDate, formatDateTime, formatPriceValue } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getDashboardSummary,
@@ -832,11 +833,9 @@ export default function ReportsPage() {
           <Card className="py-1">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-500">Chiffre d'affaires</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {formatPrice(parseFloat(summary.sales.total_sales))}
-                  </p>
+                  <StatValue value={formatPrice(parseFloat(summary.sales.total_sales))} />
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-sm text-gray-500">
                       {summary.sales.total_orders} ventes
@@ -855,11 +854,9 @@ export default function ReportsPage() {
           <Card className="py-1">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-500">Panier moyen</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {formatPrice(parseFloat(summary.sales.average_order_value))}
-                  </p>
+                  <StatValue value={formatPrice(parseFloat(summary.sales.average_order_value))} />
                   <p className="text-sm text-gray-500 mt-1">
                     {summary.sales.total_items_sold} articles vendus
                   </p>
@@ -875,11 +872,9 @@ export default function ReportsPage() {
           <Card className="py-1">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-500">Solde caisse</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {formatPrice(parseFloat(summary.cashbook.current_balance))}
-                  </p>
+                  <StatValue value={formatPrice(parseFloat(summary.cashbook.current_balance))} />
                   <p className="text-sm text-gray-500 mt-1">
                     Flux net: {formatPrice(parseFloat(summary.cashbook.net_flow))}
                   </p>
@@ -895,11 +890,9 @@ export default function ReportsPage() {
           <Card className="py-1">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-500">Créances clients</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {formatPrice(parseFloat(summary.customers.total_receivables))}
-                  </p>
+                  <StatValue value={formatPrice(parseFloat(summary.customers.total_receivables))} />
                   <p className="text-sm text-gray-500 mt-1">
                     {summary.customers.customers_with_debt} clients avec dette
                   </p>

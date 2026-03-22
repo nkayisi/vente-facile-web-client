@@ -47,6 +47,7 @@ import {
   Printer,
   Send,
   ShieldCheck,
+  AlertCircle,
   AlertTriangle,
   Package,
   Warehouse as WarehouseIcon,
@@ -680,18 +681,32 @@ export default function InventoryDetailPage() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {inventorySession.status === "draft" && (
             <Button onClick={() => setShowStartDialog(true)} className="bg-blue-600 hover:bg-blue-700">
               <Play className="h-4 w-4 mr-2" />
               Démarrer l'inventaire
             </Button>
           )}
-          {canSubmit && !hasUnsavedChanges && (
-            <Button onClick={() => setShowSubmitDialog(true)} className="bg-orange-500 hover:bg-orange-600">
-              <Send className="h-4 w-4 mr-2" />
-              Soumettre pour révision
-            </Button>
+          {isEditable && (
+            <>
+              {hasUnsavedChanges ? (
+                <p className="text-xs text-orange-600 flex items-center gap-1">
+                  <Save className="h-3.5 w-3.5" />
+                  Enregistrez vos modifications avant de soumettre
+                </p>
+              ) : inventorySession.items_counted < inventorySession.items_total ? (
+                <p className="text-xs text-orange-600 flex items-center gap-1">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  {inventorySession.items_total - inventorySession.items_counted} produit(s) restant(s) à compter
+                </p>
+              ) : canSubmit ? (
+                <Button onClick={() => setShowSubmitDialog(true)} className="bg-orange-500 hover:bg-orange-600">
+                  <Send className="h-4 w-4 mr-2" />
+                  Soumettre pour révision
+                </Button>
+              ) : null}
+            </>
           )}
           {canValidate && (
             <Button onClick={() => setShowValidateDialog(true)} className="bg-green-600 hover:bg-green-700">

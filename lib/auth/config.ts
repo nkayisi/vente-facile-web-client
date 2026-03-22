@@ -47,14 +47,19 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
     const refreshedTokens = await response.json();
     console.log("[Auth] Token rafraîchi avec succès");
 
+    // Si le backend renvoie un nouveau refresh token (ROTATE_REFRESH_TOKENS=True),
+    // on le stocke avec une nouvelle expiration. Sinon, on conserve l'ancien.
+    const newRefreshToken = refreshedTokens.refresh || token.refreshToken;
+    const newRefreshExpires = refreshedTokens.refresh
+      ? Date.now() + REFRESH_TOKEN_LIFETIME
+      : token.refreshTokenExpires;
+
     return {
       ...token,
       accessToken: refreshedTokens.access,
       accessTokenExpires: Date.now() + ACCESS_TOKEN_LIFETIME,
-      // Le backend Django avec ROTATE_REFRESH_TOKENS=True renvoie toujours un nouveau refresh token
-      refreshToken: refreshedTokens.refresh,
-      refreshTokenExpires: Date.now() + REFRESH_TOKEN_LIFETIME,
-      // Effacer toute erreur précédente
+      refreshToken: newRefreshToken,
+      refreshTokenExpires: newRefreshExpires,
       error: undefined,
     };
   } catch (error) {
@@ -160,6 +165,18 @@ export const authConfig: NextAuthConfig = {
       if (!shouldRefresh) {
         // Token encore valide
         return token;
+      }
+
+      // Vérifier si le refresh token est encore valide
+      const refreshTokenExpires = token.refreshTokenExpires as number || 0;
+      if (now >= refreshTokenExpires) {
+        console.log("[Auth] Refresh token expiré, déconnexion nécessaire");
+        return {
+          ...token,
+          accessToken: undefined,
+          accessTokenExpires: 0,
+          error: "RefreshAccessTokenError",
+        };
       }
 
       console.log("[Auth] Token expiré ou proche de l'expiration, rafraîchissement...");

@@ -11,7 +11,7 @@ export default function AuthLayout({
       <div className="w-full max-w-2xl">
         <div className="text-center mb-3">
           <Link href="/" className="inline-flex items-center">
-            <Image src="/logo.png" alt="Vente Facile" width={160} height={160} className="object-contain" />
+            <Image src="/logo.png" alt="Vente Facile" width={100} height={100} className="object-contain" />
           </Link>
         </div>
         <div className="rounded-xl">

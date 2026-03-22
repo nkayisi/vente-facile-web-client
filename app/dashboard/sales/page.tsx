@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getSales,
@@ -200,10 +201,8 @@ export default function SalesPage() {
               <div className="p-2 bg-green-100 rounded-lg">
                 <DollarSign className="h-5 w-5 text-green-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {formatPrice(stats?.summary.total_sales || 0)}
-                </p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={formatPrice(stats?.summary.total_sales || 0)} />
                 <p className="text-xs text-gray-500">Ventes du jour</p>
               </div>
             </div>
@@ -216,8 +215,8 @@ export default function SalesPage() {
               <div className="p-2 bg-blue-100 rounded-lg">
                 <Receipt className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.summary.count || 0}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(stats?.summary.count || 0)} />
                 <p className="text-xs text-gray-500">Transactions</p>
               </div>
             </div>
@@ -230,10 +229,8 @@ export default function SalesPage() {
               <div className="p-2 bg-purple-100 rounded-lg">
                 <TrendingUp className="h-5 w-5 text-purple-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {formatPrice(stats?.summary.average || 0)}
-                </p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={formatPrice(stats?.summary.average || 0)} />
                 <p className="text-xs text-gray-500">Panier moyen</p>
               </div>
             </div>
@@ -246,8 +243,8 @@ export default function SalesPage() {
               <div className="p-2 bg-orange-100 rounded-lg">
                 <Calculator className="h-5 w-5 text-orange-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{registers.length}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(registers.length)} />
                 <p className="text-xs text-gray-500">Caisses actives</p>
               </div>
             </div>

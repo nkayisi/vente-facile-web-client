@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsync, type AsyncSelectOption } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
   DialogContent,
@@ -40,7 +41,7 @@ import {
 import { toast } from "sonner";
 import { formatPrice, formatDateTime } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
-import { getProducts, Product } from "@/actions/products.actions";
+import { getProducts, getProduct, Product } from "@/actions/products.actions";
 import {
   getStockMovements,
   createStockMovement,
@@ -131,21 +132,55 @@ export default function MovementsPage() {
     loadLocations();
   }, [session?.accessToken, organization, formData.warehouse]);
 
+  // Recherche de produits côté backend
+  const searchProducts = useCallback(async (query: string): Promise<AsyncSelectOption[]> => {
+    if (!session?.accessToken || !organization) return [];
+    const result = await getProducts(session.accessToken, organization.id, {
+      search: query,
+      page_size: 30,
+      is_active: true,
+    });
+    if (result.success && result.data) {
+      const results = result.data.results || [];
+      // Mettre à jour le cache local des produits pour le pré-remplissage du unit_cost
+      setProducts(prev => {
+        const existingIds = new Set(prev.map(p => p.id));
+        const newProducts = results.filter(p => !existingIds.has(p.id));
+        return newProducts.length > 0 ? [...prev, ...newProducts] : prev;
+      });
+      return results.map(p => ({
+        value: p.id,
+        label: `${p.name} (${p.sku})`,
+      }));
+    }
+    return [];
+  }, [session?.accessToken, organization]);
+
   // Pré-remplir unit_cost quand le produit change
   useEffect(() => {
     if (formData.product) {
       const product = products.find(p => p.id === formData.product);
       if (product) {
         setSelectedProduct(product);
-        // Pré-remplir le coût unitaire avec le cost_price du produit
         if (product.cost_price && formData.unit_cost === 0) {
           setFormData(prev => ({ ...prev, unit_cost: parseFloat(product.cost_price) }));
         }
+      } else if (session?.accessToken && organization) {
+        // Produit sélectionné via recherche mais pas encore dans le cache local
+        getProduct(session.accessToken, organization.id, formData.product).then(result => {
+          if (result.success && result.data) {
+            setSelectedProduct(result.data);
+            setProducts(prev => [...prev, result.data!]);
+            if (result.data.cost_price && formData.unit_cost === 0) {
+              setFormData(prev => ({ ...prev, unit_cost: parseFloat(result.data!.cost_price) }));
+            }
+          }
+        });
       }
     } else {
       setSelectedProduct(null);
     }
-  }, [formData.product, products]);
+  }, [formData.product, products, session?.accessToken, organization]);
 
   // Fetch data
   useEffect(() => {
@@ -462,8 +497,9 @@ export default function MovementsPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="product">Produit *</Label>
-              <SearchableSelect
-                options={products.map(product => ({ value: product.id, label: `${product.name} (${product.sku})` }))}
+              <SearchableSelectAsync
+                onSearch={searchProducts}
+                initialOptions={products.map(p => ({ value: p.id, label: `${p.name} (${p.sku})` }))}
                 value={formData.product || undefined}
                 onValueChange={value => setFormData({ ...formData, product: value })}
                 placeholder="Sélectionner un produit"

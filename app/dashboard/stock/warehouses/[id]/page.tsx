@@ -33,7 +33,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatNumber } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getWarehouse,
@@ -245,8 +246,8 @@ export default function WarehouseDetailPage() {
               <div className="p-2 bg-blue-100 rounded-lg">
                 <Package className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{stockSummary?.total_products || 0}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(stockSummary?.total_products || 0)} />
                 <p className="text-xs text-gray-500">Produits</p>
               </div>
             </div>
@@ -259,8 +260,8 @@ export default function WarehouseDetailPage() {
               <div className="p-2 bg-green-100 rounded-lg">
                 <BarChart3 className="h-5 w-5 text-green-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{stockSummary?.total_quantity || 0}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(stockSummary?.total_quantity || 0)} />
                 <p className="text-xs text-gray-500">Quantité totale</p>
               </div>
             </div>
@@ -273,8 +274,8 @@ export default function WarehouseDetailPage() {
               <div className="p-2 bg-orange-100 rounded-lg">
                 <TrendingDown className="h-5 w-5 text-orange-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{stockSummary?.low_stock_count || 0}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(stockSummary?.low_stock_count || 0)} />
                 <p className="text-xs text-gray-500">Stock bas</p>
               </div>
             </div>
@@ -287,8 +288,8 @@ export default function WarehouseDetailPage() {
               <div className="p-2 bg-red-100 rounded-lg">
                 <AlertTriangle className="h-5 w-5 text-red-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{stockSummary?.out_of_stock_count || 0}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(stockSummary?.out_of_stock_count || 0)} />
                 <p className="text-xs text-gray-500">Rupture</p>
               </div>
             </div>
@@ -364,9 +365,7 @@ export default function WarehouseDetailPage() {
 
               <div className="pt-4 border-t">
                 <p className="text-sm font-medium text-gray-500 mb-2">Valeur totale du stock</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {formatPrice(stockSummary?.total_value || 0)}
-                </p>
+                <StatValue value={formatPrice(stockSummary?.total_value || 0)} />
               </div>
             </CardContent>
           </Card>

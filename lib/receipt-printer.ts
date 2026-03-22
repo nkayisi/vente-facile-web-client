@@ -138,9 +138,10 @@ function calculateReceiptHeight(data: ReceiptData): number {
 }
 
 /**
- * Generate and open a PDF receipt
+ * Generate a PDF receipt and return the blob URL.
+ * Use this when you need to control how/when the PDF is opened.
  */
-export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): void {
+export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth = 58): string {
   const contentWidth = paperWidth - (MARGIN * 2);
   const height = calculateReceiptHeight(data);
 
@@ -317,10 +318,44 @@ export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): vo
   doc.setTextColor(158, 158, 158); // gray
   drawCenteredText("Powered by Vente Facile", FONT_SIZE_SMALL - 1, false, LINE_HEIGHT_SMALL);
 
-  // Open PDF in new window
+  // Return the PDF blob URL
   const pdfBlob = doc.output("blob");
-  const pdfUrl = URL.createObjectURL(pdfBlob);
+  return URL.createObjectURL(pdfBlob);
+}
+
+/**
+ * Generate and open a PDF receipt in a new tab.
+ * For use in synchronous contexts (direct user click).
+ */
+export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): void {
+  const pdfUrl = generateReceiptPdfUrl(data, paperWidth);
   window.open(pdfUrl, "_blank");
+}
+
+/**
+ * Save the PDF as a real file, then display it in a pre-opened window.
+ * The PDF is downloaded first, then embedded in an HTML viewer (no raw blob URL).
+ */
+export function openPdfInWindow(pdfUrl: string, targetWindow: Window | null, filename: string = "recu.pdf"): void {
+  // 1. Enregistrer/télécharger le PDF en tant que vrai fichier
+  const a = document.createElement("a");
+  a.href = pdfUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  // 2. Afficher le PDF dans l'onglet pré-ouvert avec un viewer intégré
+  const win = targetWindow && !targetWindow.closed ? targetWindow : null;
+  if (win) {
+    win.document.open();
+    win.document.write(
+      `<!DOCTYPE html><html><head><title>${filename}</title>` +
+      `<style>*{margin:0;padding:0;overflow:hidden}embed{width:100vw;height:100vh}</style></head>` +
+      `<body><embed src="${pdfUrl}" type="application/pdf" /></body></html>`
+    );
+    win.document.close();
+  }
 }
 
 /**
@@ -372,9 +407,9 @@ export interface PaymentReceiptData {
 }
 
 /**
- * Print a payment receipt (for credit/debt payments)
+ * Generate a payment receipt PDF and return the blob URL.
  */
-export function printPaymentReceipt(data: PaymentReceiptData, paperWidth: PaperWidth = 58): void {
+export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidth: PaperWidth = 58): string {
   const contentWidth = paperWidth - MARGIN * 2;
   const leftX = MARGIN;
 
@@ -502,9 +537,17 @@ export function printPaymentReceipt(data: PaymentReceiptData, paperWidth: PaperW
   drawCenteredText("Merci pour votre paiement !", FONT_SIZE_SMALL);
   drawCenteredText("Ce reçu fait foi de paiement", FONT_SIZE_SMALL);
 
-  // Open PDF
+  // Return the PDF blob URL
   const pdfBlob = doc.output("blob");
-  const pdfUrl = URL.createObjectURL(pdfBlob);
+  return URL.createObjectURL(pdfBlob);
+}
+
+/**
+ * Print a payment receipt (wrapper that opens in new tab).
+ * For synchronous contexts only.
+ */
+export function printPaymentReceipt(data: PaymentReceiptData, paperWidth: PaperWidth = 58): void {
+  const pdfUrl = generatePaymentReceiptPdfUrl(data, paperWidth);
   window.open(pdfUrl, "_blank");
 }
 

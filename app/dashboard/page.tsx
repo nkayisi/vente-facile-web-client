@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import {
   getUserOrganizations,
   getDashboardStats,
@@ -153,9 +154,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="text-2xl font-bold">
-              {stats ? formatPrice(stats.cards.total_sales.value) : formatPrice(0)}
-            </div>
+            <StatValue value={stats ? formatPrice(stats.cards.total_sales.value) : formatPrice(0)} />
             <div className="flex items-center mt-2 text-sm">
               {stats && stats.cards.total_sales.variation >= 0 ? (
                 <ArrowUpRight className="h-4 w-4 text-green-600 mr-1" />
@@ -179,9 +178,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="text-2xl font-bold">
-              {stats ? formatNumber(stats.cards.total_customers.value as number) : "0"}
-            </div>
+            <StatValue value={stats ? formatNumber(stats.cards.total_customers.value as number) : "0"} />
             <div className="flex items-center mt-2 text-sm">
               <span className="text-green-600 font-medium">
                 +{stats?.cards.total_customers.new_count || 0}
@@ -200,9 +197,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {stats ? formatNumber(stats.cards.units_sold.value as number) : "0"}
-            </div>
+            <StatValue value={stats ? formatNumber(stats.cards.units_sold.value as number) : "0"} />
             <div className="flex items-center mt-2 text-sm">
               {stats && stats.cards.units_sold.variation >= 0 ? (
                 <ArrowUpRight className="h-4 w-4 text-green-600 mr-1" />
@@ -226,9 +221,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {stats ? formatPrice(stats.cards.gross_profit.value) : formatPrice(0)}
-            </div>
+            <StatValue value={stats ? formatPrice(stats.cards.gross_profit.value) : formatPrice(0)} />
             <div className="flex items-center mt-2 text-sm">
               <Badge variant="secondary" className="bg-blue-100 text-blue-700">
                 Marge: {stats?.cards.gross_profit.margin || 0}%

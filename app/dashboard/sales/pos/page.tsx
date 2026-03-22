@@ -59,11 +59,12 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { useCurrency } from "@/components/providers/currency-provider";
-import { printReceipt, ReceiptData } from "@/lib/receipt-printer";
+import { generateReceiptPdfUrl, openPdfInWindow, ReceiptData } from "@/lib/receipt-printer";
 
 interface CartItem {
   product: Product;
@@ -91,6 +92,9 @@ export default function POSPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [globalDiscount, setGlobalDiscount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Payment dialog
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
@@ -308,6 +312,7 @@ export default function POSPage() {
     }
 
     setSearchQuery("");
+    setSearchResults([]);
     searchInputRef.current?.focus();
   };
 
@@ -479,6 +484,10 @@ export default function POSPage() {
 
     setIsProcessing(true);
 
+    // Pré-ouvrir l'onglet PDF de manière synchrone (au clic utilisateur)
+    // pour éviter le blocage par les popup blockers du navigateur
+    const receiptWindow = window.open("about:blank", "_blank");
+
     try {
       const items: CreateSaleItemData[] = cart.map(item => ({
         product: item.product.id,
@@ -587,9 +596,10 @@ export default function POSPage() {
           loyaltyPointsBalance: customerLoyalty ? (customerLoyalty.current_points - (usePoints ? pointsToUse : 0) + Math.floor((total - pointsDiscount) * (loyaltyProgram?.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1) / 100)) : 0,
         };
 
-        // Utiliser la largeur de papier configurée ou 58mm par défaut
+        // Générer le PDF et l'ouvrir dans l'onglet pré-ouvert
         const paperWidth = (orgSettings?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
-        printReceipt(receiptData, paperWidth);
+        const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
+        openPdfInWindow(pdfUrl, receiptWindow, `recu-${result.data.reference}.pdf`);
 
         // Mark receipt as printed
         markReceiptPrinted(session.accessToken, organization.id, result.data.id).catch((err: any) => {
@@ -619,6 +629,8 @@ export default function POSPage() {
         // Focus search
         searchInputRef.current?.focus();
       } else {
+        // Fermer l'onglet pré-ouvert si la vente échoue
+        if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
         // Parse backend errors for clear display
         const errors = result.errors;
         let errorMsg = result.message || "Erreur lors de la création de la vente";
@@ -647,6 +659,8 @@ export default function POSPage() {
         }
       }
     } catch (error) {
+      // Fermer l'onglet pré-ouvert en cas d'erreur
+      if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
       toast.error("Une erreur est survenue lors du paiement");
     } finally {
       setIsProcessing(false);
@@ -716,13 +730,47 @@ export default function POSPage() {
     }
   };
 
-  // Filter products
-  const filteredProducts = products.filter(
-    p =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.barcode && p.barcode.includes(searchQuery))
-  );
+  // Recherche backend des produits avec debounce
+  const handleProductSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    if (!query.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    searchDebounceRef.current = setTimeout(async () => {
+      if (!session?.accessToken || !organization) {
+        setIsSearching(false);
+        return;
+      }
+      const result = await getProducts(session.accessToken, organization.id, {
+        search: query,
+        is_active: true,
+        page_size: 50,
+      });
+      if (result.success && result.data) {
+        setSearchResults(result.data.results || []);
+      }
+      setIsSearching(false);
+    }, 300);
+  }, [session?.accessToken, organization]);
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
+
+  // Produits affichés : résultats de recherche backend ou produits initiaux
+  const displayedProducts = searchQuery.trim() ? searchResults : products;
 
   // Filter customers
   const filteredCustomers = customers.filter(
@@ -768,7 +816,7 @@ export default function POSPage() {
               ref={searchInputRef}
               placeholder="Rechercher un produit (nom, SKU, code-barres)..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => handleProductSearch(e.target.value)}
               className="pl-10 h-12 text-lg bg-white"
             />
           </div>
@@ -791,13 +839,18 @@ export default function POSPage() {
 
         {/* Products Grid */}
         <div className="flex-1 overflow-y-auto">
-          {searchQuery && filteredProducts.length === 0 ? (
+          {isSearching ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="h-6 w-6 animate-spin text-orange-500 mr-2" />
+              <p className="text-gray-500">Recherche...</p>
+            </div>
+          ) : searchQuery.trim() && displayedProducts.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <p className="text-gray-500">Aucun produit trouvé</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {(searchQuery ? filteredProducts : products.slice(0, 20)).map(product => {
+              {(searchQuery.trim() ? displayedProducts : products.slice(0, 20)).map(product => {
                 const isLocked = lockedProductIds.has(product.id);
                 return (
                   <Card
@@ -1185,52 +1238,18 @@ export default function POSPage() {
           }
         }
       }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Receipt className="h-5 w-5 text-orange-500" />
               Encaissement
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-start">
               Sélectionnez le mode de paiement et confirmez le montant
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5">
-            {/* Customer Selection/Display */}
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Client</Label>
-              {selectedCustomer ? (
-                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-blue-600" />
-                    <div>
-                      <p className="font-medium text-blue-900">{selectedCustomer.name}</p>
-                      {selectedCustomer.phone && (
-                        <p className="text-xs text-blue-600">{selectedCustomer.phone}</p>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowCustomerDialog(true)}
-                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-100"
-                  >
-                    Changer
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start border-dashed border-2 h-12"
-                  onClick={() => setShowCustomerDialog(true)}
-                >
-                  <User className="h-4 w-4 mr-2" />
-                  Sélectionner un client (optionnel)
-                </Button>
-              )}
-            </div>
+          <div className="space-y-5 overflow-y-auto flex-1 pr-2">
 
             {/* Loyalty Points Usage */}
             {selectedCustomer && loyaltyProgram?.is_active && customerLoyalty && customerLoyalty.current_points >= (loyaltyProgram.min_points_to_redeem || 100) && (
@@ -1314,8 +1333,10 @@ export default function POSPage() {
                       setPaymentAmount(calculateTotal().toString());
                     }}
                   >
-                    {getPaymentIcon(method.method_type)}
-                    <span className="text-xs font-medium leading-tight text-center">{method.name}</span>
+                    <div className="flex gap-2 sm:flex-col justify-items-center">
+                      {getPaymentIcon(method.method_type)}
+                      <span className="text-xs font-medium leading-tight text-center">{method.name}</span>
+                    </div>
                     {!isCreditSale && selectedPaymentMethod === method.id && (
                       <div className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-orange-500 flex items-center justify-center">
                         <Check className="h-2.5 w-2.5 text-white" />
@@ -1336,8 +1357,10 @@ export default function POSPage() {
                     setPaymentAmount("0");
                   }}
                 >
-                  <HandCoins className="h-5 w-5" />
-                  <span className="text-xs font-medium leading-tight text-center">Crédit</span>
+                  <div className="flex gap-2 sm:flex-col justify-items-center">
+                    <HandCoins className="h-5 w-5" />
+                    <span className="text-xs font-medium leading-tight text-center">Crédit</span>
+                  </div>
                   {isCreditSale && (
                     <div className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-amber-500 flex items-center justify-center">
                       <Check className="h-2.5 w-2.5 text-white" />
@@ -1367,49 +1390,38 @@ export default function POSPage() {
                     </Button>
                   )}
                   {selectedCustomer && (
-                    <p className="text-xs text-amber-600 mt-1">Client: {selectedCustomer.name}</p>
+                    <div className="mt-2 flex items-center justify-between p-2 bg-white rounded border border-amber-200">
+                      <div className="flex items-center gap-2">
+                        <User className="h-3.5 w-3.5 text-amber-600" />
+                        <p className="text-xs text-amber-800 font-medium">{selectedCustomer.name}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowCustomerDialog(true)}
+                          className="h-7 px-2 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-100"
+                        >
+                          Changer
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedCustomer(null);
+                            setCustomerLoyalty(null);
+                            setUsePoints(false);
+                            setPointsToUse(0);
+                            setIsCreditSale(false);
+                          }}
+                          className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-100"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </div>
-
-                {/* Credit limit info */}
-                {selectedCustomer && (
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-2">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-blue-700 font-medium">Limite de crédit autorisée</span>
-                      <span className="font-bold text-blue-900">{formatPrice(parseFloat(selectedCustomer.credit_limit || "0"))}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-blue-700">Dette actuelle</span>
-                      <span className="font-semibold text-red-600">{formatPrice(parseFloat(selectedCustomer.current_balance || "0"))}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm pt-2 border-t border-blue-300">
-                      <span className="text-blue-700 font-medium">Peut encore prendre à crédit</span>
-                      <span className="font-bold text-green-600">
-                        {formatPrice(Math.max(0, parseFloat(selectedCustomer.credit_limit || "0") - parseFloat(selectedCustomer.current_balance || "0")))}
-                      </span>
-                    </div>
-                    {(() => {
-                      const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
-                      const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
-                      const amountPaid = parseFloat(paymentAmount) || 0;
-                      const creditAmount = total - amountPaid;
-                      const newBalance = currentBalance + creditAmount;
-                      const exceedsLimit = creditLimit > 0 && newBalance > creditLimit;
-
-                      if (exceedsLimit) {
-                        return (
-                          <div className="mt-2 p-2 bg-red-50 rounded border border-red-300">
-                            <p className="text-xs text-red-700 font-medium flex items-center gap-1.5">
-                              <AlertTriangle className="h-3.5 w-3.5" />
-                              Limite de crédit dépassée de {formatPrice(newBalance - creditLimit)}
-                            </p>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-                )}
               </div>
             )}
 
@@ -1547,7 +1559,7 @@ export default function POSPage() {
           </div>
 
           {/* Footer with confirm button */}
-          <DialogFooter className="flex-col sm:flex-row gap-2 pt-2">
+          <DialogFooter className="flex-col sm:flex-row gap-2 pt-2 flex-shrink-0 border-t mt-2">
             <Button
               variant="outline"
               onClick={() => setShowPaymentDialog(false)}

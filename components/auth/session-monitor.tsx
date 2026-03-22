@@ -41,8 +41,7 @@ export function SessionMonitor() {
       hasShownError.current = true;
 
       console.log("[SessionMonitor] Session expirée détectée, déconnexion...");
-      toast.error("Votre session a expiré. Veuillez vous reconnecter.");
-
+      // Le toast sera affiché par la page de login via ?error=SessionExpired
       signOut({
         redirect: true,
         callbackUrl: "/auth/login?error=SessionExpired",

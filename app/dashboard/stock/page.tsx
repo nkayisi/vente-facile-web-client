@@ -51,7 +51,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { formatPrice, formatDateTime } from "@/lib/format";
+import { formatPrice, formatNumber, formatDateTime } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getWarehouses,
@@ -319,8 +320,8 @@ export default function StockPage() {
               <div className="p-2 bg-blue-100 rounded-lg">
                 <WarehouseIcon className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{safeWarehouses.length}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(safeWarehouses.length)} />
                 <p className="text-xs text-gray-500">Entrepôts</p>
               </div>
             </div>
@@ -333,8 +334,8 @@ export default function StockPage() {
               <div className="p-2 bg-purple-100 rounded-lg">
                 <Package className="h-5 w-5 text-purple-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{totalProducts}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(totalProducts)} />
                 <p className="text-xs text-gray-500">Produits en stock</p>
               </div>
             </div>
@@ -347,8 +348,8 @@ export default function StockPage() {
               <div className="p-2 bg-orange-100 rounded-lg">
                 <TrendingDown className="h-5 w-5 text-orange-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-orange-600">{safeLowStock.length}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(safeLowStock.length)} color="text-orange-600" />
                 <p className="text-xs text-gray-500">Stock bas</p>
               </div>
             </div>
@@ -361,8 +362,8 @@ export default function StockPage() {
               <div className="p-2 bg-red-100 rounded-lg">
                 <PackageX className="h-5 w-5 text-red-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-red-600">{outOfStock}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(outOfStock)} color="text-red-600" />
                 <p className="text-xs text-gray-500">En rupture</p>
               </div>
             </div>
@@ -375,8 +376,8 @@ export default function StockPage() {
               <div className="p-2 bg-green-100 rounded-lg">
                 <BarChart3 className="h-5 w-5 text-green-600" />
               </div>
-              <div>
-                <p className="text-lg font-bold">{formatPrice(totalValue)}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={formatPrice(totalValue)} />
                 <p className="text-xs text-gray-500">Valeur totale</p>
               </div>
             </div>

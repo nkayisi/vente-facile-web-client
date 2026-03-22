@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Bell, Settings, LogOut, User, ChevronDown, Menu } from "lucide-react";
+import Link from "next/link";
+import { getUserProfile } from "@/actions/auth.actions";
+import { getMediaUrl } from "@/lib/format";
 
 interface DashboardHeaderProps {
   onMenuClick?: () => void;
@@ -20,6 +24,16 @@ interface DashboardHeaderProps {
 
 export function DashboardHeader({ onMenuClick }: DashboardHeaderProps) {
   const { data: session } = useSession();
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    getUserProfile(session.accessToken).then((result) => {
+      if (result.success && result.data?.avatar) {
+        setAvatarUrl(getMediaUrl(result.data.avatar));
+      }
+    });
+  }, [session?.accessToken]);
 
   const getInitials = (name?: string | null) => {
     if (!name) return "U";
@@ -72,7 +86,7 @@ export function DashboardHeader({ onMenuClick }: DashboardHeaderProps) {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="flex items-center gap-2 px-2">
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src={session?.user?.image || undefined} />
+                  <AvatarImage src={avatarUrl} />
                   <AvatarFallback className="bg-orange-500 text-white text-sm">
                     {getInitials(session?.user?.name)}
                   </AvatarFallback>
@@ -86,13 +100,17 @@ export function DashboardHeader({ onMenuClick }: DashboardHeaderProps) {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>Mon compte</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <User className="mr-2 h-4 w-4" />
-                <span>Profil</span>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard/profil">
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Profile</span>
+                </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Settings className="mr-2 h-4 w-4" />
-                <span>Paramètres</span>
+              <DropdownMenuItem asChild >
+                <Link href="/dashboard/settings">
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Paramètres</span>
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

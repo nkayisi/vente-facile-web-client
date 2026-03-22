@@ -36,10 +36,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatNumber, formatDate, formatDateTime } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import { useCurrency } from "@/components/providers/currency-provider";
-import { printPaymentReceipt, PaymentReceiptData } from "@/lib/receipt-printer";
+import { generatePaymentReceiptPdfUrl, openPdfInWindow, PaymentReceiptData } from "@/lib/receipt-printer";
 import {
   getSales,
   addPaymentToSale,
@@ -179,6 +180,7 @@ export default function PendingPaymentsPage() {
     }
 
     setIsProcessing(true);
+    const receiptWindow = window.open("about:blank", "_blank");
 
     try {
       const pc = getPaymentCurrencyObj();
@@ -225,7 +227,8 @@ export default function PendingPaymentsPage() {
           remainingBalance: remainingBalance,
         };
 
-        printPaymentReceipt(receiptData);
+        const pdfUrl = generatePaymentReceiptPdfUrl(receiptData);
+        openPdfInWindow(pdfUrl, receiptWindow, `paiement-${selectedSale.reference}.pdf`);
 
         setShowPaymentDialog(false);
 
@@ -241,9 +244,11 @@ export default function PendingPaymentsPage() {
         ];
         setPendingSales(allSales);
       } else {
+        if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
         toast.error(result.message || "Erreur lors de l'ajout du paiement");
       }
     } catch (error) {
+      if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
       console.error("Error adding payment:", error);
       toast.error("Erreur lors de l'ajout du paiement");
     } finally {
@@ -312,8 +317,8 @@ export default function PendingPaymentsPage() {
               <div className="p-2 bg-orange-100 rounded-lg">
                 <AlertCircle className="h-5 w-5 text-orange-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{filteredSales.length}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(filteredSales.length)} />
                 <p className="text-xs text-gray-500">Total ventes</p>
               </div>
             </div>
@@ -326,10 +331,8 @@ export default function PendingPaymentsPage() {
               <div className="p-2 bg-yellow-100 rounded-lg">
                 <Clock className="h-5 w-5 text-yellow-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {filteredSales.filter(s => s.status === 'pending').length}
-                </p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(filteredSales.filter(s => s.status === 'pending').length)} />
                 <p className="text-xs text-gray-500">En attente</p>
               </div>
             </div>
@@ -342,12 +345,10 @@ export default function PendingPaymentsPage() {
               <div className="p-2 bg-blue-100 rounded-lg">
                 <DollarSign className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {formatPrice(
-                    filteredSales.reduce((sum, sale) => sum + parseFloat(sale.amount_due), 0)
-                  )}
-                </p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={formatPrice(
+                  filteredSales.reduce((sum, sale) => sum + parseFloat(sale.amount_due), 0)
+                )} />
                 <p className="text-xs text-gray-500">Total à recevoir</p>
               </div>
             </div>
@@ -360,12 +361,10 @@ export default function PendingPaymentsPage() {
               <div className="p-2 bg-green-100 rounded-lg">
                 <CheckCircle className="h-5 w-5 text-green-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {formatPrice(
-                    filteredSales.reduce((sum, sale) => sum + parseFloat(sale.amount_paid), 0)
-                  )}
-                </p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={formatPrice(
+                  filteredSales.reduce((sum, sale) => sum + parseFloat(sale.amount_paid), 0)
+                )} />
                 <p className="text-xs text-gray-500">Déjà payé</p>
               </div>
             </div>

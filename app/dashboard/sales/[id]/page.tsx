@@ -40,7 +40,7 @@ import {
   Sale,
   SaleStatus,
 } from "@/actions/sales.actions";
-import { printReceipt, ReceiptData } from "@/lib/receipt-printer";
+import { generateReceiptPdfUrl, openPdfInWindow, ReceiptData } from "@/lib/receipt-printer";
 
 const STATUS_CONFIG: Record<SaleStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -97,6 +97,7 @@ export default function SaleDetailPage() {
     if (!session?.accessToken || !organization?.id || !sale) return;
 
     setIsPrinting(true);
+    const receiptWindow = window.open("about:blank", "_blank");
 
     try {
       // Charger les paramètres de l'organisation pour l'en-tête/pied de page
@@ -140,9 +141,10 @@ export default function SaleDetailPage() {
         amountDue: parseFloat(sale.amount_due),
       };
 
-      // Print receipt avec la largeur de papier configurée
+      // Générer le PDF et l'ouvrir dans l'onglet pré-ouvert
       const paperWidth = (settingsResult.success && settingsResult.data?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
-      printReceipt(receiptData, paperWidth);
+      const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
+      openPdfInWindow(pdfUrl, receiptWindow, `recu-${sale.reference}.pdf`);
 
       // Mark as printed
       const result = await markReceiptPrinted(session.accessToken, organization.id, sale.id);
@@ -151,6 +153,7 @@ export default function SaleDetailPage() {
         toast.success("Reçu imprimé avec succès");
       }
     } catch (error) {
+      if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
       console.error("Error printing receipt:", error);
       toast.error("Erreur lors de l'impression du reçu");
     } finally {

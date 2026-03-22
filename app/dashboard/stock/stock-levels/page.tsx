@@ -22,7 +22,8 @@ import {
   List,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatNumber } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import {
@@ -216,8 +217,8 @@ export default function StocksPage() {
               <div className="p-2 bg-blue-100 rounded-lg">
                 <Package className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{filteredStocks.length}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(filteredStocks.length)} />
                 <p className="text-xs text-gray-500">Produits</p>
               </div>
             </div>
@@ -230,10 +231,8 @@ export default function StocksPage() {
               <div className="p-2 bg-green-100 rounded-lg">
                 <Package className="h-5 w-5 text-green-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {filteredStocks.reduce((sum, s) => sum + parseFloat(s.quantity), 0).toFixed(0)}
-                </p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={filteredStocks.reduce((sum, s) => sum + parseFloat(s.quantity), 0).toFixed(0)} />
                 <p className="text-xs text-gray-500">Quantité totale</p>
               </div>
             </div>
@@ -246,12 +245,10 @@ export default function StocksPage() {
               <div className="p-2 bg-purple-100 rounded-lg">
                 <Package className="h-5 w-5 text-purple-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {formatPrice(
-                    filteredStocks.reduce((sum, s) => sum + parseFloat(s.stock_value || "0"), 0)
-                  )}
-                </p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={formatPrice(
+                  filteredStocks.reduce((sum, s) => sum + parseFloat(s.stock_value || "0"), 0)
+                )} />
                 <p className="text-xs text-gray-500">Valeur totale</p>
               </div>
             </div>
@@ -264,10 +261,8 @@ export default function StocksPage() {
               <div className="p-2 bg-red-100 rounded-lg">
                 <AlertTriangle className="h-5 w-5 text-red-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {filteredStocks.filter(s => parseFloat(s.quantity) <= 0).length}
-                </p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(filteredStocks.filter(s => parseFloat(s.quantity) <= 0).length)} />
                 <p className="text-xs text-gray-500">En rupture</p>
               </div>
             </div>
@@ -400,21 +395,15 @@ export default function StocksPage() {
 
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {parseFloat(stock.quantity).toFixed(0)}
-                        </p>
+                        <StatValue value={parseFloat(stock.quantity).toFixed(0)} />
                         <p className="text-xs text-gray-500">Total</p>
                       </div>
                       <div>
-                        <p className="text-2xl font-bold text-orange-600">
-                          {parseFloat(stock.reserved_quantity).toFixed(0)}
-                        </p>
+                        <StatValue value={parseFloat(stock.reserved_quantity).toFixed(0)} color="text-orange-600" />
                         <p className="text-xs text-gray-500">Réservé</p>
                       </div>
                       <div>
-                        <p className="text-2xl font-bold text-green-600">
-                          {parseFloat(stock.available_quantity).toFixed(0)}
-                        </p>
+                        <StatValue value={parseFloat(stock.available_quantity).toFixed(0)} color="text-green-600" />
                         <p className="text-xs text-gray-500">Disponible</p>
                       </div>
                     </div>

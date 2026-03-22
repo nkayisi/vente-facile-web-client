@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,8 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { usePermissions } from "@/components/auth/permissions-provider";
+import { formatDateTime, getMediaUrl } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { PermissionGate } from "@/components/auth/permission-gate";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import {
@@ -312,31 +315,25 @@ export default function UsersPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="py-0">
           <CardContent className="pt-4 pb-4">
-            <div className="text-2xl font-bold">{members.length}</div>
+            <StatValue value={String(members.length)} />
             <p className="text-xs text-gray-500">Total membres</p>
           </CardContent>
         </Card>
         <Card className="py-0">
           <CardContent className="pt-4 pb-4">
-            <div className="text-2xl font-bold">
-              {members.filter((m) => m.is_active).length}
-            </div>
+            <StatValue value={String(members.filter((m) => m.is_active).length)} />
             <p className="text-xs text-gray-500">Actifs</p>
           </CardContent>
         </Card>
         <Card className="py-0">
           <CardContent className="pt-4 pb-4">
-            <div className="text-2xl font-bold">
-              {members.filter((m) => m.role === "owner" || m.role === "manager").length}
-            </div>
+            <StatValue value={String(members.filter((m) => m.role === "owner" || m.role === "manager").length)} />
             <p className="text-xs text-gray-500">Admin / Gérants</p>
           </CardContent>
         </Card>
         <Card className="py-0">
           <CardContent className="pt-4 pb-4">
-            <div className="text-2xl font-bold">
-              {members.filter((m) => !m.is_active).length}
-            </div>
+            <StatValue value={String(members.filter((m) => !m.is_active).length)} />
             <p className="text-xs text-gray-500">Désactivés</p>
           </CardContent>
         </Card>
@@ -394,12 +391,20 @@ export default function UsersPage() {
                 {members.map((member) => (
                   <TableRow key={member.id}>
                     <TableCell>
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {member.user_name || `${member.user_first_name} ${member.user_last_name}`}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {member.user_email}
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={getMediaUrl(member.user_avatar)} />
+                          <AvatarFallback className="bg-orange-500 text-white text-xs">
+                            {(member.user_first_name?.[0] || "") + (member.user_last_name?.[0] || "") || member.user_email?.[0]?.toUpperCase() || "?"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            {member.user_name || `${member.user_first_name} ${member.user_last_name}`}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {member.user_email}
+                          </div>
                         </div>
                       </div>
                     </TableCell>

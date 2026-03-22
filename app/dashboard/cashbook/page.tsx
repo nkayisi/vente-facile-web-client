@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatDateTime } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
   getUserOrganizations,
@@ -399,9 +400,7 @@ export default function CashbookPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="text-2xl font-bold">
-              {balance ? formatPrice(balance.balance) : formatPrice(0)}
-            </div>
+            <StatValue value={balance ? formatPrice(balance.balance) : formatPrice(0)} />
           </CardContent>
         </Card>
 
@@ -415,9 +414,7 @@ export default function CashbookPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="text-2xl font-bold text-green-600">
-              +{balance ? formatPrice(balance.today_in) : formatPrice(0)}
-            </div>
+            <StatValue value={`+${balance ? formatPrice(balance.today_in) : formatPrice(0)}`} color="text-green-600" />
           </CardContent>
         </Card>
 
@@ -431,9 +428,7 @@ export default function CashbookPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="text-2xl font-bold text-red-600">
-              -{balance ? formatPrice(balance.today_out) : formatPrice(0)}
-            </div>
+            <StatValue value={`-${balance ? formatPrice(balance.today_out) : formatPrice(0)}`} color="text-red-600" />
           </CardContent>
         </Card>
 
@@ -447,14 +442,10 @@ export default function CashbookPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <div
-              className={`text-2xl font-bold ${balance && parseFloat(balance.today_net) >= 0
-                ? "text-green-600"
-                : "text-red-600"
-                }`}
-            >
-              {balance ? formatPrice(balance.today_net) : formatPrice(0)}
-            </div>
+            <StatValue
+              value={balance ? formatPrice(balance.today_net) : formatPrice(0)}
+              color={balance && parseFloat(balance.today_net) >= 0 ? "text-green-600" : "text-red-600"}
+            />
           </CardContent>
         </Card>
       </div>

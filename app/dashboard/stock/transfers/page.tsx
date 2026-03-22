@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsync, type AsyncSelectOption } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
   DialogContent,
@@ -113,6 +114,26 @@ export default function TransfersPage() {
     product: "",
     quantity_requested: 0,
   });
+
+  // Recherche de produits côté backend
+  const searchProducts = useCallback(async (query: string): Promise<AsyncSelectOption[]> => {
+    if (!session?.accessToken || !organization) return [];
+    const result = await getProducts(session.accessToken, organization.id, {
+      search: query,
+      page_size: 30,
+      is_active: true,
+    });
+    if (result.success && result.data) {
+      const results = result.data.results || [];
+      setProducts(prev => {
+        const existingIds = new Set(prev.map(p => p.id));
+        const newProducts = results.filter(p => !existingIds.has(p.id));
+        return newProducts.length > 0 ? [...prev, ...newProducts] : prev;
+      });
+      return results.map(p => ({ value: p.id, label: p.name }));
+    }
+    return [];
+  }, [session?.accessToken, organization]);
 
   // Fetch data
   useEffect(() => {
@@ -538,8 +559,9 @@ export default function TransfersPage() {
             <div className="space-y-2">
               <Label>Articles à transférer</Label>
               <div className="flex gap-2">
-                <SearchableSelect
-                  options={products.map(product => ({ value: product.id, label: product.name }))}
+                <SearchableSelectAsync
+                  onSearch={searchProducts}
+                  initialOptions={products.map(p => ({ value: p.id, label: p.name }))}
                   value={newItem.product || undefined}
                   onValueChange={value => setNewItem({ ...newItem, product: value })}
                   placeholder="Sélectionner un produit"

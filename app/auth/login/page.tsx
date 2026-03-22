@@ -19,6 +19,7 @@ function LoginForm() {
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
   const sessionError = searchParams.get("error");
   const [isLoading, setIsLoading] = useState(false);
+  const [isCleaningSession, setIsCleaningSession] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState<LoginFormData>({
     email: "",
@@ -29,10 +30,19 @@ function LoginForm() {
   // Déconnecter automatiquement si la session est expirée
   useEffect(() => {
     if (sessionError === "SessionExpired") {
-      signOut({ redirect: false });
+      setIsCleaningSession(true);
       toast.error("Votre session a expiré. Veuillez vous reconnecter.");
+
+      // Attendre que signOut finisse avant de permettre une nouvelle connexion
+      signOut({ redirect: false }).finally(() => {
+        setIsCleaningSession(false);
+        // Nettoyer le paramètre error de l'URL pour éviter les interférences
+        const url = new URL(window.location.href);
+        url.searchParams.delete("error");
+        router.replace(url.pathname + url.search, { scroll: false });
+      });
     }
-  }, [sessionError]);
+  }, [sessionError, router]);
 
   const handleInputChange = (field: keyof LoginFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -67,7 +77,7 @@ function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validateForm()) {
+    if (!validateForm() || isCleaningSession) {
       return;
     }
 
@@ -81,16 +91,18 @@ function LoginForm() {
       });
 
       if (result?.error) {
-        toast.error("Email ou mot de passe incorrect");
+        // Vérifier que c'est bien une erreur de credentials et non un résidu d'URL
+        if (result.error === "CredentialsSignin" || result.status === 401) {
+          toast.error("Email ou mot de passe incorrect");
+        } else {
+          console.warn("[Login] signIn error:", result.error);
+          toast.error("Erreur de connexion. Veuillez réessayer.");
+        }
         return;
       }
 
       if (result?.ok) {
         toast.success("Connexion réussie !");
-
-        // Vérifier si l'utilisateur a une organisation
-        // Note: On ne peut pas récupérer le token directement ici, donc on redirige
-        // et le middleware vérifiera les organisations
         router.push(callbackUrl);
         router.refresh();
       }
@@ -177,11 +189,11 @@ function LoginForm() {
             </Link>
           </div>
 
-          <Button type="submit" className="w-full bg-orange-500 hover:bg-orange-600" disabled={isLoading}>
-            {isLoading ? (
+          <Button type="submit" className="w-full bg-orange-500 hover:bg-orange-600" disabled={isLoading || isCleaningSession}>
+            {isLoading || isCleaningSession ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Connexion en cours...
+                {isCleaningSession ? "Préparation..." : "Connexion en cours..."}
               </>
             ) : (
               "Se connecter"

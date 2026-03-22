@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -927,15 +928,15 @@ function ImportDialog({
                                     </div>
                                     <div className="grid grid-cols-3 gap-4 text-center">
                                         <div>
-                                            <p className="text-2xl font-bold text-green-600">{importResult.created}</p>
+                                            <StatValue value={String(importResult.created)} color="text-green-600" />
                                             <p className="text-xs text-gray-600">Créé(s)</p>
                                         </div>
                                         <div>
-                                            <p className="text-2xl font-bold text-blue-600">{importResult.updated}</p>
+                                            <StatValue value={String(importResult.updated)} color="text-blue-600" />
                                             <p className="text-xs text-gray-600">Mis à jour</p>
                                         </div>
                                         <div>
-                                            <p className="text-2xl font-bold text-orange-600">{importResult.skipped}</p>
+                                            <StatValue value={String(importResult.skipped)} color="text-orange-600" />
                                             <p className="text-xs text-gray-600">Ignoré(s)</p>
                                         </div>
                                     </div>

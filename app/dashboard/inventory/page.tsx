@@ -66,6 +66,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate, formatPrice, formatDecimal } from "@/lib/format";
+import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getWarehouses, Warehouse, getWarehouseStockSummary } from "@/actions/stock.actions";
 import { getCategories, getProducts, Category, Product } from "@/actions/products.actions";
@@ -350,8 +351,8 @@ export default function InventoryPage() {
               <div className="p-2 bg-blue-100 rounded-lg">
                 <Play className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{activeCount}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(activeCount)} />
                 <p className="text-xs text-gray-500">En cours</p>
               </div>
             </div>
@@ -363,8 +364,8 @@ export default function InventoryPage() {
               <div className="p-2 bg-orange-100 rounded-lg">
                 <Eye className="h-5 w-5 text-orange-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{reviewCount}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(reviewCount)} />
                 <p className="text-xs text-gray-500">En révision</p>
               </div>
             </div>
@@ -376,8 +377,8 @@ export default function InventoryPage() {
               <div className="p-2 bg-gray-100 rounded-lg">
                 <Clock className="h-5 w-5 text-gray-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{draftCount}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(draftCount)} />
                 <p className="text-xs text-gray-500">Brouillons</p>
               </div>
             </div>
@@ -389,8 +390,8 @@ export default function InventoryPage() {
               <div className="p-2 bg-green-100 rounded-lg">
                 <CheckCircle className="h-5 w-5 text-green-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{validatedCount}</p>
+              <div className="min-w-0 flex-1">
+                <StatValue value={String(validatedCount)} />
                 <p className="text-xs text-gray-500">Validés</p>
               </div>
             </div>
