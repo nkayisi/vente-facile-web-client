@@ -40,7 +40,7 @@ import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import { useCurrency } from "@/components/providers/currency-provider";
-import { generatePaymentReceiptPdfUrl, openPdfInWindow, PaymentReceiptData } from "@/lib/receipt-printer";
+import { generatePaymentReceiptPdfUrl, sharePdf, PaymentReceiptData } from "@/lib/receipt-printer";
 import {
   getSales,
   addPaymentToSale,
@@ -180,7 +180,6 @@ export default function PendingPaymentsPage() {
     }
 
     setIsProcessing(true);
-    const receiptWindow = window.open("about:blank", "_blank");
 
     try {
       const pc = getPaymentCurrencyObj();
@@ -228,7 +227,7 @@ export default function PendingPaymentsPage() {
         };
 
         const pdfUrl = generatePaymentReceiptPdfUrl(receiptData);
-        openPdfInWindow(pdfUrl, receiptWindow, `paiement-${selectedSale.reference}.pdf`);
+        sharePdf(pdfUrl, `paiement-${selectedSale.reference}.pdf`);
 
         setShowPaymentDialog(false);
 
@@ -244,11 +243,9 @@ export default function PendingPaymentsPage() {
         ];
         setPendingSales(allSales);
       } else {
-        if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
         toast.error(result.message || "Erreur lors de l'ajout du paiement");
       }
     } catch (error) {
-      if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
       console.error("Error adding payment:", error);
       toast.error("Erreur lors de l'ajout du paiement");
     } finally {

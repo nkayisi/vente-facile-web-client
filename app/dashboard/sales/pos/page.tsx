@@ -64,7 +64,7 @@ import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { useCurrency } from "@/components/providers/currency-provider";
-import { generateReceiptPdfUrl, openPdfInWindow, ReceiptData } from "@/lib/receipt-printer";
+import { generateReceiptPdfUrl, sharePdf, ReceiptData } from "@/lib/receipt-printer";
 
 interface CartItem {
   product: Product;
@@ -484,10 +484,6 @@ export default function POSPage() {
 
     setIsProcessing(true);
 
-    // Pré-ouvrir l'onglet PDF de manière synchrone (au clic utilisateur)
-    // pour éviter le blocage par les popup blockers du navigateur
-    const receiptWindow = window.open("about:blank", "_blank");
-
     try {
       const items: CreateSaleItemData[] = cart.map(item => ({
         product: item.product.id,
@@ -599,7 +595,7 @@ export default function POSPage() {
         // Générer le PDF et l'ouvrir dans l'onglet pré-ouvert
         const paperWidth = (orgSettings?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
         const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
-        openPdfInWindow(pdfUrl, receiptWindow, `recu-${result.data.reference}.pdf`);
+        sharePdf(pdfUrl, `recu-${result.data.reference}.pdf`);
 
         // Mark receipt as printed
         markReceiptPrinted(session.accessToken, organization.id, result.data.id).catch((err: any) => {
@@ -629,8 +625,6 @@ export default function POSPage() {
         // Focus search
         searchInputRef.current?.focus();
       } else {
-        // Fermer l'onglet pré-ouvert si la vente échoue
-        if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
         // Parse backend errors for clear display
         const errors = result.errors;
         let errorMsg = result.message || "Erreur lors de la création de la vente";
@@ -659,8 +653,6 @@ export default function POSPage() {
         }
       }
     } catch (error) {
-      // Fermer l'onglet pré-ouvert en cas d'erreur
-      if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
       toast.error("Une erreur est survenue lors du paiement");
     } finally {
       setIsProcessing(false);

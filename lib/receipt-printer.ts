@@ -333,11 +333,17 @@ export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): vo
 }
 
 /**
- * Save the PDF as a real file, then display it in a pre-opened window.
- * The PDF is downloaded first, then embedded in an HTML viewer (no raw blob URL).
+ * Share or download a PDF receipt.
+ * Uses the native Web Share API (share dialog) if available,
+ * otherwise falls back to downloading the file.
  */
-export function openPdfInWindow(pdfUrl: string, targetWindow: Window | null, filename: string = "recu.pdf"): void {
-  // 1. Enregistrer/télécharger le PDF en tant que vrai fichier
+export async function sharePdf(pdfUrl: string, filename: string = "recu.pdf"): Promise<void> {
+  // Convertir le blob URL en File
+  const response = await fetch(pdfUrl);
+  const blob = await response.blob();
+  const file = new File([blob], filename, { type: "application/pdf" });
+
+  // 1. Toujours télécharger le fichier d'abord
   const a = document.createElement("a");
   a.href = pdfUrl;
   a.download = filename;
@@ -345,16 +351,17 @@ export function openPdfInWindow(pdfUrl: string, targetWindow: Window | null, fil
   a.click();
   document.body.removeChild(a);
 
-  // 2. Afficher le PDF dans l'onglet pré-ouvert avec un viewer intégré
-  const win = targetWindow && !targetWindow.closed ? targetWindow : null;
-  if (win) {
-    win.document.open();
-    win.document.write(
-      `<!DOCTYPE html><html><head><title>${filename}</title>` +
-      `<style>*{margin:0;padding:0;overflow:hidden}embed{width:100vw;height:100vh}</style></head>` +
-      `<body><embed src="${pdfUrl}" type="application/pdf" /></body></html>`
-    );
-    win.document.close();
+  // 2. Ensuite ouvrir le dialogue de partage natif si disponible
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({
+        title: filename.replace(".pdf", ""),
+        files: [file],
+      });
+    } catch (err: any) {
+      // L'utilisateur a annulé le partage — ne rien faire
+      if (err.name === "AbortError") return;
+    }
   }
 }
 

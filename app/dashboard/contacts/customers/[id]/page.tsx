@@ -71,7 +71,7 @@ import {
   Sale,
   PaymentMethod,
 } from "@/actions/sales.actions";
-import { generatePaymentReceiptPdfUrl, openPdfInWindow, PaymentReceiptData } from "@/lib/receipt-printer";
+import { generatePaymentReceiptPdfUrl, sharePdf, PaymentReceiptData } from "@/lib/receipt-printer";
 import { getCustomerLoyalty, CustomerLoyalty, LoyaltyProgram, getLoyaltyProgram } from "@/actions/settings.actions";
 import { Star } from "lucide-react";
 
@@ -255,7 +255,6 @@ export default function CustomerDetailPage() {
     }
 
     setIsSubmitting(true);
-    const receiptWindow = window.open("about:blank", "_blank");
     try {
       const result = await addPaymentToSale(
         session.accessToken,
@@ -293,7 +292,7 @@ export default function CustomerDetailPage() {
         };
 
         const pdfUrl = generatePaymentReceiptPdfUrl(receiptData);
-        openPdfInWindow(pdfUrl, receiptWindow, `paiement-${selectedSale.reference}.pdf`);
+        sharePdf(pdfUrl, `paiement-${selectedSale.reference}.pdf`);
 
         setShowInvoicePaymentDialog(false);
         setSelectedSale(null);
@@ -306,11 +305,9 @@ export default function CustomerDetailPage() {
         loadTransactions();
         loadPendingSales();
       } else {
-        if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
         toast.error(result.message || "Erreur lors de l'ajout du paiement");
       }
     } catch (error) {
-      if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
       console.error("Error adding payment:", error);
       toast.error("Erreur lors de l'ajout du paiement");
     } finally {
