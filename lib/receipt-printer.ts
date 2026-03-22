@@ -52,12 +52,12 @@ export interface ReceiptData {
 
 type PaperWidth = 58 | 80;
 
-// Font sizes in points
-const FONT_SIZE_NORMAL = 9;
-const FONT_SIZE_SMALL = 7.5;
-const LINE_HEIGHT = 3.5; // mm per line
-const LINE_HEIGHT_SMALL = 3; // mm per line for small text
-const MARGIN = 3; // mm margins
+// Font sizes in points (optimised for thermal printers)
+const FONT_SIZE_NORMAL = 11;
+const FONT_SIZE_SMALL = 9;
+const LINE_HEIGHT = 4.2; // mm per line
+const LINE_HEIGHT_SMALL = 3.5; // mm per line for small text
+const MARGIN = 2; // mm margins
 
 function formatAmount(amount: number, decimals: number = 2): string {
   // Utiliser toFixed pour conserver les décimales exactes sans arrondi
@@ -152,7 +152,7 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
     format: [paperWidth, height],
   });
 
-  let y = MARGIN + 2;
+  let y = MARGIN + 1;
   const leftX = MARGIN;
   const rightX = paperWidth - MARGIN;
   const centerX = paperWidth / 2;
@@ -202,7 +202,7 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
     if (data.orgAddress) drawCenteredText(data.orgAddress, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
     if (data.orgPhone) drawCenteredText(`Tel: ${data.orgPhone}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
-  y += 1; // spacing
+  y += 0.5;
   drawSeparator("=");
 
   // === CREDIT SALE BANNER ===
@@ -212,7 +212,6 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
   }
 
   // === RECEIPT INFO ===
-  y += 0.5;
   drawLeftText(`Recu: ${data.reference}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   drawLeftText(`Date: ${data.date}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   if (data.registerName) drawLeftText(`Caisse: ${data.registerName}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
@@ -221,18 +220,17 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
     drawLeftText(`Client: ${data.customerName}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
     if (data.customerPhone) drawLeftText(`Tel: ${data.customerPhone}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
-  y += 0.5;
   drawSeparator();
 
   // === ITEMS HEADER ===
-  y += 1;
+  y += 0.5;
   doc.setFontSize(FONT_SIZE_SMALL);
   doc.setFont("helvetica", "normal");
   doc.text("Article", leftX, y);
   doc.text("Qte", leftX + contentWidth * 0.45, y, { align: "right" });
   doc.text("P.U.", leftX + contentWidth * 0.7, y, { align: "right" });
   doc.text("Total", rightX, y, { align: "right" });
-  y += LINE_HEIGHT_SMALL + 0.5;
+  y += LINE_HEIGHT_SMALL;
   drawSeparator();
 
   // === ITEMS ===
@@ -259,11 +257,9 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
       y += LINE_HEIGHT_SMALL;
     }
   });
-  y += 0.5;
   drawSeparator();
 
   // === TOTALS ===
-  y += 1;
   drawLeftRightText("Sous-total", formatAmount(data.subtotal, 2), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
 
   if (data.discountAmount > 0) {
@@ -275,13 +271,13 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
     drawLeftRightText("Taxes (TVA)", `+${formatAmount(data.taxAmount, 2)}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
 
-  y += 1;
+  y += 0.5;
   drawSeparator("=");
   drawLeftRightText("Total a payer", formatAmountWithCurrency(data.total, data.currency, 2), FONT_SIZE_NORMAL);
   drawSeparator("=");
 
   // === PAYMENTS ===
-  y += 1.5;
+  y += 1;
   data.payments.forEach(p => {
     drawLeftRightText(p.method, formatAmountWithCurrency(p.amount, p.currency, 2), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   });
@@ -306,7 +302,7 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
   }
 
   // === FOOTER ===
-  y += 2;
+  y += 1;
   if (data.receiptFooter) {
     data.receiptFooter.split("\n").forEach(line => drawCenteredText(line.trim(), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL));
   } else {
@@ -314,7 +310,7 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
     drawCenteredText("A bientot !", FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
 
-  y += 1.5;
+  y += 1;
   doc.setTextColor(158, 158, 158); // gray
   drawCenteredText("Powered by Vente Facile", FONT_SIZE_SMALL - 1, false, LINE_HEIGHT_SMALL);
 
@@ -333,36 +329,15 @@ export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): vo
 }
 
 /**
- * Share or download a PDF receipt.
- * Uses the native Web Share API (share dialog) if available,
- * otherwise falls back to downloading the file.
+ * Download a PDF receipt file.
  */
-export async function sharePdf(pdfUrl: string, filename: string = "recu.pdf"): Promise<void> {
-  // Convertir le blob URL en File
-  const response = await fetch(pdfUrl);
-  const blob = await response.blob();
-  const file = new File([blob], filename, { type: "application/pdf" });
-
-  // 1. Toujours télécharger le fichier d'abord
+export function sharePdf(pdfUrl: string, filename: string = "recu.pdf"): void {
   const a = document.createElement("a");
   a.href = pdfUrl;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-
-  // 2. Ensuite ouvrir le dialogue de partage natif si disponible
-  if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({
-        title: filename.replace(".pdf", ""),
-        files: [file],
-      });
-    } catch (err: any) {
-      // L'utilisateur a annulé le partage — ne rien faire
-      if (err.name === "AbortError") return;
-    }
-  }
 }
 
 /**
@@ -432,7 +407,7 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
     format: [paperWidth, height],
   });
 
-  let y = MARGIN + 2;
+  let y = MARGIN + 1;
 
   // Helper functions
   const drawCenteredText = (text: string, fontSize: number, bold = false) => {
@@ -453,8 +428,8 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
   };
 
   const drawSeparator = (char: string = "-") => {
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.2);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(char === "=" ? 0.3 : 0.1);
     doc.line(leftX, y - 1, paperWidth - MARGIN, y - 1);
     y += 1.5;
   };
@@ -465,7 +440,7 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
   if (data.orgAddress) drawCenteredText(data.orgAddress, FONT_SIZE_SMALL);
   if (data.orgPhone) drawCenteredText(`Tél: ${data.orgPhone}`, FONT_SIZE_SMALL);
 
-  y += 1;
+  y += 0.5;
   drawSeparator("=");
 
   // Receipt type
@@ -473,7 +448,6 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
   drawSeparator();
 
   // Receipt info
-  y += 0.5;
   drawLeftRightText("N°:", data.receiptNumber, FONT_SIZE_SMALL);
   drawLeftRightText("Date:", data.date, FONT_SIZE_SMALL);
   if (data.cashierName) {
@@ -485,12 +459,10 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
       drawLeftRightText("Tél:", data.customerPhone, FONT_SIZE_SMALL);
     }
   }
-  y += 0.5;
   drawSeparator();
 
   // Sale reference if linked to a sale
   if (data.saleReference) {
-    y += 1;
     drawLeftRightText("Facture:", data.saleReference, FONT_SIZE_SMALL);
     if (data.saleTotalAmount !== undefined) {
       drawLeftRightText("Montant facture:", formatAmountWithCurrency(data.saleTotalAmount, data.currency), FONT_SIZE_SMALL);
@@ -501,14 +473,13 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
     if (data.remainingBalance !== undefined) {
       drawLeftRightText("Reste après:", formatAmountWithCurrency(data.remainingBalance, data.currency), FONT_SIZE_SMALL);
     }
-    y += 0.5;
     drawSeparator();
   }
 
   // Payment details
-  y += 1.5;
+  y += 0.5;
   drawLeftRightText("Mode:", data.paymentMethod, FONT_SIZE_SMALL);
-  y += 1;
+  y += 0.5;
   drawSeparator("=");
   drawLeftRightText("Montant payé", formatAmountWithCurrency(data.amountPaid, data.currency), FONT_SIZE_NORMAL);
   drawSeparator("=");
@@ -539,7 +510,7 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
   }
 
   // Footer
-  y += 2;
+  y += 1;
   drawSeparator("=");
   drawCenteredText("Merci pour votre paiement !", FONT_SIZE_SMALL);
   drawCenteredText("Ce reçu fait foi de paiement", FONT_SIZE_SMALL);

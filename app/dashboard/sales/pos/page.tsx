@@ -313,7 +313,6 @@ export default function POSPage() {
 
     setSearchQuery("");
     setSearchResults([]);
-    searchInputRef.current?.focus();
   };
 
   // Update cart item quantity
@@ -621,9 +620,6 @@ export default function POSPage() {
             setProducts(productsResult.data.results || []);
           }
         }
-
-        // Focus search
-        searchInputRef.current?.focus();
       } else {
         // Parse backend errors for clear display
         const errors = result.errors;
