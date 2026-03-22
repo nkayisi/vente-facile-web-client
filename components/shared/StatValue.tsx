@@ -29,7 +29,7 @@ export function StatValue({ value, className, color }: StatValueProps) {
     <div 
       className={cn(
         sizeClass,
-        "font-bold truncate",
+        "font-bold truncate text-base",
         color,
         className
       )}

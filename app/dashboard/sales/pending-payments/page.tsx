@@ -142,7 +142,7 @@ export default function PendingPaymentsPage() {
     };
 
     fetchData();
-  }, [session]);
+  }, [session?.accessToken]);
 
 
   const openPaymentDialog = (sale: Sale) => {

@@ -145,7 +145,7 @@ export default function StockPage() {
     };
 
     fetchData();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {

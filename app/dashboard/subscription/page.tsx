@@ -124,7 +124,7 @@ export default function SubscriptionPage() {
       }
     }
     loadData();
-  }, [session, organization]);
+  }, [session?.accessToken, organization]);
 
   function handleSelectPlan(plan: Plan) {
     setSelectedPlan(plan);

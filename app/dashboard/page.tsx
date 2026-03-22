@@ -85,7 +85,7 @@ export default function DashboardPage() {
     };
 
     fetchData();
-  }, [session, period]);
+  }, [session?.accessToken, period]);
 
 
   // Format date for chart

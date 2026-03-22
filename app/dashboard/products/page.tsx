@@ -153,7 +153,7 @@ export default function ProductsPage() {
             }
         }
         fetchOrganization();
-    }, [session]);
+    }, [session?.accessToken]);
 
     // Fetch categories, brands and units counts
     useEffect(() => {
@@ -179,7 +179,7 @@ export default function ProductsPage() {
             }
         }
         fetchFiltersData();
-    }, [session, organization]);
+    }, [session?.accessToken, organization]);
 
     // Fetch products
     const fetchProducts = useCallback(async () => {
@@ -214,7 +214,7 @@ export default function ProductsPage() {
         }
 
         setIsLoading(false);
-    }, [session, organization, currentPage, pageSize, searchQuery, selectedCategory, selectedBrand, selectedStatus]);
+    }, [session?.accessToken, organization, currentPage, pageSize, searchQuery, selectedCategory, selectedBrand, selectedStatus]);
 
     useEffect(() => {
         fetchProducts();

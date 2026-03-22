@@ -151,13 +151,13 @@ export default function ExpensesPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   useEffect(() => {
     if (organization && session?.accessToken) {
       fetchData();
     }
-  }, [organization, session, statusFilter, categoryFilter, dateFrom, dateTo]);
+  }, [organization, session?.accessToken, statusFilter, categoryFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

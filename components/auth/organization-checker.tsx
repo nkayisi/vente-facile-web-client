@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useCallback, useEffect, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { getUserOrganizations, Organization, CurrencyInfo } from "@/actions/organization.actions";
@@ -26,11 +26,14 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
   const { data: session, status } = useSession();
   const [isChecking, setIsChecking] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const hasFetched = useRef(false);
+
+  const accessToken = session?.accessToken;
 
   const loadOrganization = useCallback(async () => {
-    if (!session?.accessToken) return;
+    if (!accessToken) return;
     try {
-      const result = await getUserOrganizations(session.accessToken);
+      const result = await getUserOrganizations(accessToken);
 
       // Si l'utilisateur n'existe pas, déconnecter automatiquement
       if (!result.success && result.errorCode === 'user_not_found') {
@@ -45,22 +48,26 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
     } catch (error) {
       console.error("Error refreshing organization:", error);
     }
-  }, [session?.accessToken]);
+  }, [accessToken]);
 
   useEffect(() => {
-    async function checkOrganizations() {
-      if (status === "loading") {
-        return;
-      }
+    if (hasFetched.current) return;
 
-      if (status === "unauthenticated") {
-        router.push("/auth/login");
-        return;
-      }
+    if (status === "loading") {
+      return;
+    }
 
-      if (status === "authenticated" && session?.accessToken) {
+    if (status === "unauthenticated") {
+      router.push("/auth/login");
+      return;
+    }
+
+    if (status === "authenticated" && accessToken) {
+      hasFetched.current = true;
+
+      (async () => {
         try {
-          const result = await getUserOrganizations(session.accessToken);
+          const result = await getUserOrganizations(accessToken);
 
           // Si l'utilisateur n'existe pas, déconnecter automatiquement
           if (!result.success && result.errorCode === 'user_not_found') {
@@ -85,11 +92,14 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
         } finally {
           setIsChecking(false);
         }
-      }
+      })();
     }
+  }, [status, accessToken, router]);
 
-    checkOrganizations();
-  }, [status, session, router]);
+  const contextValue = useMemo(() => ({
+    organization,
+    refreshOrganization: loadOrganization,
+  }), [organization, loadOrganization]);
 
   if (status === "loading" || isChecking) {
     return (
@@ -107,7 +117,7 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
   }
 
   return (
-    <OrganizationContext.Provider value={{ organization, refreshOrganization: loadOrganization }}>
+    <OrganizationContext.Provider value={contextValue}>
       <CurrencyProvider currencyInfo={organization?.default_currency_info}>
         {children}
       </CurrencyProvider>

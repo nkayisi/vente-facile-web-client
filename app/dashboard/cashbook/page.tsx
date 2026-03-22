@@ -152,14 +152,14 @@ export default function CashbookPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   useEffect(() => {
     if (organization && session?.accessToken) {
       fetchData();
       loadIncomeCategories();
     }
-  }, [organization, session, directionFilter, typeFilter, dateFrom, dateTo, currentPage]);
+  }, [organization, session?.accessToken, directionFilter, typeFilter, dateFrom, dateTo, currentPage]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

@@ -6,6 +6,8 @@ import {
   useEffect,
   useState,
   useCallback,
+  useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 import { useSession, signOut } from "next-auth/react";
@@ -58,9 +60,12 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasFetched = useRef(false);
+
+  const accessToken = session?.accessToken;
 
   const fetchPermissions = useCallback(async () => {
-    if (status !== "authenticated" || !session?.accessToken) {
+    if (status !== "authenticated" || !accessToken) {
       setIsLoading(false);
       return;
     }
@@ -69,7 +74,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       // Récupérer l'organisation active
-      const orgsResult = await getUserOrganizations(session.accessToken);
+      const orgsResult = await getUserOrganizations(accessToken);
 
       // Si l'utilisateur n'existe pas, déconnecter automatiquement
       if (!orgsResult.success && orgsResult.errorCode === 'user_not_found') {
@@ -87,7 +92,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       setOrganizationId(orgId);
 
       // Récupérer les permissions
-      const permResult = await getUserPermissions(session.accessToken, orgId);
+      const permResult = await getUserPermissions(accessToken, orgId);
       if (permResult.success && permResult.data) {
         setPermissions(permResult.data);
       } else {
@@ -98,13 +103,19 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [session, status]);
+  }, [accessToken, status]);
 
   useEffect(() => {
-    fetchPermissions();
-  }, [fetchPermissions]);
+    if (hasFetched.current) return;
+    if (status === "authenticated" && accessToken) {
+      hasFetched.current = true;
+      fetchPermissions();
+    } else if (status === "unauthenticated") {
+      setIsLoading(false);
+    }
+  }, [fetchPermissions, status, accessToken]);
 
-  const value: PermissionsContextType = {
+  const value = useMemo<PermissionsContextType>(() => ({
     permissions,
     isLoading,
     error,
@@ -116,7 +127,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     isAtLeastRole: (role: Role) => _isAtLeastRole(permissions, role),
     canManageRole: (targetRole: string) => _canManageRole(permissions, targetRole),
     refreshPermissions: fetchPermissions,
-  };
+  }), [permissions, isLoading, error, organizationId, fetchPermissions]);
 
   return (
     <PermissionsContext.Provider value={value}>

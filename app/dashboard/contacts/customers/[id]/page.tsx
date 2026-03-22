@@ -181,7 +181,7 @@ export default function CustomerDetailPage() {
     } catch (error) {
       console.error("Error refreshing customer:", error);
     }
-  }, [session, organization, customerId]);
+  }, [session?.accessToken, organization, customerId]);
 
   // Load pending sales for this customer
   const loadPendingSales = useCallback(async () => {
@@ -205,7 +205,7 @@ export default function CustomerDetailPage() {
     } catch (error) {
       console.error("Error loading pending sales:", error);
     }
-  }, [session, organization, customerId]);
+  }, [session?.accessToken, organization, customerId]);
 
   // Load transactions
   const loadTransactions = useCallback(async () => {
@@ -224,7 +224,7 @@ export default function CustomerDetailPage() {
     } finally {
       setIsLoadingTxns(false);
     }
-  }, [session, organization, customerId, txnFilter]);
+  }, [session?.accessToken, organization, customerId, txnFilter]);
 
   useEffect(() => {
     if (organization && customer) {

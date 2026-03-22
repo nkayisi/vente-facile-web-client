@@ -217,7 +217,7 @@ export default function MovementsPage() {
     };
 
     fetchData();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch movements with filters
   const fetchMovements = useCallback(async (orgId?: string) => {
@@ -237,7 +237,7 @@ export default function MovementsPage() {
       setHasNext(result.data.next !== null);
       setHasPrevious(result.data.previous !== null);
     }
-  }, [session, organization, currentPage, pageSize, selectedWarehouse, selectedType, searchQuery]);
+  }, [session?.accessToken, organization, currentPage, pageSize, selectedWarehouse, selectedType, searchQuery]);
 
   // Refetch when filters or page change
   useEffect(() => {

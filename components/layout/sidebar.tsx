@@ -3,10 +3,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { useOrganization } from "@/components/auth/organization-checker";
 import { usePermissions } from "@/components/auth/permissions-provider";
 import {
   LayoutDashboard,
@@ -115,21 +113,8 @@ interface SidebarProps {
 
 export function Sidebar({ isMobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
-  const { data: session } = useSession();
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
-
-  useEffect(() => {
-    async function fetchOrganization() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
-        }
-      }
-    }
-    fetchOrganization();
-  }, [session]);
 
   return (
     <>
@@ -150,7 +135,7 @@ export function Sidebar({ isMobileOpen = false, onMobileClose }: SidebarProps) {
       >
         {/* Logo */}
         <div className="flex items-center justify-between border-b border-gray-200">
-          <Link href="/dashboard" className="flex items-center">
+          <Link href="/dashboard" onClick={onMobileClose} className="flex items-center">
             <Image src="/logo.png" alt="Vente Facile" width={68} height={68} className="object-contain" />
             <span className="text-xl font-bold">
               Vente<span className="text-orange-500">Facile</span>
@@ -205,6 +190,7 @@ export function Sidebar({ isMobileOpen = false, onMobileClose }: SidebarProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onMobileClose}
                 className={cn(
                   "flex items-center justify-between px-4 py-2 rounded-lg text-sm font-medium transition-colors group",
                   isActive

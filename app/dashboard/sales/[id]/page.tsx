@@ -90,7 +90,7 @@ export default function SaleDetailPage() {
     };
 
     fetchData();
-  }, [session, saleId]);
+  }, [session?.accessToken, saleId]);
 
   // Handle print receipt
   const handlePrintReceipt = async () => {

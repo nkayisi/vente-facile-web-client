@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useOrganization } from "@/components/auth/organization-checker";
@@ -51,15 +51,16 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
   const [subscriptionStatus, setSubscriptionStatus] =
     useState<SubscriptionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const hasFetched = useRef(false);
+
+  const accessToken = session?.accessToken;
+  const orgId = organization?.id;
 
   const loadSubscriptionStatus = useCallback(async () => {
-    if (!session?.accessToken || !organization?.id) return;
+    if (!accessToken || !orgId) return;
 
     try {
-      const result = await getSubscriptionStatus(
-        session.accessToken,
-        organization.id
-      );
+      const result = await getSubscriptionStatus(accessToken, orgId);
       if (result.success && result.data) {
         setSubscriptionStatus(result.data);
       }
@@ -68,11 +69,28 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [session?.accessToken, organization?.id]);
+  }, [accessToken, orgId]);
 
   useEffect(() => {
-    loadSubscriptionStatus();
-  }, [loadSubscriptionStatus]);
+    if (hasFetched.current) return;
+    if (accessToken && orgId) {
+      hasFetched.current = true;
+      loadSubscriptionStatus();
+    }
+  }, [loadSubscriptionStatus, accessToken, orgId]);
+
+  const isBlocked = subscriptionStatus?.is_blocked ?? false;
+
+  // Vérifier si la page actuelle est autorisée
+  const isAllowedPath = ALLOWED_PATHS.some((path) =>
+    pathname?.startsWith(path)
+  );
+
+  const contextValue = useMemo(() => ({
+    subscriptionStatus,
+    isBlocked,
+    refreshSubscription: loadSubscriptionStatus,
+  }), [subscriptionStatus, isBlocked, loadSubscriptionStatus]);
 
   if (isLoading) {
     return (
@@ -85,21 +103,8 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const isBlocked = subscriptionStatus?.is_blocked ?? false;
-
-  // Vérifier si la page actuelle est autorisée
-  const isAllowedPath = ALLOWED_PATHS.some((path) =>
-    pathname?.startsWith(path)
-  );
-
   return (
-    <SubscriptionContext.Provider
-      value={{
-        subscriptionStatus,
-        isBlocked,
-        refreshSubscription: loadSubscriptionStatus,
-      }}
-    >
+    <SubscriptionContext.Provider value={contextValue}>
       {/* Si bloqué et pas sur une page autorisée → Overlay de blocage total */}
       {isBlocked && !isAllowedPath ? (
         <SubscriptionBlockedOverlay
@@ -290,8 +295,8 @@ function SubscriptionWarningBanner({
   return (
     <div
       className={`px-4 py-2 text-sm flex items-center justify-center gap-2 ${isPastDue
-          ? "bg-orange-500 text-white"
-          : "bg-orange-100 text-orange-800 border-b border-orange-200"
+        ? "bg-orange-500 text-white"
+        : "bg-orange-100 text-orange-800 border-b border-orange-200"
         }`}
     >
       <Clock className="h-4 w-4 flex-shrink-0" />
@@ -317,8 +322,8 @@ function SubscriptionWarningBanner({
       <Link
         href="/dashboard/subscription"
         className={`ml-2 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${isPastDue
-            ? "bg-white/20 hover:bg-white/30 text-white"
-            : "bg-orange-600 hover:bg-orange-700 text-white"
+          ? "bg-white/20 hover:bg-white/30 text-white"
+          : "bg-orange-600 hover:bg-orange-700 text-white"
           }`}
       >
         {status.subscription?.is_trial ? "Passer au payant" : "Renouveler"}

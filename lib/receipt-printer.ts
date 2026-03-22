@@ -57,7 +57,7 @@ const FONT_SIZE_NORMAL = 11;
 const FONT_SIZE_SMALL = 9;
 const LINE_HEIGHT = 4.2; // mm per line
 const LINE_HEIGHT_SMALL = 3.5; // mm per line for small text
-const MARGIN = 2; // mm margins
+const MARGIN = 1; // mm margins
 
 function formatAmount(amount: number, decimals: number = 2): string {
   // Utiliser toFixed pour conserver les décimales exactes sans arrondi
@@ -326,6 +326,7 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
 export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): void {
   const pdfUrl = generateReceiptPdfUrl(data, paperWidth);
   window.open(pdfUrl, "_blank");
+  setTimeout(() => URL.revokeObjectURL(pdfUrl), 5000);
 }
 
 /**
@@ -338,6 +339,9 @@ export function sharePdf(pdfUrl: string, filename: string = "recu.pdf"): void {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+
+  // Libérer la mémoire du blob URL après téléchargement
+  setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
 }
 
 /**
@@ -527,6 +531,7 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
 export function printPaymentReceipt(data: PaymentReceiptData, paperWidth: PaperWidth = 58): void {
   const pdfUrl = generatePaymentReceiptPdfUrl(data, paperWidth);
   window.open(pdfUrl, "_blank");
+  setTimeout(() => URL.revokeObjectURL(pdfUrl), 5000);
 }
 
 export function getReceiptText(data: ReceiptData, paperWidth: PaperWidth = 58): string {

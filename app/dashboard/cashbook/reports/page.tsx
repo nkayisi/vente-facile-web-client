@@ -122,7 +122,7 @@ export default function CashbookReportsPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   useEffect(() => {
     if (organization && session?.accessToken) {
@@ -131,7 +131,7 @@ export default function CashbookReportsPage() {
       else if (activeTab === "annual") fetchAnnualReport();
       else if (activeTab === "custom") fetchCustomReport();
     }
-  }, [organization, session, activeTab, selectedDate, selectedYear, selectedMonth, annualYear, customDateFrom, customDateTo, dailyMovementsPage]);
+  }, [organization, session?.accessToken, activeTab, selectedDate, selectedYear, selectedMonth, annualYear, customDateFrom, customDateTo, dailyMovementsPage]);
 
   async function fetchDailyReport() {
     if (!session?.accessToken || !organization) return;

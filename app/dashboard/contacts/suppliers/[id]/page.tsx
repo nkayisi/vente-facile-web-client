@@ -78,7 +78,7 @@ export default function SupplierDetailPage() {
     };
 
     fetchData();
-  }, [session, supplierId]);
+  }, [session?.accessToken, supplierId]);
 
   const handleDelete = async () => {
     if (!session?.accessToken || !organization || !supplier) return;

@@ -111,7 +111,7 @@ export default function CustomersPage() {
       }
     };
     fetchOrg();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch customers with pagination
   const fetchCustomers = useCallback(async () => {
@@ -136,7 +136,7 @@ export default function CustomersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [session, organization, currentPage, pageSize, typeFilter, statusFilter, searchQuery]);
+  }, [session?.accessToken, organization, currentPage, pageSize, typeFilter, statusFilter, searchQuery]);
 
   useEffect(() => {
     if (organization) {

@@ -121,7 +121,7 @@ export default function WarehouseDetailPage() {
     };
 
     fetchData();
-  }, [session, warehouseId]);
+  }, [session?.accessToken, warehouseId]);
 
   // Handle create location
   const handleCreateLocation = async (e: React.FormEvent) => {

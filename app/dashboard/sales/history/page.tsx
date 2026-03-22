@@ -80,7 +80,7 @@ export default function SalesHistoryPage() {
       }
     };
     fetchOrg();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch sales with pagination
   const fetchSales = useCallback(async () => {
@@ -105,7 +105,7 @@ export default function SalesHistoryPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [session, organization, currentPage, pageSize, selectedStatus, dateFrom, dateTo, searchQuery]);
+  }, [session?.accessToken, organization, currentPage, pageSize, selectedStatus, dateFrom, dateTo, searchQuery]);
 
   useEffect(() => {
     if (organization) {

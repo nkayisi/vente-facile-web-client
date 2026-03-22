@@ -123,7 +123,7 @@ export default function SuppliersPage() {
       }
     };
     fetchOrg();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch suppliers with pagination
   const fetchSuppliers = useCallback(async () => {
@@ -147,7 +147,7 @@ export default function SuppliersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [session, organization, currentPage, pageSize, statusFilter, searchQuery]);
+  }, [session?.accessToken, organization, currentPage, pageSize, statusFilter, searchQuery]);
 
   useEffect(() => {
     if (organization) {

@@ -291,7 +291,7 @@ export default function ReportsPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Reset pages when filters change
   useEffect(() => {
@@ -695,9 +695,11 @@ export default function ReportsPage() {
 
     const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
+    const blobUrl = URL.createObjectURL(blob);
+    link.href = blobUrl;
     link.download = `${filename}.csv`;
     link.click();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
     toast.success("Fichier Excel/CSV exporté");
   };
 

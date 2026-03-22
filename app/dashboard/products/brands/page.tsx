@@ -93,7 +93,7 @@ export default function BrandsPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch brands
   const fetchBrands = useCallback(async () => {
@@ -117,7 +117,7 @@ export default function BrandsPage() {
       setHasPrevious(result.data.previous !== null);
     }
     setIsLoading(false);
-  }, [session, organization, searchQuery, currentPage, pageSize]);
+  }, [session?.accessToken, organization, searchQuery, currentPage, pageSize]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
 

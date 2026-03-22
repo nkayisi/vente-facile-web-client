@@ -108,7 +108,7 @@ export default function NewProductPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch reference data
   useEffect(() => {
@@ -139,7 +139,7 @@ export default function NewProductPage() {
       setIsFetchingData(false);
     }
     fetchReferenceData();
-  }, [session, organization]);
+  }, [session?.accessToken, organization]);
 
   // Generate SKU from name
   const generateSKU = () => {

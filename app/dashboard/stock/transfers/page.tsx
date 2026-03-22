@@ -170,7 +170,7 @@ export default function TransfersPage() {
     };
 
     fetchData();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch transfers with filters
   const fetchTransfers = useCallback(async (orgId?: string) => {

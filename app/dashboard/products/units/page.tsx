@@ -91,7 +91,7 @@ export default function UnitsPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch units
   const fetchUnits = useCallback(async () => {
@@ -115,7 +115,7 @@ export default function UnitsPage() {
       setHasPrevious(result.data.previous !== null);
     }
     setIsLoading(false);
-  }, [session, organization, searchQuery, currentPage, pageSize]);
+  }, [session?.accessToken, organization, searchQuery, currentPage, pageSize]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
 

@@ -100,7 +100,7 @@ export default function CategoriesPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch categories
   const fetchCategories = useCallback(async () => {
@@ -124,7 +124,7 @@ export default function CategoriesPage() {
       setHasPrevious(result.data.previous !== null);
     }
     setIsLoading(false);
-  }, [session, organization, searchQuery, currentPage, pageSize]);
+  }, [session?.accessToken, organization, searchQuery, currentPage, pageSize]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
 

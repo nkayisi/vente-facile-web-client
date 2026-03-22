@@ -92,7 +92,7 @@ export default function StocksPage() {
     };
 
     fetchData();
-  }, [session, showLowStock]);
+  }, [session?.accessToken, showLowStock]);
 
   // Filter stocks
   const filteredStocks = stocks.filter(stock => {

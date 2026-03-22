@@ -90,7 +90,7 @@ export default function AdjustmentDetailPage() {
     };
 
     fetchData();
-  }, [session, adjustmentId]);
+  }, [session?.accessToken, adjustmentId]);
 
   // Handle approve
   const handleApprove = async () => {

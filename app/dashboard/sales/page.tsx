@@ -99,7 +99,7 @@ export default function SalesPage() {
     };
 
     fetchData();
-  }, [session]);
+  }, [session?.accessToken]);
 
 
   // Format time

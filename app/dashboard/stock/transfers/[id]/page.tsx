@@ -93,7 +93,7 @@ export default function TransferDetailPage() {
     };
 
     fetchData();
-  }, [session, transferId]);
+  }, [session?.accessToken, transferId]);
 
   const openActionDialog = (type: "approve" | "ship" | "receive" | "cancel") => {
     setActionType(type);

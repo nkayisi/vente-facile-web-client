@@ -62,7 +62,7 @@ export default function ProductDetailPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch product
   useEffect(() => {
@@ -83,7 +83,7 @@ export default function ProductDetailPage() {
       setIsLoading(false);
     }
     fetchProduct();
-  }, [session, organization, productId]);
+  }, [session?.accessToken, organization, productId]);
 
   // Handle delete
   const handleDelete = async () => {

@@ -226,7 +226,7 @@ export default function POSPage() {
     };
 
     fetchData();
-  }, [session, router]);
+  }, [session?.accessToken, router]);
 
   // Focus search on load
   useEffect(() => {

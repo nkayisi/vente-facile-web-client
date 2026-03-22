@@ -78,7 +78,7 @@ export default function ContactsPage() {
     };
 
     fetchData();
-  }, [session]);
+  }, [session?.accessToken]);
 
   if (isLoading) {
     return (

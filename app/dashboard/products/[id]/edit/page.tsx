@@ -82,7 +82,7 @@ export default function EditProductPage() {
       }
     }
     fetchOrganization();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch product and reference data
   useEffect(() => {
@@ -143,7 +143,7 @@ export default function EditProductPage() {
       setIsFetchingData(false);
     }
     fetchData();
-  }, [session, organization, productId]);
+  }, [session?.accessToken, organization, productId]);
 
   // Handle input change
   const handleChange = (field: keyof UpdateProductData, value: any) => {

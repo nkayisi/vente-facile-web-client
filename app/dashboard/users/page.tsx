@@ -154,7 +154,7 @@ export default function UsersPage() {
       toast.error(result.error || "Erreur lors du chargement");
     }
     setIsLoading(false);
-  }, [session, organizationId, roleFilter, searchQuery, currentPage, pageSize]);
+  }, [session?.accessToken, organizationId, roleFilter, searchQuery, currentPage, pageSize]);
 
   // Reset to page 1 when filters change
   const handleFilterChange = (setter: (value: string) => void, value: string) => {

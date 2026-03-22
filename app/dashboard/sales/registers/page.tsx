@@ -136,7 +136,7 @@ export default function RegistersPage() {
     };
 
     fetchData();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Handle create/update register
   const handleSubmitRegister = async (e: React.FormEvent) => {

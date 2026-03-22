@@ -160,7 +160,7 @@ export default function AdjustmentsPage() {
     };
 
     fetchData();
-  }, [session]);
+  }, [session?.accessToken]);
 
   // Fetch adjustments with filters
   const fetchAdjustments = useCallback(async (orgId?: string) => {
