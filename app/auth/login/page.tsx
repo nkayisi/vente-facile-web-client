@@ -3,7 +3,7 @@
 import { useState, Suspense, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signIn, signOut } from "next-auth/react";
+import { signIn, signOut, getSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,9 +66,10 @@ function LoginForm() {
     // Validation du mot de passe
     if (!formData.password) {
       newErrors.password = "Le mot de passe est requis";
-    } else if (formData.password.length < 6) {
-      newErrors.password = "Le mot de passe doit contenir au moins 6 caractères";
-    }
+    } 
+    // else if (formData.password.length < 6) {
+    //   newErrors.password = "Le mot de passe doit contenir au moins 6 caractères";
+    // }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -103,7 +104,12 @@ function LoginForm() {
 
       if (result?.ok) {
         toast.success("Connexion réussie !");
-        router.push(callbackUrl);
+        const updatedSession = await getSession();
+        if (updatedSession?.isStaff) {
+          router.push("/admin");
+        } else {
+          router.push(callbackUrl);
+        }
         router.refresh();
       }
     } catch (error) {

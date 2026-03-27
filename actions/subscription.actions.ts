@@ -1,6 +1,7 @@
 "use server";
 
 import axios from "@/lib/auth/api-helper";
+import axiosPlain from "axios";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -124,10 +125,45 @@ export interface ActivateSubscriptionData {
   notes?: string;
 }
 
+export interface PublicPlan {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  price_monthly: string;
+  price_yearly: string;
+  currency: string;
+  max_users: number;
+  max_branches: number;
+  max_products: number | null;
+  max_monthly_transactions: number | null;
+  storage_limit_mb: number;
+  is_featured: boolean;
+  trial_days: number;
+  sort_order: number;
+  plan_features: PlanFeature[];
+}
+
 interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+// ============================================================================
+// Public API (no auth)
+// ============================================================================
+
+export async function getPublicPlans(): Promise<ApiResponse<PublicPlan[]>> {
+  try {
+    const response = await axiosPlain.get(`${API_BASE_URL}/plans/public/`);
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error?.response?.data?.detail || "Erreur lors du chargement des plans",
+    };
+  }
 }
 
 // ============================================================================

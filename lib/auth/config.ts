@@ -122,6 +122,7 @@ export const authConfig: NextAuthConfig = {
               refreshToken: data.refresh,
               accessTokenExpires: now + ACCESS_TOKEN_LIFETIME,
               refreshTokenExpires: now + REFRESH_TOKEN_LIFETIME,
+              isStaff: data.user?.is_staff || false,
             };
           }
 
@@ -145,6 +146,7 @@ export const authConfig: NextAuthConfig = {
           accessTokenExpires: user.accessTokenExpires,
           refreshTokenExpires: user.refreshTokenExpires,
           email: user.email,
+          isStaff: user.isStaff,
           error: undefined,
         };
       }
@@ -190,6 +192,7 @@ export const authConfig: NextAuthConfig = {
       session.accessToken = token.accessToken as string;
       session.refreshToken = token.refreshToken as string;
       session.error = token.error as string | undefined;
+      session.isStaff = token.isStaff as boolean | undefined;
 
       if (session.user && token.email) {
         session.user.email = token.email as string;

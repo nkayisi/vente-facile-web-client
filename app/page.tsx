@@ -1,46 +1,88 @@
 "use client";
 
-import Link from "next/link";
-import Image from "next/image";
-import { motion } from "framer-motion";
+import { getPublicPlans, PublicPlan } from "@/actions/subscription.actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { motion } from "framer-motion";
 import {
-  Store,
-  ShoppingCart,
-  Users,
-  BarChart3,
-  Package,
-  CreditCard,
-  TrendingUp,
-  Shield,
-  Smartphone,
-  Zap,
   ArrowRight,
-  CheckCircle,
-  Play,
-  Star,
-  Globe,
-  Clock,
-  Menu,
-  X,
-  ChevronDown,
-  Layers,
-  LineChart,
-  Building2,
-  Sparkles,
   BadgeCheck,
+  BarChart3,
+  CheckCircle,
+  ChevronDown,
+  Globe,
   Headphones,
+  Loader2,
   Lock,
+  Menu,
+  Package,
+  Play,
+  Receipt,
   RefreshCw,
+  Shield,
+  ShoppingCart,
+  Smartphone,
+  Star,
+  Store,
+  TrendingUp,
+  Users,
   Wifi,
-  Receipt
+  X,
+  Zap
 } from "lucide-react";
-import { useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+function buildFeatureList(plan: PublicPlan): string[] {
+  const features: string[] = [];
+
+  if (plan.max_branches === 1) features.push("1 point de vente");
+  else if (plan.max_branches > 100) features.push("Points de vente illimités");
+  else features.push(`Jusqu'à ${plan.max_branches} points de vente`);
+
+  if (plan.max_products === null || plan.max_products === 0) features.push("Produits illimités");
+  else features.push(`Jusqu'à ${plan.max_products.toLocaleString()} produits`);
+
+  if (plan.max_users === 1) features.push("1 utilisateur");
+  else if (plan.max_users > 100) features.push("Utilisateurs illimités");
+  else features.push(`${plan.max_users} utilisateurs`);
+
+  if (plan.max_monthly_transactions) {
+    features.push(`${plan.max_monthly_transactions.toLocaleString()} transactions/mois`);
+  } else {
+    features.push("Transactions illimitées");
+  }
+
+  if (plan.storage_limit_mb >= 1024) {
+    features.push(`${Math.round(plan.storage_limit_mb / 1024)} Go de stockage`);
+  } else {
+    features.push(`${plan.storage_limit_mb} Mo de stockage`);
+  }
+
+  const enabledFeatures = plan.plan_features
+    .filter((f) => f.is_enabled)
+    .map((f) => f.name);
+  features.push(...enabledFeatures);
+
+  return features;
+}
 
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [plans, setPlans] = useState<PublicPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
+
+  useEffect(() => {
+    getPublicPlans().then((result) => {
+      if (result.success && result.data) {
+        setPlans(result.data);
+      }
+      setPlansLoading(false);
+    });
+  }, []);
 
   return (
     <div className="min-h-screen bg-white">
@@ -125,158 +167,109 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-28 pb-20 px-6 overflow-hidden bg-gradient-to-b from-slate-50 to-white">
-        <div className="max-w-7xl mx-auto">
+      <section className="pt-24 pb-0 px-6 overflow-hidden bg-white">
+        <div className="max-w-5xl mx-auto flex flex-col items-center sm:text-center">
+
+          {/* Text block */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="text-center space-y-8"
+            transition={{ duration: 0.55 }}
+            className="space-y-6 pt-10 pb-10"
           >
-            {/* Badge */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2 }}
-              className="inline-flex items-center gap-2 bg-orange-100 text-orange-700 px-4 py-2 rounded-full text-sm font-medium"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="inline-flex items-center gap-2 bg-orange-50 text-orange-600 border border-orange-100 px-3.5 py-1.5 rounded-full text-sm font-medium"
             >
-              <span>Plus de 10 000 entreprises nous font confiance</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+              Caisse · Stock · Rapports · Clients
             </motion.div>
 
-            <h1 className="text-5xl md:text-7xl font-bold text-slate-900 leading-[1.1] tracking-tight">
-              Le système de caisse moderne
-              <br />
-              <span className="bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent">
-                conçu pour votre croissance
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-slate-900 leading-[1.12] tracking-tight">
+              Gérez votre commerce,{" "}
+              <span className="bg-gradient-to-r from-orange-500 to-amber-400 bg-clip-text text-transparent">
+                simplement.
               </span>
             </h1>
 
-            <p className="text-xl md:text-2xl text-slate-600 max-w-3xl mx-auto leading-relaxed">
-              Simplifiez la gestion de votre commerce avec notre plateforme tout-en-un.
-              Ventes, stocks, clients et analyses. Tout ce dont vous avez besoin pour développer votre activité.
+            <p className="text-lg text-slate-500 max-w-xl mx-auto leading-relaxed">
+              Ventes, stocks, clients et analyses: tout dans un seul outil. Démarrez en quelques minutes.
             </p>
 
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="flex flex-col sm:flex-row gap-4 justify-center pt-4"
+              transition={{ delay: 0.3 }}
+              className="flex flex-col sm:flex-row gap-3 justify-center"
             >
               <Link href="/auth/register">
-                <Button size="lg" className="text-lg px-8 h-14 bg-orange-500 hover:bg-orange-600 shadow-xl shadow-orange-500/25 group">
+                <Button size="lg" className="px-7 h-12 bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/20 group">
                   Démarrer gratuitement
-                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                  <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
               <Link href="#demo">
-                <Button variant="outline" size="lg" className="text-lg px-8 h-14 border-2 group">
-                  <Play className="mr-2 h-5 w-5 group-hover:scale-110 transition-transform" />
+                <Button variant="outline" size="lg" className="px-7 h-12">
+                  <Play className="mr-2 h-4 w-4" />
                   Voir la démo
                 </Button>
               </Link>
             </motion.div>
 
-            {/* Trust badges */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.6 }}
-              className="flex flex-wrap items-center justify-center gap-6 md:gap-10 pt-8 text-slate-500"
+              transition={{ delay: 0.45 }}
+              className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-slate-500"
             >
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span>14 jours d'essai gratuit</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span>Sans carte bancaire</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span>Annulez à tout moment</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Globe className="h-5 w-5 text-blue-500" />
-                <span>Support multi-devises</span>
-              </div>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                14 jours d&apos;essai gratuit
+              </span>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                Sans carte bancaire
+              </span>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                Annulez à tout moment
+              </span>
             </motion.div>
           </motion.div>
 
-          {/* Hero Image/Dashboard Preview */}
+          {/* Screenshot — bleeds at bottom */}
           <motion.div
-            initial={{ opacity: 0, y: 50 }}
+            initial={{ opacity: 0, y: 32 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.8 }}
-            className="mt-16 relative"
+            transition={{ delay: 0.3, duration: 0.7 }}
+            className="w-full"
           >
-            <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent z-10 pointer-events-none" />
-            <div className="bg-gradient-to-br from-slate-100 to-slate-200 rounded-2xl p-4 shadow-2xl shadow-slate-300/50 border border-slate-200">
-              <div className="bg-white rounded-xl overflow-hidden">
-                <div className="bg-slate-800 px-4 py-3 flex items-center gap-2">
-                  <div className="flex gap-1.5">
-                    <div className="w-3 h-3 rounded-full bg-red-500" />
-                    <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                    <div className="w-3 h-3 rounded-full bg-green-500" />
+            <div className="bg-slate-100 rounded-tl-2xl rounded-tr-2xl p-2.5 pb-0 shadow-2xl shadow-slate-200/80">
+              <div className="bg-white rounded-tl-xl rounded-tr-xl overflow-hidden">
+                <div className="bg-slate-800 px-4 py-2.5 flex items-center gap-3">
+                  <div className="flex gap-1.5 shrink-0">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
                   </div>
-                  <div className="flex-1 text-center">
-                    <span className="text-slate-400 text-sm">app.ventefacile.com</span>
-                  </div>
-                </div>
-                <div className="p-8 bg-gradient-to-br from-slate-50 to-white min-h-[300px] flex items-center justify-center">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
-                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-100">
-                      <TrendingUp className="h-8 w-8 text-green-500 mb-2" />
-                      <p className="text-2xl font-bold text-slate-900">$125K</p>
-                      <p className="text-sm text-slate-500">Ventes totales</p>
-                    </div>
-                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-100">
-                      <Package className="h-8 w-8 text-blue-500 mb-2" />
-                      <p className="text-2xl font-bold text-slate-900">2,847</p>
-                      <p className="text-sm text-slate-500">Produits</p>
-                    </div>
-                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-100">
-                      <Users className="h-8 w-8 text-purple-500 mb-2" />
-                      <p className="text-2xl font-bold text-slate-900">1,234</p>
-                      <p className="text-sm text-slate-500">Clients</p>
-                    </div>
-                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-100">
-                      <ShoppingCart className="h-8 w-8 text-orange-500 mb-2" />
-                      <p className="text-2xl font-bold text-slate-900">856</p>
-                      <p className="text-sm text-slate-500">Commandes</p>
-                    </div>
+                  <div className="flex-1 bg-slate-700 rounded px-3 py-0.5 text-center">
+                    <span className="text-slate-400 text-xs">app.ventefacile.com</span>
                   </div>
                 </div>
+                <Image
+                  src="/hero-image.png"
+                  alt="Aperçu de l'application VenteFacile"
+                  width={1280}
+                  height={800}
+                  className="w-full h-auto block"
+                  priority
+                />
               </div>
             </div>
           </motion.div>
 
-          {/* Logos Section */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8 }}
-            className="mt-16 text-center"
-          >
-            <p className="text-sm text-slate-500 mb-6 uppercase tracking-wider font-medium">Ils nous font confiance</p>
-            <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12 opacity-60 grayscale">
-              <div className="flex items-center gap-2 text-slate-400">
-                <Building2 className="h-8 w-8" />
-                <span className="font-semibold text-lg">RetailCo</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-400">
-                <Store className="h-8 w-8" />
-                <span className="font-semibold text-lg">ShopMax</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-400">
-                <Layers className="h-8 w-8" />
-                <span className="font-semibold text-lg">MegaMart</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-400">
-                <LineChart className="h-8 w-8" />
-                <span className="font-semibold text-lg">GrowthHub</span>
-              </div>
-            </div>
-          </motion.div>
         </div>
       </section>
 
@@ -358,7 +351,7 @@ export default function LandingPage() {
               </div>
               <p className="text-lg text-slate-600 leading-relaxed">
                 Que vous gériez un seul magasin ou plusieurs points de vente,
-                Vente Facile s'adapte à vos besoins avec des fonctionnalités puissantes conçues pour les défis du commerce d'aujourd'hui.
+                Vente Facile &apos;adapte à vos besoins avec des fonctionnalités puissantes conçues pour les défis du commerce d&apos;aujourd&apos;hui.
               </p>
               <div className="grid sm:grid-cols-2 gap-6">
                 <div className="flex items-start gap-4">
@@ -515,62 +508,111 @@ export default function LandingPage() {
               Des tarifs simples et transparents
             </h2>
             <p className="text-xl text-slate-600 max-w-2xl mx-auto">
-              Commencez gratuitement, évoluez selon vos besoins. Tous les plans incluent 14 jours d'essai gratuit.
+              Commencez gratuitement, évoluez selon vos besoins. Tous les plans incluent 14 jours d&apos;essai gratuit.
             </p>
+
+            {/* Billing cycle switcher */}
+            <div className="flex items-center justify-center gap-4 mt-8">
+              <span className={`text-sm font-medium transition-colors ${billingCycle === "monthly" ? "text-slate-900" : "text-slate-400"}`}>
+                Mensuel
+              </span>
+              <button
+                onClick={() => setBillingCycle(billingCycle === "monthly" ? "yearly" : "monthly")}
+                className={`relative w-14 h-7 rounded-full transition-colors ${billingCycle === "yearly" ? "bg-orange-500" : "bg-slate-200"}`}
+              >
+                <span
+                  className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${billingCycle === "yearly" ? "translate-x-7" : ""}`}
+                />
+              </button>
+              <span className={`text-sm font-medium transition-colors ${billingCycle === "yearly" ? "text-slate-900" : "text-slate-400"}`}>
+                Annuel
+              </span>
+              {billingCycle === "yearly" && (
+                <span className="bg-green-100 text-green-700 text-xs font-semibold px-2 py-1 rounded-full">
+                  -20%
+                </span>
+              )}
+            </div>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {[
-              { name: "Starter", price: "29", priceLabel: "Sur mesure", desc: "Idéal pour les petits commerces", features: ["1 point de vente", "Jusqu'à 500 produits", "1 utilisateur", "Rapports basiques", "Support par email"], popular: false },
-              { name: "Business", price: "79", priceLabel: "Sur mesure", desc: "Pour les commerces en croissance", features: ["Jusqu'à 3 points de vente", "Produits illimités", "5 utilisateurs", "Analyses avancées", "Multi-entrepôts", "Support prioritaire"], popular: true },
-              { name: "Enterprise", price: "Sur mesure", priceLabel: "Sur mesure", desc: "Pour les grandes organisations", features: ["Points de vente illimités", "Utilisateurs illimités", "Intégrations sur mesure", "Gestionnaire de compte dédié", "Formation sur site", "SLA 99.9% garanti"], popular: false },
-            ].map((plan, index) => (
-              <motion.div
-                key={plan.name}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-              >
-                <Card className={`h-full relative ${plan.popular ? 'border-2 border-orange-500 shadow-xl shadow-orange-500/10' : 'border shadow-lg'}`}>
-                  {plan.popular && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-1 rounded-full text-sm font-semibold">
-                      Plus populaire
-                    </div>
-                  )}
-                  <CardHeader className="text-center pb-2">
-                    <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                    <CardDescription>{plan.desc}</CardDescription>
-                    <div className="pt-4">
-                      {plan.price === "Sur mesure" ? (
-                        <span className="text-3xl font-bold text-slate-900">{plan.price}</span>
-                      ) : (
-                        <>
-                          <span className="text-4xl font-bold text-slate-900">{plan.price}$</span>
-                          <span className="text-slate-500">/mois</span>
-                        </>
+          {plansLoading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+            </div>
+          ) : plans.length > 0 ? (
+            <div className={`grid gap-8 max-w-5xl mx-auto ${plans.length === 1 ? 'max-w-md' : plans.length === 2 ? 'md:grid-cols-2 max-w-3xl' : 'md:grid-cols-3'}`}>
+              {plans.map((plan, index) => {
+                const monthlyPrice = parseFloat(plan.price_monthly);
+                const yearlyPrice = parseFloat(plan.price_yearly);
+                const isCustom = monthlyPrice === 0;
+                const features = buildFeatureList(plan);
+
+                const displayPrice = billingCycle === "yearly"
+                  ? Math.round(yearlyPrice / 12)
+                  : monthlyPrice;
+                const totalYearly = yearlyPrice;
+
+                return (
+                  <motion.div
+                    key={plan.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5, delay: index * 0.1 }}
+                  >
+                    <Card className={`h-full relative ${plan.is_featured ? 'border-2 border-orange-500 shadow-xl shadow-orange-500/10' : 'border shadow-lg'}`}>
+                      {plan.is_featured && (
+                        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-1 rounded-full text-sm font-semibold">
+                          Plus populaire
+                        </div>
                       )}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <ul className="space-y-3">
-                      {plan.features.map((feature) => (
-                        <li key={feature} className="flex items-center gap-3 text-slate-600">
-                          <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
-                          {feature}
-                        </li>
-                      ))}
-                    </ul>
-                    <Link href="/auth/register" className="block pt-4">
-                      <Button className={`w-full ${plan.popular ? 'bg-orange-500 hover:bg-orange-600' : ''}`} variant={plan.popular ? 'default' : 'outline'}>
-                        {plan.price === "Sur mesure" ? "Contactez-nous" : "Essai gratuit"}
-                      </Button>
-                    </Link>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
+                      <CardHeader className="text-center pb-2">
+                        <CardTitle className="text-2xl">{plan.name}</CardTitle>
+                        <CardDescription>{plan.description}</CardDescription>
+                        <div className="pt-4">
+                          {isCustom ? (
+                            <span className="text-3xl font-bold text-slate-900">Sur mesure</span>
+                          ) : (
+                            <>
+                              <span className="text-4xl font-bold text-slate-900">{displayPrice.toLocaleString()}</span>
+                              <span className="text-slate-500 ml-1">{plan.currency}/mois</span>
+                              {billingCycle === "yearly" && (
+                                <p className="text-sm text-slate-500 mt-1">
+                                  {totalYearly.toLocaleString()} {plan.currency}/an
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <ul className="space-y-3">
+                          {features.map((feature) => (
+                            <li key={feature} className="flex items-center gap-3 text-slate-600">
+                              <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
+                              {feature}
+                            </li>
+                          ))}
+                        </ul>
+                        {plan.trial_days > 0 && (
+                          <p className="text-xs text-center text-slate-500">
+                            {plan.trial_days} jours d&apos;essai gratuit
+                          </p>
+                        )}
+                        <Link href="/auth/register" className="block pt-2">
+                          <Button className={`w-full ${plan.is_featured ? 'bg-orange-500 hover:bg-orange-600' : ''}`} variant={plan.is_featured ? 'default' : 'outline'}>
+                            {isCustom ? "Essai gratuit" : "Continuer avec ce plan"}
+                          </Button>
+                        </Link>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-center text-slate-500">Les tarifs seront bientôt disponibles.</p>
+          )}
         </div>
       </section>
 
@@ -612,7 +654,7 @@ export default function LandingPage() {
                         <Star key={i} className="h-5 w-5 fill-orange-400 text-orange-400" />
                       ))}
                     </div>
-                    <p className="text-slate-600 mb-6 italic">"{testimonial.content}"</p>
+                    <p className="text-slate-600 mb-6 italic">&quot;{testimonial.content}&quot;</p>
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-amber-400 rounded-full flex items-center justify-center text-white font-bold">
                         {testimonial.name.split(' ').map(n => n[0]).join('')}
@@ -707,7 +749,7 @@ export default function LandingPage() {
             </Link>
           </div>
           <p className="text-sm opacity-75">
-            14 jours d'essai gratuit • Sans carte bancaire • Annulez à tout moment
+            14 jours d&apos;essai gratuit • Sans carte bancaire • Annulez à tout moment
           </p>
         </div>
       </section>
@@ -722,7 +764,7 @@ export default function LandingPage() {
                 <span className="text-xl font-bold">Vente Facile</span>
               </div>
               <p className="text-slate-400 mb-6 max-w-sm">
-                Le système de caisse moderne conçu pour les entreprises de toutes tailles. Gérez vos ventes, stocks et clients depuis n'importe où.
+                Le système de caisse moderne conçu pour les entreprises de toutes tailles. Gérez vos ventes, stocks et clients depuis n&apos;importe où.
               </p>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 text-sm text-slate-400">
@@ -748,7 +790,7 @@ export default function LandingPage() {
               <h4 className="font-semibold mb-4">Ressources</h4>
               <ul className="space-y-3 text-slate-400">
                 <li><Link href="/docs" className="hover:text-white transition-colors">Documentation</Link></li>
-                <li><Link href="/help" className="hover:text-white transition-colors">Centre d'aide</Link></li>
+                <li><Link href="/help" className="hover:text-white transition-colors">Centre d&apos;aide</Link></li>
                 <li><Link href="/blog" className="hover:text-white transition-colors">Blog</Link></li>
                 <li><Link href="/api" className="hover:text-white transition-colors">Référence API</Link></li>
               </ul>
@@ -759,7 +801,7 @@ export default function LandingPage() {
                 <li><Link href="/about" className="hover:text-white transition-colors">À propos</Link></li>
                 <li><Link href="/contact" className="hover:text-white transition-colors">Contact</Link></li>
                 <li><Link href="/privacy" className="hover:text-white transition-colors">Confidentialité</Link></li>
-                <li><Link href="/terms" className="hover:text-white transition-colors">Conditions d'utilisation</Link></li>
+                <li><Link href="/terms" className="hover:text-white transition-colors">Conditions d&apos;utilisation</Link></li>
               </ul>
             </div>
           </div>
