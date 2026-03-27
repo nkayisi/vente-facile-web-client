@@ -30,6 +30,7 @@ import {
   X,
   Zap
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -74,6 +75,8 @@ export default function LandingPage() {
   const [plans, setPlans] = useState<PublicPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
+  const { data: session, status } = useSession();
+  const isAuthenticated = status === "authenticated" && !!session;
 
   useEffect(() => {
     getPublicPlans().then((result) => {
@@ -113,14 +116,24 @@ export default function LandingPage() {
           </div>
 
           <div className="hidden md:flex items-center space-x-4">
-            <Link href="/auth/login">
-              <Button variant="ghost" className="font-medium">Connexion</Button>
-            </Link>
-            <Link href="/auth/register">
-              <Button className="bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/25">
-                Essai gratuit
-              </Button>
-            </Link>
+            {isAuthenticated ? (
+              <Link href="/dashboard">
+                <Button className="bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/25">
+                  Mon compte
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Link href="/auth/login">
+                  <Button variant="ghost" className="font-medium">Connexion</Button>
+                </Link>
+                <Link href="/auth/register">
+                  <Button className="bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/25">
+                    Essai gratuit
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -153,14 +166,24 @@ export default function LandingPage() {
               Témoignages
             </Link>
             <div className="pt-4 space-y-2">
-              <Link href="/auth/login" className="block">
-                <Button variant="outline" className="w-full">Connexion</Button>
-              </Link>
-              <Link href="/auth/register" className="block">
-                <Button className="w-full bg-orange-500 hover:bg-orange-600">
-                  Essai gratuit
-                </Button>
-              </Link>
+              {isAuthenticated ? (
+                <Link href="/dashboard" className="block">
+                  <Button className="w-full bg-orange-500 hover:bg-orange-600">
+                    Mon compte
+                  </Button>
+                </Link>
+              ) : (
+                <>
+                  <Link href="/auth/login" className="block">
+                    <Button variant="outline" className="w-full">Connexion</Button>
+                  </Link>
+                  <Link href="/auth/register" className="block">
+                    <Button className="w-full bg-orange-500 hover:bg-orange-600">
+                      Essai gratuit
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </motion.div>
         )}

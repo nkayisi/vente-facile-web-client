@@ -12,7 +12,10 @@ import {
   Receipt,
   X,
   ArrowLeft,
+  LogOut,
 } from "lucide-react";
+import { Button } from "../ui/button";
+import { signOut } from "next-auth/react";
 
 const adminMenuItems = [
   { title: "Dashboard", href: "/admin", icon: LayoutDashboard },
@@ -87,13 +90,13 @@ export function AdminSidebar({ isMobileOpen = false, onMobileClose }: AdminSideb
         </nav>
 
         <div className="p-3 border-t border-border">
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          <Button variant="outline"
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
-            <ArrowLeft className="h-5 w-5" />
-            Retour au dashboard
-          </Link>
+            <LogOut className="h-5 w-5" />
+            Déconnexion
+          </Button>
         </div>
       </aside>
     </>

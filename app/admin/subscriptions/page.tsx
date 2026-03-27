@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,8 +41,6 @@ import {
   X,
   Loader2,
   MoreHorizontal,
-  ChevronLeft,
-  ChevronRight,
   Plus,
   ChevronsUpDown,
   Check,
@@ -78,7 +76,39 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
+
+function generatePageNumbers(current: number, total: number): (number | "ellipsis")[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+
+  const pages: (number | "ellipsis")[] = [1];
+
+  if (current > 3) pages.push("ellipsis");
+
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+
+  if (current < total - 2) pages.push("ellipsis");
+
+  pages.push(total);
+
+  return pages;
+}
 
 const BILLING_CYCLES = [
   { value: "monthly", label: "Mensuel" },
@@ -93,7 +123,7 @@ export default function AdminSubscriptionsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [billingCycleFilter, setBillingCycleFilter] = useState<string>("all");
-  const [planFilter, setPlanFilter] = useState<string>("all");
+  const [planFilter] = useState<string>("all");
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
@@ -106,7 +136,10 @@ export default function AdminSubscriptionsPage() {
 
   // Create dialog
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [organizations, setOrganizations] = useState<AdminOrganization[]>([]);
+  const [initialOrgs, setInitialOrgs] = useState<AdminOrganization[]>([]);
+  const [orgSearchResults, setOrgSearchResults] = useState<AdminOrganization[]>([]);
+  const [orgSearchQuery, setOrgSearchQuery] = useState("");
+  const [isSearchingOrgs, setIsSearchingOrgs] = useState(false);
   const [plans, setPlans] = useState<AdminPlan[]>([]);
   const [orgPopoverOpen, setOrgPopoverOpen] = useState(false);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
@@ -117,16 +150,16 @@ export default function AdminSubscriptionsPage() {
     start_date: new Date().toISOString().split("T")[0],
     notes: "",
   });
+  const [selectedOrg, setSelectedOrg] = useState<AdminOrganization | null>(null);
+  const orgSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    fetchSubscriptions();
-  }, [session?.accessToken, searchQuery, statusFilter, billingCycleFilter, planFilter, currentPage]);
 
-  async function fetchSubscriptions() {
+
+  const fetchSubscriptions = useCallback(() => {
     if (!session?.accessToken) return;
 
     setIsLoading(true);
-    const filters: any = {
+    const filters: Record<string, string | number> = {
       page: currentPage,
       page_size: pageSize,
     };
@@ -136,16 +169,21 @@ export default function AdminSubscriptionsPage() {
     if (billingCycleFilter !== "all") filters.billing_cycle = billingCycleFilter;
     if (planFilter !== "all") filters.plan = planFilter;
 
-    const result = await getAdminSubscriptions(session.accessToken, filters);
-    if (result.success && result.data) {
-      setSubscriptions(result.data.results);
-      setTotalCount(result.data.count);
-    } else {
-      toast.error(result.message || "Erreur lors du chargement");
-    }
-    setIsLoading(false);
-  }
+    getAdminSubscriptions(session.accessToken, filters).then((result) => {
+      if (result.success && result.data) {
+        setSubscriptions(result.data.results);
+        setTotalCount(result.data.count);
+      } else {
+        toast.error(result.message || "Erreur lors du chargement");
+      }
+      setIsLoading(false);
+    });
+  }, [session, searchQuery, statusFilter, billingCycleFilter, planFilter, currentPage, pageSize]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(fetchSubscriptions, [fetchSubscriptions]);
+
+  
   async function handleExtend(subscriptionId: string) {
     if (!session?.accessToken) return;
 
@@ -191,19 +229,50 @@ export default function AdminSubscriptionsPage() {
       start_date: new Date().toISOString().split("T")[0],
       notes: "",
     });
+    setSelectedOrg(null);
+    setOrgSearchQuery("");
+    setOrgSearchResults([]);
+    setInitialOrgs([]);
     setOrgPopoverOpen(false);
     setCreateDialogOpen(true);
 
     if (!session?.accessToken) return;
     setIsLoadingOptions(true);
     const [orgsResult, plansResult] = await Promise.all([
-      getAdminOrganizations(session.accessToken, { page_size: 100 }),
+      getAdminOrganizations(session.accessToken, { page_size: 5 }),
       getAdminPlans(session.accessToken),
     ]);
-    if (orgsResult.success && orgsResult.data) setOrganizations(orgsResult.data.results);
+    if (orgsResult.success && orgsResult.data) setInitialOrgs(orgsResult.data.results);
     if (plansResult.success && plansResult.data) setPlans(plansResult.data);
     setIsLoadingOptions(false);
   }
+
+  function handleOrgSearchChange(query: string) {
+    setOrgSearchQuery(query);
+
+    if (orgSearchTimer.current) clearTimeout(orgSearchTimer.current);
+
+    if (!query.trim()) {
+      setOrgSearchResults([]);
+      setIsSearchingOrgs(false);
+      return;
+    }
+
+    setIsSearchingOrgs(true);
+    orgSearchTimer.current = setTimeout(async () => {
+      if (!session?.accessToken) return;
+      const result = await getAdminOrganizations(session.accessToken, {
+        search: query.trim(),
+        page_size: 10,
+      });
+      if (result.success && result.data) {
+        setOrgSearchResults(result.data.results);
+      }
+      setIsSearchingOrgs(false);
+    }, 300);
+  }
+
+  const displayedOrgs = orgSearchQuery.trim() ? orgSearchResults : initialOrgs;
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -224,8 +293,6 @@ export default function AdminSubscriptionsPage() {
     }
     setIsActionLoading(false);
   }
-
-  const selectedOrg = organizations.find((o) => o.id === createForm.organization);
 
   const getStatusBadge = (status: string, display: string) => {
     const styles: Record<string, string> = {
@@ -364,15 +431,43 @@ export default function AdminSubscriptionsPage() {
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between p-4 border-t">
-                <p className="text-sm text-muted-foreground">Page {currentPage} sur {totalPages}</p>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  Page {currentPage} sur {totalPages} · {totalCount} résultat{totalCount > 1 ? "s" : ""}
+                </p>
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={() => currentPage > 1 && setCurrentPage(currentPage - 1)}
+                        className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                      />
+                    </PaginationItem>
+
+                    {generatePageNumbers(currentPage, totalPages).map((page, idx) =>
+                      page === "ellipsis" ? (
+                        <PaginationItem key={`ellipsis-${idx}`}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      ) : (
+                        <PaginationItem key={page}>
+                          <PaginationLink
+                            isActive={page === currentPage}
+                            onClick={() => setCurrentPage(page as number)}
+                          >
+                            {page}
+                          </PaginationLink>
+                        </PaginationItem>
+                      )
+                    )}
+
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() => currentPage < totalPages && setCurrentPage(currentPage + 1)}
+                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
               </div>
             )}
           </>
@@ -383,7 +478,7 @@ export default function AdminSubscriptionsPage() {
       <Dialog open={extendDialogOpen} onOpenChange={setExtendDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Prolonger l'abonnement</DialogTitle>
+            <DialogTitle>Prolonger l&apos;abonnement</DialogTitle>
           </DialogHeader>
           {selectedSubscription && (
             <div className="space-y-4 pt-2">
@@ -447,35 +542,51 @@ export default function AdminSubscriptionsPage() {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Nom, email ou ville..." />
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Nom, email ou ville..."
+                        value={orgSearchQuery}
+                        onValueChange={handleOrgSearchChange}
+                      />
                       <CommandList>
-                        <CommandEmpty>Aucun établissement trouvé.</CommandEmpty>
-                        <CommandGroup>
-                          {organizations.map((org) => (
-                            <CommandItem
-                              key={org.id}
-                              value={`${org.name} ${org.owner_email} ${org.city}`}
-                              onSelect={() => {
-                                setCreateForm((f) => ({ ...f, organization: org.id }));
-                                setOrgPopoverOpen(false);
-                              }}
-                            >
-                              <div className="flex flex-col flex-1 min-w-0">
-                                <span className="font-medium truncate">{org.name}</span>
-                                <span className="text-xs text-muted-foreground truncate">
-                                  {org.owner_email} · {org.city}
-                                </span>
-                              </div>
-                              <Check
-                                className={cn(
-                                  "ml-2 h-4 w-4 shrink-0",
-                                  createForm.organization === org.id ? "opacity-100 text-primary" : "opacity-0"
-                                )}
-                              />
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
+                        {isSearchingOrgs ? (
+                          <div className="flex items-center justify-center py-6 gap-2 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Recherche...
+                          </div>
+                        ) : displayedOrgs.length === 0 ? (
+                          <CommandEmpty>
+                            {orgSearchQuery.trim() ? "Aucun établissement trouvé." : "Aucun établissement disponible."}
+                          </CommandEmpty>
+                        ) : (
+                          <CommandGroup heading={orgSearchQuery.trim() ? "Résultats" : "Récents"}>
+                            {displayedOrgs.map((org) => (
+                              <CommandItem
+                                key={org.id}
+                                value={org.id}
+                                onSelect={() => {
+                                  setSelectedOrg(org);
+                                  setCreateForm((f) => ({ ...f, organization: org.id }));
+                                  setOrgPopoverOpen(false);
+                                  setOrgSearchQuery("");
+                                }}
+                              >
+                                <div className="flex flex-col flex-1 min-w-0">
+                                  <span className="font-medium truncate">{org.name}</span>
+                                  <span className="text-xs text-muted-foreground truncate">
+                                    {org.owner_email} · {org.city}
+                                  </span>
+                                </div>
+                                <Check
+                                  className={cn(
+                                    "ml-2 h-4 w-4 shrink-0",
+                                    createForm.organization === org.id ? "opacity-100 text-primary" : "opacity-0"
+                                  )}
+                                />
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        )}
                       </CommandList>
                     </Command>
                   </PopoverContent>
@@ -494,7 +605,7 @@ export default function AdminSubscriptionsPage() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setCreateForm((f) => ({ ...f, organization: "" }))}
+                        onClick={() => { setCreateForm((f) => ({ ...f, organization: "" })); setSelectedOrg(null); }}
                         className="ml-2 shrink-0 text-muted-foreground hover:text-foreground"
                       >
                         <X className="h-4 w-4" />
@@ -514,7 +625,7 @@ export default function AdminSubscriptionsPage() {
                             )}
                           </p>
                           <p className="text-amber-600 mt-1">
-                            En créant un nouvel abonnement, l'abonnement actuel sera automatiquement remplacé.
+                            En créant un nouvel abonnement, l&apos;abonnement actuel sera automatiquement remplacé.
                           </p>
                         </div>
                       </div>
@@ -593,7 +704,7 @@ export default function AdminSubscriptionsPage() {
                 </Button>
                 <Button type="submit" disabled={isActionLoading || !createForm.organization || !createForm.plan}>
                   {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Créer l'abonnement
+                  Créer l&apos;abonnement
                 </Button>
               </div>
             </form>

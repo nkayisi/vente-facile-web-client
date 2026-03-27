@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,15 +60,11 @@ export default function AdminOrganizationsPage() {
   const [selectedOrg, setSelectedOrg] = useState<AdminOrganization | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
-  useEffect(() => {
-    fetchOrganizations();
-  }, [session?.accessToken, searchQuery, statusFilter, businessTypeFilter, currentPage]);
-
-  async function fetchOrganizations() {
+  const fetchOrganizations = useCallback(() => {
     if (!session?.accessToken) return;
 
     setIsLoading(true);
-    const filters: any = {
+    const filters: Record<string, string | number | boolean> = {
       page: currentPage,
       page_size: pageSize,
     };
@@ -77,15 +73,19 @@ export default function AdminOrganizationsPage() {
     if (statusFilter !== "all") filters.is_active = statusFilter === "active";
     if (businessTypeFilter !== "all") filters.business_type = businessTypeFilter;
 
-    const result = await getAdminOrganizations(session.accessToken, filters);
-    if (result.success && result.data) {
-      setOrganizations(result.data.results);
-      setTotalCount(result.data.count);
-    } else {
-      toast.error(result.message || "Erreur lors du chargement");
-    }
-    setIsLoading(false);
-  }
+    getAdminOrganizations(session.accessToken, filters).then((result) => {
+      if (result.success && result.data) {
+        setOrganizations(result.data.results);
+        setTotalCount(result.data.count);
+      } else {
+        toast.error(result.message || "Erreur lors du chargement");
+      }
+      setIsLoading(false);
+    });
+  }, [session, searchQuery, statusFilter, businessTypeFilter, currentPage, pageSize]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(fetchOrganizations, [fetchOrganizations]);
 
   async function handleToggleActive(orgId: string) {
     if (!session?.accessToken) return;
@@ -197,7 +197,7 @@ export default function AdminOrganizationsPage() {
                     <TableCell>
                       <div>
                         <Link href={`/admin/organizations/${org.id}`} className="font-medium hover:text-primary transition-colors">{org.name}</Link>
-                        <p className="text-sm text-muted-foreground">{org.city}, {org.country}</p>
+                        <p className="text-sm text-muted-foreground">{org.city} {org.city ? ", " : ""} {org.country}</p>
                       </div>
                     </TableCell>
                     <TableCell>
