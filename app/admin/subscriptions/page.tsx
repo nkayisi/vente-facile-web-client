@@ -152,8 +152,18 @@ export default function AdminSubscriptionsPage() {
   });
   const [selectedOrg, setSelectedOrg] = useState<AdminOrganization | null>(null);
   const orgSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 350);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchQuery]);
 
   const fetchSubscriptions = useCallback(() => {
     if (!session?.accessToken) return;
@@ -164,7 +174,7 @@ export default function AdminSubscriptionsPage() {
       page_size: pageSize,
     };
 
-    if (searchQuery) filters.search = searchQuery;
+    if (debouncedSearch) filters.search = debouncedSearch;
     if (statusFilter !== "all") filters.status = statusFilter;
     if (billingCycleFilter !== "all") filters.billing_cycle = billingCycleFilter;
     if (planFilter !== "all") filters.plan = planFilter;
@@ -178,7 +188,7 @@ export default function AdminSubscriptionsPage() {
       }
       setIsLoading(false);
     });
-  }, [session, searchQuery, statusFilter, billingCycleFilter, planFilter, currentPage, pageSize]);
+  }, [session, debouncedSearch, statusFilter, billingCycleFilter, planFilter, currentPage, pageSize]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(fetchSubscriptions, [fetchSubscriptions]);

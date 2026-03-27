@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,33 +59,45 @@ export default function AdminUsersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    fetchUsers();
-  }, [session?.accessToken, searchQuery, statusFilter, roleFilter, currentPage]);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 350);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchQuery]);
 
-  async function fetchUsers() {
+  const fetchUsers = useCallback(() => {
     if (!session?.accessToken) return;
 
     setIsLoading(true);
-    const filters: any = {
+    const filters: Record<string, string | number | boolean> = {
       page: currentPage,
       page_size: pageSize,
     };
 
-    if (searchQuery) filters.search = searchQuery;
+    if (debouncedSearch) filters.search = debouncedSearch;
     if (statusFilter !== "all") filters.is_active = statusFilter === "active";
     if (roleFilter !== "all") filters.is_staff = roleFilter === "staff";
 
-    const result = await getAdminUsers(session.accessToken, filters);
-    if (result.success && result.data) {
-      setUsers(result.data.results);
-      setTotalCount(result.data.count);
-    } else {
-      toast.error(result.message || "Erreur lors du chargement");
-    }
-    setIsLoading(false);
-  }
+    getAdminUsers(session.accessToken, filters).then((result) => {
+      if (result.success && result.data) {
+        setUsers(result.data.results);
+        setTotalCount(result.data.count);
+      } else {
+        toast.error(result.message || "Erreur lors du chargement");
+      }
+      setIsLoading(false);
+    });
+  }, [session, debouncedSearch, statusFilter, roleFilter, currentPage, pageSize]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(fetchUsers, [fetchUsers]);
 
   async function handleToggleActive(userId: string) {
     if (!session?.accessToken) return;

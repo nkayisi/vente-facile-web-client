@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +59,18 @@ export default function AdminOrganizationsPage() {
   const [pageSize] = useState(20);
   const [selectedOrg, setSelectedOrg] = useState<AdminOrganization | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 350);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchQuery]);
 
   const fetchOrganizations = useCallback(() => {
     if (!session?.accessToken) return;
@@ -69,7 +81,7 @@ export default function AdminOrganizationsPage() {
       page_size: pageSize,
     };
 
-    if (searchQuery) filters.search = searchQuery;
+    if (debouncedSearch) filters.search = debouncedSearch;
     if (statusFilter !== "all") filters.is_active = statusFilter === "active";
     if (businessTypeFilter !== "all") filters.business_type = businessTypeFilter;
 
@@ -82,7 +94,7 @@ export default function AdminOrganizationsPage() {
       }
       setIsLoading(false);
     });
-  }, [session, searchQuery, statusFilter, businessTypeFilter, currentPage, pageSize]);
+  }, [session, debouncedSearch, statusFilter, businessTypeFilter, currentPage, pageSize]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(fetchOrganizations, [fetchOrganizations]);
