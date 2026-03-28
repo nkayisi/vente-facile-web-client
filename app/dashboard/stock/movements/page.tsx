@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
@@ -67,6 +67,15 @@ const MOVEMENT_TYPES: { value: MovementType; label: string; direction: "in" | "o
   { value: "damage", label: "Dommage/Perte", direction: "out" },
   { value: "expired", label: "Périmé", direction: "out" },
   { value: "initial", label: "Stock initial", direction: "in" },
+];
+
+/** Entrées de stock où le coût unitaire sert à la valorisation (approvisionnement, etc.) */
+const STOCK_IN_TYPES_WITH_COST: MovementType[] = [
+  "purchase",
+  "initial",
+  "return_in",
+  "transfer_in",
+  "adjustment_in",
 ];
 
 export default function MovementsPage() {
@@ -253,6 +262,37 @@ export default function MovementsPage() {
   };
 
   const totalPages = Math.ceil(totalCount / pageSize);
+
+  /** Marge si on valorise l'entrée au coût saisi, comparée au PV catalogue du produit */
+  const replenishmentMarginPreview = useMemo(() => {
+    if (!selectedProduct || !STOCK_IN_TYPES_WITH_COST.includes(formData.movement_type)) {
+      return null;
+    }
+    const sellingPrice = parseFloat(selectedProduct.selling_price || "0");
+    const unitCost = formData.unit_cost ?? 0;
+    if (!(sellingPrice > 0) || !(unitCost > 0)) {
+      return null;
+    }
+    const grossMargin = sellingPrice - unitCost;
+    const marginRateOnSelling =
+      sellingPrice > 0 ? (grossMargin / sellingPrice) * 100 : 0;
+    return {
+      grossMargin,
+      marginRateOnSelling,
+      isNegativeOrZero: grossMargin <= 0,
+    };
+  }, [selectedProduct, formData.movement_type, formData.unit_cost]);
+
+  const locationSelectOptions = useMemo(
+    () => [
+      { value: "__none__", label: "Aucun emplacement" },
+      ...locations.map(loc => ({
+        value: loc.id,
+        label: `${loc.name} (${loc.code})`,
+      })),
+    ],
+    [locations]
+  );
 
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
@@ -486,16 +526,20 @@ export default function MovementsPage() {
 
       {/* Create Movement Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[min(90vh,calc(100dvh-1rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className="shrink-0 space-y-1.5 px-6 pt-6 pb-3 pr-12 text-left">
             <DialogTitle>Nouveau mouvement de stock</DialogTitle>
             <DialogDescription>
               Créez un mouvement manuel pour ajuster le stock
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
+          <form
+            onSubmit={handleSubmit}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-contain px-6 pb-2">
+              <div className="space-y-2">
               <Label htmlFor="product">Produit *</Label>
               <SearchableSelectAsync
                 onSearch={searchProducts}
@@ -505,9 +549,9 @@ export default function MovementsPage() {
                 placeholder="Sélectionner un produit"
                 searchPlaceholder="Rechercher un produit..."
               />
-            </div>
+              </div>
 
-            <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="warehouse">Entrepôt *</Label>
                 <SearchableSelect
@@ -539,9 +583,9 @@ export default function MovementsPage() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
+              </div>
 
-            <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="quantity">Quantité *</Label>
                 <Input
@@ -566,30 +610,49 @@ export default function MovementsPage() {
                   step="any"
                 />
               </div>
-            </div>
+              </div>
 
-            {/* Champs pour les entrées de stock (lots) */}
-            {["purchase", "initial", "return_in", "transfer_in", "adjustment_in"].includes(formData.movement_type) && (
+              {replenishmentMarginPreview && (
+              <div
+                className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border px-2.5 py-1.5 text-xs ${
+                  replenishmentMarginPreview.isNegativeOrZero
+                    ? "border-red-200 bg-red-50 text-red-800"
+                    : "border-emerald-200/70 bg-emerald-50/70 text-emerald-900"
+                }`}
+              >
+                <span className="text-muted-foreground">Marge sur PV</span>
+                <span className="font-semibold tabular-nums">
+                  {replenishmentMarginPreview.marginRateOnSelling.toFixed(1)} %
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <span className="tabular-nums">{formatPrice(replenishmentMarginPreview.grossMargin)}</span>
+                {replenishmentMarginPreview.isNegativeOrZero && (
+                  <span className="font-medium text-red-700">Coût ≥ PV</span>
+                )}
+              </div>
+              )}
+
+              {/* Champs pour les entrées de stock (lots) */}
+              {["purchase", "initial", "return_in", "transfer_in", "adjustment_in"].includes(formData.movement_type) && (
               <div className="space-y-4">
 
                 <div className="space-y-2">
                   <Label htmlFor="location">Emplacement (optionnel)</Label>
-                  <Select
-                    value={formData.location || "none"}
-                    onValueChange={value => setFormData({ ...formData, location: value === "none" ? "" : value })}
-                  >
-                    <SelectTrigger id="location" className="w-full">
-                      <SelectValue placeholder="Sélectionner un emplacement" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Aucun emplacement</SelectItem>
-                      {locations.map(location => (
-                        <SelectItem key={location.id} value={location.id}>
-                          {location.name} ({location.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={locationSelectOptions}
+                    value={formData.location ? formData.location : "__none__"}
+                    onValueChange={value =>
+                      setFormData({ ...formData, location: value === "__none__" ? "" : value })
+                    }
+                    placeholder={
+                      formData.warehouse
+                        ? "Rechercher un emplacement…"
+                        : "Sélectionnez d’abord un entrepôt"
+                    }
+                    searchPlaceholder="Nom ou code…"
+                    emptyMessage="Aucun emplacement"
+                    disabled={!formData.warehouse}
+                  />
                   {locations.length === 0 && formData.warehouse && (
                     <p className="text-xs text-gray-500">Aucun emplacement disponible pour cet entrepôt</p>
                   )}
@@ -615,9 +678,9 @@ export default function MovementsPage() {
                   )}
                 </div>
               </div>
-            )}
+              )}
 
-            <div className="space-y-2">
+              <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>
               <Textarea
                 id="notes"
@@ -626,9 +689,10 @@ export default function MovementsPage() {
                 placeholder="Notes optionnelles..."
                 rows={2}
               />
+              </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="shrink-0 border-t bg-card px-6 py-4">
               <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)}>
                 Annuler
               </Button>

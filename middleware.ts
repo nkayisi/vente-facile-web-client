@@ -8,7 +8,16 @@ const PUBLIC_ROUTES = ["/", "/auth/login", "/auth/register", "/auth/forgot-passw
 const AUTH_ROUTES = ["/auth/login", "/auth/register"];
 
 // Routes protégées (nécessitent une authentification)
-const PROTECTED_ROUTE_PREFIXES = ["/dashboard", "/products", "/sales", "/customers", "/settings", "/stock", "/reports"];
+const PROTECTED_ROUTE_PREFIXES = [
+  "/dashboard",
+  "/admin",
+  "/products",
+  "/sales",
+  "/customers",
+  "/settings",
+  "/stock",
+  "/reports",
+];
 
 export default auth((req) => {
   const { nextUrl } = req;

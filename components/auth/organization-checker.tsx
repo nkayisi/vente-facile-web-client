@@ -3,7 +3,7 @@
 import { createContext, useContext, useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { getUserOrganizations, Organization, CurrencyInfo } from "@/actions/organization.actions";
+import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { CurrencyProvider } from "@/components/providers/currency-provider";
 import { Loader2 } from "lucide-react";
 
@@ -26,9 +26,13 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
   const { data: session, status } = useSession();
   const [isChecking, setIsChecking] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const hasFetched = useRef(false);
+  /** Dernier accessToken pour lequel le chargement des orgs est terminé (permet refetch après refresh JWT). */
+  const lastLoadedTokenRef = useRef<string | null>(null);
+  const orgFetchInFlightRef = useRef(false);
+  const accessTokenRef = useRef<string | undefined>(undefined);
 
   const accessToken = session?.accessToken;
+  accessTokenRef.current = accessToken;
 
   const loadOrganization = useCallback(async () => {
     if (!accessToken) return;
@@ -51,50 +55,83 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
   }, [accessToken]);
 
   useEffect(() => {
-    if (hasFetched.current) return;
-
     if (status === "loading") {
       return;
     }
 
     if (status === "unauthenticated") {
+      lastLoadedTokenRef.current = null;
       router.push("/auth/login");
       return;
     }
 
-    if (status === "authenticated" && accessToken) {
-      hasFetched.current = true;
-
-      (async () => {
-        try {
-          const result = await getUserOrganizations(accessToken);
-
-          // Si l'utilisateur n'existe pas, déconnecter automatiquement
-          if (!result.success && result.errorCode === 'user_not_found') {
-            console.warn("User not found, signing out...");
-            await signOut({ callbackUrl: '/auth/login' });
-            return;
-          }
-
-          if (result.success && result.data) {
-            if (result.data.length === 0) {
-              router.push("/auth/register");
-            } else {
-              setOrganization(result.data[0]);
-            }
-          } else {
-            console.warn("Could not fetch organizations, allowing access");
-            setOrganization(null);
-          }
-        } catch (error) {
-          console.error("Error checking organizations:", error);
-          setOrganization(null);
-        } finally {
-          setIsChecking(false);
-        }
-      })();
+    if (status !== "authenticated") {
+      return;
     }
-  }, [status, accessToken, router]);
+
+    // Authentifié mais pas encore de jeton dans la session client : ne pas bloquer indéfiniment
+    if (!accessToken) {
+      setIsChecking(false);
+      return;
+    }
+
+    // Même jeton déjà chargé : pas de refetch (nouveau jeton après refresh → refetch)
+    if (lastLoadedTokenRef.current === accessToken) {
+      setIsChecking(false);
+      return;
+    }
+
+    if (orgFetchInFlightRef.current) {
+      return;
+    }
+
+    const tokenForThisFetch = accessToken;
+    orgFetchInFlightRef.current = true;
+    setIsChecking(true);
+
+    (async () => {
+      try {
+        const result = await getUserOrganizations(tokenForThisFetch);
+
+        if (accessTokenRef.current !== tokenForThisFetch) {
+          return;
+        }
+
+        if (!result.success && result.errorCode === 'user_not_found') {
+          console.warn("User not found, signing out...");
+          lastLoadedTokenRef.current = null;
+          await signOut({ callbackUrl: '/auth/login' });
+          return;
+        }
+
+        if (result.success && result.data) {
+          if (result.data.length === 0) {
+            router.push("/auth/register");
+          } else {
+            setOrganization(result.data[0]);
+          }
+        } else {
+          console.warn("Could not fetch organizations, allowing access");
+          setOrganization(null);
+        }
+      } catch (error) {
+        console.error("Error checking organizations:", error);
+        if (accessTokenRef.current === tokenForThisFetch) {
+          setOrganization(null);
+        }
+      } finally {
+        if (accessTokenRef.current === tokenForThisFetch) {
+          lastLoadedTokenRef.current = tokenForThisFetch;
+        }
+        orgFetchInFlightRef.current = false;
+        setIsChecking(false);
+      }
+    })();
+
+    return () => {
+      orgFetchInFlightRef.current = false;
+    };
+  }, [status, accessToken, router, session?.error]);
 
   const contextValue = useMemo(() => ({
     organization,

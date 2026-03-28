@@ -6,7 +6,6 @@ import { getProducts, Product } from "@/actions/products.actions";
 import { getLockedProducts, LockedProductsResponse } from "@/actions/inventory.actions";
 import { getOrganizationCurrencies, OrganizationCurrency, getCustomerLoyalty, CustomerLoyalty, getLoyaltyProgram, LoyaltyProgram, getOrganizationSettings, OrganizationSettings } from "@/actions/settings.actions";
 import {
-  CloseSessionData,
   closeSession,
   CreatePaymentData,
   createSale,
@@ -66,6 +65,14 @@ import { StatValue } from "@/components/shared/StatValue";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { generateReceiptPdfUrl, sharePdf, ReceiptData } from "@/lib/receipt-printer";
 
+/** Aligné sur le défaut backend (`max_sale_discount_percent` dans les paramètres org). */
+const MAX_SALE_DISCOUNT_PERCENT = 50;
+
+function clampSaleDiscountPercent(value: number): number {
+  const n = Number.isFinite(value) ? value : 0;
+  return Math.min(MAX_SALE_DISCOUNT_PERCENT, Math.max(0, n));
+}
+
 interface CartItem {
   product: Product;
   quantity: number;
@@ -124,8 +131,6 @@ export default function POSPage() {
 
   // Close session dialog
   const [showCloseSessionDialog, setShowCloseSessionDialog] = useState(false);
-  const [closingBalance, setClosingBalance] = useState("");
-  const [closingNotes, setClosingNotes] = useState("");
   const [isClosingSession, setIsClosingSession] = useState(false);
 
   // Loyalty points
@@ -353,7 +358,7 @@ export default function POSPage() {
   // Update item discount
   const updateItemDiscount = (index: number, discount: number) => {
     const newCart = [...cart];
-    newCart[index].discount_percentage = Math.min(100, Math.max(0, discount));
+    newCart[index].discount_percentage = clampSaleDiscountPercent(discount);
     setCart(newCart);
   };
 
@@ -421,6 +426,10 @@ export default function POSPage() {
   // Open payment dialog
   const openPaymentDialog = () => {
     const totalAmount = calculateTotal();
+    if (totalAmount < 0) {
+      toast.error("Le total ne peut pas être négatif. Réduisez les remises.");
+      return;
+    }
     // Reset to primary currency
     const primary = getPrimaryCurrency();
     setPaymentCurrency(primary?.currency_code || "CDF");
@@ -462,6 +471,16 @@ export default function POSPage() {
     // Convert payment to primary currency for comparison
     const amountInPrimary = getAmountInPrimary();
     const creditAmount = total - amountInPrimary;
+
+    if (total < 0) {
+      toast.error("Le total ne peut pas être négatif.");
+      return;
+    }
+
+    if (rawAmount < 0) {
+      toast.error("Le montant du paiement ne peut pas être négatif.");
+      return;
+    }
 
     // Validation pour vente normale (non crédit)
     if (!isCreditSale && amountInPrimary < total) {
@@ -661,17 +680,7 @@ export default function POSPage() {
 
     setIsClosingSession(true);
     try {
-      const data: CloseSessionData = {
-        closing_balance: parseFloat(closingBalance) || 0,
-        notes: closingNotes || undefined,
-      };
-
-      const result = await closeSession(
-        session.accessToken,
-        organization.id,
-        currentSession.id,
-        data
-      );
+      const result = await closeSession(session.accessToken, organization.id, currentSession.id);
 
       if (result.success) {
         toast.success("Session de caisse fermée avec succès");
@@ -813,11 +822,7 @@ export default function POSPage() {
             <Button
               variant="outline"
               className="w-full sm:max-w-max h-12 bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-              onClick={() => {
-                setClosingBalance("");
-                setClosingNotes("");
-                setShowCloseSessionDialog(true);
-              }}
+              onClick={() => setShowCloseSessionDialog(true)}
             >
               <LogOut className="h-4 w-4 mr-2" />
               <span>Fermer la caisse</span>
@@ -927,8 +932,6 @@ export default function POSPage() {
             variant="outline"
             className="w-full h-12 bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
             onClick={() => {
-              setClosingBalance("");
-              setClosingNotes("");
               setShowCloseSessionDialog(true);
             }}
           >
@@ -1030,10 +1033,10 @@ export default function POSPage() {
                   type="number"
                   placeholder="Remise %"
                   value={globalDiscount || ""}
-                  onChange={e => setGlobalDiscount(parseFloat(e.target.value) || 0)}
+                  onChange={e => setGlobalDiscount(clampSaleDiscountPercent(parseFloat(e.target.value) || 0))}
                   className="h-8"
                   min="0"
-                  max="100"
+                  max={MAX_SALE_DISCOUNT_PERCENT}
                 />
               </div>
               <div className="flex justify-between text-lg font-bold">
@@ -1042,7 +1045,7 @@ export default function POSPage() {
               </div>
               <Button
                 className="w-full h-12 text-lg bg-orange-500 hover:bg-orange-600"
-                disabled={cart.length === 0}
+                disabled={cart.length === 0 || total < 0}
                 onClick={() => {
                   setShowMobileCart(false);
                   openPaymentDialog();
@@ -1167,10 +1170,10 @@ export default function POSPage() {
               type="number"
               placeholder="Remise %"
               value={globalDiscount || ""}
-              onChange={e => setGlobalDiscount(parseFloat(e.target.value) || 0)}
+              onChange={e => setGlobalDiscount(clampSaleDiscountPercent(parseFloat(e.target.value) || 0))}
               className="h-8"
               min="0"
-              max="100"
+              max={MAX_SALE_DISCOUNT_PERCENT}
             />
           </div>
 
@@ -1207,7 +1210,7 @@ export default function POSPage() {
           {/* Payment Button */}
           <Button
             className="w-full h-12 text-lg bg-orange-500 hover:bg-orange-600"
-            disabled={cart.length === 0}
+            disabled={cart.length === 0 || total < 0}
             onClick={openPaymentDialog}
           >
             <CreditCard className="h-5 w-5 mr-2" />
@@ -1561,6 +1564,7 @@ export default function POSPage() {
               onClick={handlePayment}
               disabled={(() => {
                 if (isProcessing) return true;
+                if (total < 0) return true;
                 if (!isCreditSale && getAmountInPrimary() < total) return true;
                 if (isCreditSale && !selectedCustomer) return true;
                 if (isCreditSale && selectedCustomer) {
@@ -1603,10 +1607,6 @@ export default function POSPage() {
           <div className="space-y-4">
             <div className="p-3 bg-gray-50 rounded-lg space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">Solde d'ouverture</span>
-                <span className="font-medium">{formatPrice(parseFloat(currentSession?.opening_balance || "0"))}</span>
-              </div>
-              <div className="flex justify-between">
                 <span className="text-gray-600">Ventes effectuées</span>
                 <span className="font-medium">{currentSession?.sales_count || 0} ventes</span>
               </div>
@@ -1616,26 +1616,9 @@ export default function POSPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Solde de fermeture ({defaultCurrency.symbol})</Label>
-              <Input
-                type="number"
-                step="any"
-                value={closingBalance}
-                onChange={e => setClosingBalance(e.target.value)}
-                placeholder="Comptez l'argent en caisse..."
-                className="h-12 text-lg"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Notes (optionnel)</Label>
-              <Input
-                value={closingNotes}
-                onChange={e => setClosingNotes(e.target.value)}
-                placeholder="Remarques sur la session..."
-              />
-            </div>
+            <p className="text-sm text-gray-600">
+              Le solde de fermeture est calculé automatiquement à partir des paiements en espèces enregistrés.
+            </p>
 
             {cart.length > 0 && (
               <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">

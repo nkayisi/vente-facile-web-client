@@ -3,7 +3,7 @@
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,7 +57,6 @@ export default function AdminOrganizationsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
-  const [selectedOrg, setSelectedOrg] = useState<AdminOrganization | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -66,6 +65,7 @@ export default function AdminOrganizationsPage() {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => {
       setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
     }, 350);
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -73,7 +73,10 @@ export default function AdminOrganizationsPage() {
   }, [searchQuery]);
 
   const fetchOrganizations = useCallback(() => {
-    if (!session?.accessToken) return;
+    if (!session?.accessToken) {
+      setIsLoading(false);
+      return;
+    }
 
     setIsLoading(true);
     const filters: Record<string, string | number | boolean> = {
@@ -160,7 +163,13 @@ export default function AdminOrganizationsPage() {
             className="pl-9"
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select
+          value={statusFilter}
+          onValueChange={(v) => {
+            setStatusFilter(v);
+            setCurrentPage(1);
+          }}
+        >
           <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="Statut" />
           </SelectTrigger>
@@ -170,7 +179,13 @@ export default function AdminOrganizationsPage() {
             <SelectItem value="inactive">Inactifs</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={businessTypeFilter} onValueChange={setBusinessTypeFilter}>
+        <Select
+          value={businessTypeFilter}
+          onValueChange={(v) => {
+            setBusinessTypeFilter(v);
+            setCurrentPage(1);
+          }}
+        >
           <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="Type" />
           </SelectTrigger>

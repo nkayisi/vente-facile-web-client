@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { toast } from "sonner";
 
 /**
  * Composant pour surveiller l'état de la session et synchroniser le token.
@@ -17,6 +16,12 @@ export function SessionMonitor() {
   const { data: session, status, update } = useSession();
   const hasShownError = useRef(false);
 
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      hasShownError.current = false;
+    }
+  }, [status]);
+
   // Forcer la mise à jour de la session côté client quand le token a été rafraîchi côté serveur
   const handleTokenRefreshed = useCallback(() => {
     console.log("[SessionMonitor] Token rafraîchi côté serveur, mise à jour de la session client...");
@@ -30,18 +35,17 @@ export function SessionMonitor() {
     };
   }, [handleTokenRefreshed]);
 
-  // Détecter les erreurs de refresh et déconnecter
+  // Détecter les erreurs de refresh et déconnecter (ne pas se baser sur l'absence
+  // transitoire de accessToken : le JWT peut être en cours de mise à jour côté client).
   useEffect(() => {
     if (hasShownError.current) return;
 
     const hasError = session?.error === "RefreshAccessTokenError";
-    const hasNoToken = status === "authenticated" && !session?.accessToken;
 
-    if (hasError || hasNoToken) {
+    if (hasError) {
       hasShownError.current = true;
 
       console.log("[SessionMonitor] Session expirée détectée, déconnexion...");
-      // Le toast sera affiché par la page de login via ?error=SessionExpired
       signOut({
         redirect: true,
         callbackUrl: "/auth/login?error=SessionExpired",

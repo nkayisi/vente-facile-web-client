@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -33,11 +32,9 @@ import {
   Trash2,
   Clock,
   CheckCircle,
-  DollarSign,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
-import { useCurrency } from "@/components/providers/currency-provider";
 import { getUserOrganizations, getBranches, Organization, Branch } from "@/actions/organization.actions";
 import { getWarehouses, Warehouse } from "@/actions/stock.actions";
 import {
@@ -56,7 +53,6 @@ import {
 export default function RegistersPage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const { currency: defaultCurrency } = useCurrency();
 
   // State
   const [isLoading, setIsLoading] = useState(true);
@@ -86,10 +82,6 @@ export default function RegistersPage() {
     receipt_header: "",
     receipt_footer: "",
   });
-
-  const [openingBalance, setOpeningBalance] = useState("");
-  const [closingBalance, setClosingBalance] = useState("");
-  const [sessionNotes, setSessionNotes] = useState("");
 
   // Fetch data
   useEffect(() => {
@@ -222,8 +214,6 @@ export default function RegistersPage() {
     try {
       const result = await openSession(session.accessToken, organization.id, {
         register: selectedRegister.id,
-        opening_balance: parseFloat(openingBalance) || 0,
-        notes: sessionNotes,
       });
 
       if (result.success) {
@@ -243,8 +233,6 @@ export default function RegistersPage() {
         }
 
         setShowOpenSessionDialog(false);
-        setOpeningBalance("");
-        setSessionNotes("");
 
         // Redirect to POS
         router.push("/dashboard/sales/pos");
@@ -266,15 +254,7 @@ export default function RegistersPage() {
     setIsSubmitting(true);
 
     try {
-      const result = await closeSession(
-        session.accessToken,
-        organization.id,
-        selectedSession.id,
-        {
-          closing_balance: parseFloat(closingBalance) || 0,
-          notes: sessionNotes,
-        }
-      );
+      const result = await closeSession(session.accessToken, organization.id, selectedSession.id);
 
       if (result.success) {
         toast.success("Session fermée avec succès");
@@ -293,8 +273,6 @@ export default function RegistersPage() {
         }
 
         setShowCloseSessionDialog(false);
-        setClosingBalance("");
-        setSessionNotes("");
         setSelectedSession(null);
       } else {
         toast.error(result.message || "Erreur lors de la fermeture");
@@ -479,9 +457,6 @@ export default function RegistersPage() {
                       <p className="text-xs text-green-700">
                         Ouvert par {register.current_session?.opened_by || activeSession?.opened_by_name}
                       </p>
-                      <p className="text-xs text-green-700">
-                        Solde: {formatPrice(register.current_session?.opening_balance || activeSession?.opening_balance || 0)}
-                      </p>
                     </div>
                   ) : null}
 
@@ -645,34 +620,9 @@ export default function RegistersPage() {
           </DialogHeader>
 
           <form onSubmit={handleOpenSession} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Solde d'ouverture ({defaultCurrency.symbol}) *</Label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  type="number"
-                  step="any"
-                  value={openingBalance}
-                  onChange={e => setOpeningBalance(e.target.value)}
-                  placeholder="0"
-                  className="pl-9"
-                  required
-                />
-              </div>
-              <p className="text-xs text-gray-500">
-                Montant en espèces dans la caisse au début de la session
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Notes (optionnel)</Label>
-              <Textarea
-                value={sessionNotes}
-                onChange={e => setSessionNotes(e.target.value)}
-                placeholder="Notes pour cette session..."
-                rows={2}
-              />
-            </div>
+            <p className="text-sm text-gray-600">
+              La session démarre avec un solde d&apos;ouverture à zéro. Vous serez redirigé vers le point de vente.
+            </p>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowOpenSessionDialog(false)}>
@@ -699,46 +649,19 @@ export default function RegistersPage() {
 
           <form onSubmit={handleCloseSession} className="space-y-4">
             {selectedSession && (
-              <div className="p-3 bg-gray-50 rounded-lg space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Solde d'ouverture</span>
-                  <span className="font-medium">{formatPrice(selectedSession.opening_balance)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
+              <div className="p-3 bg-gray-50 rounded-lg space-y-2 text-sm">
+                <div className="flex justify-between">
                   <span className="text-gray-500">Ventes</span>
-                  <span className="font-medium">{selectedSession.sales_count} ({formatPrice(selectedSession.sales_total)})</span>
+                  <span className="font-medium">
+                    {selectedSession.sales_count} ({formatPrice(selectedSession.sales_total)})
+                  </span>
                 </div>
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label>Solde de fermeture ({defaultCurrency.symbol}) *</Label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  type="number"
-                  step="any"
-                  value={closingBalance}
-                  onChange={e => setClosingBalance(e.target.value)}
-                  placeholder="0"
-                  className="pl-9"
-                  required
-                />
-              </div>
-              <p className="text-xs text-gray-500">
-                Montant en espèces comptées dans la caisse
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Notes (optionnel)</Label>
-              <Textarea
-                value={sessionNotes}
-                onChange={e => setSessionNotes(e.target.value)}
-                placeholder="Notes de clôture..."
-                rows={2}
-              />
-            </div>
+            <p className="text-sm text-gray-600">
+              Le solde de fermeture est calculé automatiquement à partir des paiements en espèces enregistrés.
+            </p>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowCloseSessionDialog(false)}>

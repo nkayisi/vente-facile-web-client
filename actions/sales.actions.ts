@@ -242,14 +242,10 @@ export interface CreateRegisterData {
 
 export interface OpenSessionData {
   register: string;
-  opening_balance: number;
-  notes?: string;
 }
 
-export interface CloseSessionData {
-  closing_balance: number;
-  notes?: string;
-}
+/** Corps vide : le backend calcule solde de fermeture et ignore les notes. */
+export type CloseSessionData = Record<string, never>;
 
 export interface CreatePaymentMethodData {
   name: string;
@@ -587,7 +583,7 @@ export async function closeSession(
   accessToken: string,
   organizationId: string,
   sessionId: string,
-  data: CloseSessionData
+  data: CloseSessionData = {}
 ): Promise<ApiResponse<RegisterSession>> {
   try {
     const response = await axios.post(
