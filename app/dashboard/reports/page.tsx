@@ -587,7 +587,7 @@ export default function ReportsPage() {
     // Résumé des marges
     if (profitMargins) {
       currentY = addSummarySection(doc, currentY, pageWidth, [
-        { label: "Chiffre d'affaires", value: formatCurrencyForPDF(profitMargins.total_revenue), color: "blue" },
+        { label: "CA (HT net)", value: formatCurrencyForPDF(profitMargins.total_revenue), color: "blue" },
         { label: "Bénéfice brut", value: formatCurrencyForPDF(profitMargins.gross_profit), color: "green" },
         { label: "Marge brute", value: `${profitMargins.gross_margin_percentage}%` },
         { label: "Bénéfice net", value: formatCurrencyForPDF(profitMargins.net_profit), color: "green" },
@@ -599,7 +599,7 @@ export default function ReportsPage() {
       const productsData = productProfits.map(p => [
         p.product_name,
         p.product_sku,
-        formatNumberForPDF(p.quantity_sold, 0),
+        formatNumberForPDF(Number(p.quantity_sold), 0),
         formatCurrencyForPDF(p.total_revenue),
         formatCurrencyForPDF(p.total_cost),
         formatCurrencyForPDF(p.profit),
@@ -607,7 +607,7 @@ export default function ReportsPage() {
       ]);
 
       currentY = addTable(doc, currentY,
-        [["Produit", "SKU", "Qté", "CA", "Coût", "Bénéfice", "Marge"]],
+        [["Produit", "SKU", "Qté", "CA (HT)", "Coût", "Bénéfice", "Marge"]],
         productsData,
         {
           columnStyles: {
@@ -733,13 +733,13 @@ export default function ReportsPage() {
       Produit: p.product_name,
       SKU: p.product_sku,
       "Quantité vendue": p.quantity_sold,
-      "Chiffre d'affaires": parseFloat(p.total_revenue),
+      "CA (HT net)": parseFloat(p.total_revenue),
       "Coût": parseFloat(p.total_cost),
       "Bénéfice": parseFloat(p.profit),
       "Marge %": parseFloat(p.margin_percentage),
     }));
     exportToCSV(data, `benefices-${new Date().toISOString().split("T")[0]}`,
-      ["Produit", "SKU", "Quantité vendue", "Chiffre d'affaires", "Coût", "Bénéfice", "Marge %"]);
+      ["Produit", "SKU", "Quantité vendue", "CA (HT net)", "Coût", "Bénéfice", "Marge %"]);
   };
 
   if (isLoading && !summary) {
@@ -1767,10 +1767,14 @@ export default function ReportsPage() {
 
           {/* Profit Summary */}
           {profitMargins && (
+            <div className="space-y-2">
+            <p className="text-xs text-gray-500">
+              Marges calculées sur le CA hors TVA, après remises (lignes et globale). Le bénéfice net déduit les dépenses enregistrées comme payées sur la période.
+            </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <Card className="p-0">
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Chiffre d'affaires</p>
+                  <p className="text-xs text-gray-500">CA (HT net)</p>
                   <p className="text-xl mt-1 font-bold">{formatPrice(parseFloat(profitMargins.total_revenue))}</p>
                 </CardContent>
               </Card>
@@ -1795,6 +1799,7 @@ export default function ReportsPage() {
                 </CardContent>
               </Card>
             </div>
+            </div>
           )}
 
           {/* Product Profits Table */}
@@ -1811,7 +1816,7 @@ export default function ReportsPage() {
                   <TableRow>
                     <TableHead>Produit</TableHead>
                     <TableHead className="text-right">Qté vendue</TableHead>
-                    <TableHead className="text-right">CA</TableHead>
+                    <TableHead className="text-right">CA (HT)</TableHead>
                     <TableHead className="text-right">Coût</TableHead>
                     <TableHead className="text-right">Bénéfice</TableHead>
                     <TableHead className="text-right">Marge</TableHead>

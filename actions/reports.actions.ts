@@ -473,7 +473,8 @@ export interface ProductProfit {
   product_id: string;
   product_name: string;
   product_sku: string;
-  quantity_sold: number;
+  /** Quantité vendue (décimale possible, API en string) */
+  quantity_sold: number | string;
   total_revenue: string;
   total_cost: string;
   profit: string;
