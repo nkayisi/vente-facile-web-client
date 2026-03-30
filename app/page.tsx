@@ -598,10 +598,10 @@ export default function LandingPage() {
                           ) : (
                             <>
                               <span className="text-4xl font-bold text-slate-900">{displayPrice.toLocaleString()}</span>
-                              <span className="text-slate-500 ml-1">{plan.currency}/mois</span>
+                              <span className="text-slate-500 ml-1">{plan.currency.symbol}/mois</span>
                               {billingCycle === "yearly" && (
                                 <p className="text-sm text-slate-500 mt-1">
-                                  {totalYearly.toLocaleString()} {plan.currency}/an
+                                  {totalYearly.toLocaleString()} {plan.currency.symbol}/an
                                 </p>
                               )}
                             </>

@@ -300,17 +300,17 @@ export default function SubscriptionPage() {
                     <div className="mt-4 mb-6">
                       <div className="flex items-baseline gap-1">
                         <span className="text-3xl font-bold">
-                          {monthlyPrice > 0 ? formatPrice(plan.price_monthly) : "Gratuit"}
+                          {monthlyPrice > 0 ? plan.price_monthly : "Gratuit"}
                         </span>
                         {monthlyPrice > 0 && (
                           <span className="text-gray-500 text-sm">
-                            {plan.currency}/mois
+                            {plan.currency.symbol}/mois
                           </span>
                         )}
                       </div>
                       {yearlyPrice > 0 && (
                         <p className="text-sm text-green-600 mt-1">
-                          {formatPrice(plan.price_yearly)} {plan.currency}/an
+                          {plan.price_yearly} {plan.currency.symbol}/an
                           {monthlyPrice > 0 && (
                             <span className="text-gray-400 ml-1">
                               (
@@ -529,7 +529,7 @@ export default function SubscriptionPage() {
                       <p className="text-2xl font-bold text-orange-600 mt-1">
                         {formatPrice(selectedPlan.price_monthly)}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">{selectedPlan.currency}/mois</p>
+                      <p className="text-xs text-gray-500 mt-1">{selectedPlan.currency.symbol}/mois</p>
                     </div>
                   </button>
                   {parseFloat(selectedPlan.price_yearly) > 0 && (
@@ -549,7 +549,7 @@ export default function SubscriptionPage() {
                         <p className="text-2xl font-bold text-orange-600 mt-1">
                           {formatPrice(selectedPlan.price_yearly)}
                         </p>
-                        <p className="text-xs text-gray-500 mt-1">{selectedPlan.currency}/an</p>
+                        <p className="text-xs text-gray-500 mt-1">{selectedPlan.currency.symbol}/an</p>
                       </div>
                     </button>
                   )}
@@ -745,7 +745,7 @@ export default function SubscriptionPage() {
                             ? selectedPlan.price_yearly
                             : selectedPlan.price_monthly
                         )}{" "}
-                        {selectedPlan.currency}
+                        {selectedPlan.currency.symbol}
                       </span>
                     </div>
                   </div>

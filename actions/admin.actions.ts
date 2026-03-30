@@ -76,6 +76,12 @@ export interface AdminUser {
   last_login?: string;
 }
 
+export interface AdminPlanCurrency {
+  id: string;
+  code: string;
+  symbol: string;
+}
+
 export interface AdminPlan {
   id: string;
   name: string;
@@ -83,7 +89,7 @@ export interface AdminPlan {
   description: string;
   price_monthly: string;
   price_yearly: string;
-  currency: string;
+  currency: AdminPlanCurrency;
   max_users: number;
   max_branches: number;
   max_products?: number;
@@ -131,6 +137,7 @@ export interface CreatePlanData {
   description: string;
   price_monthly: string;
   price_yearly: string;
+  /** UUID de la devise (table Currency côté API). */
   currency: string;
   max_users: number;
   max_branches: number;
@@ -412,6 +419,33 @@ export async function toggleUserStaff(
 // PLANS
 // =============================================================================
 
+export interface SettingsCurrency {
+  id: string;
+  code: string;
+  name: string;
+  symbol: string;
+  decimal_places: number;
+  is_active: boolean;
+}
+
+export async function getSettingsCurrencies(
+  accessToken: string
+): Promise<{ success: boolean; data?: SettingsCurrency[]; message?: string }> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/settings/currencies/`, {
+      headers: getHeaders(accessToken),
+    });
+    const list = Array.isArray(response.data) ? response.data : response.data?.results ?? [];
+    return { success: true, data: list };
+  } catch (error: any) {
+    console.error("Error fetching currencies:", error);
+    return {
+      success: false,
+      message: error.response?.data?.detail || "Erreur lors du chargement des devises",
+    };
+  }
+}
+
 export async function getAdminPlans(
   accessToken: string
 ): Promise<{ success: boolean; data?: AdminPlan[]; message?: string }> {
@@ -455,9 +489,13 @@ export async function createAdminPlan(
   data: CreatePlanData
 ): Promise<{ success: boolean; data?: AdminPlan; message?: string }> {
   try {
+    const payload: Record<string, unknown> = { ...data };
+    if (!payload.currency) {
+      delete payload.currency;
+    }
     const response = await axios.post(
       `${API_BASE_URL}/platform-admin/plans/`,
-      data,
+      payload,
       { headers: getHeaders(accessToken) }
     );
 
@@ -477,9 +515,13 @@ export async function updateAdminPlan(
   data: UpdatePlanData
 ): Promise<{ success: boolean; data?: AdminPlan; message?: string }> {
   try {
+    const payload: Record<string, unknown> = { ...data };
+    if (payload.currency === "" || payload.currency === undefined) {
+      delete payload.currency;
+    }
     const response = await axios.patch(
       `${API_BASE_URL}/platform-admin/plans/${planId}/`,
-      data,
+      payload,
       { headers: getHeaders(accessToken) }
     );
 

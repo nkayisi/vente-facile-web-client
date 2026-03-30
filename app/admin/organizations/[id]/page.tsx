@@ -141,15 +141,13 @@ export default function AdminOrganizationDetailPage() {
                 </span>
               </div>
             )}
-            {org.phone && (
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Téléphone</span>
-                <span className="flex items-center gap-1.5">
-                  <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                  {org.phone}
-                </span>
-              </div>
-            )}
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Téléphone (contact)</span>
+              <span className="flex items-center gap-1.5 text-right">
+                <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                {org.phone?.trim() ? org.phone : "—"}
+              </span>
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-muted-foreground">Localisation</span>
               <span className="flex items-center gap-1.5">

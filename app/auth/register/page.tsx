@@ -40,6 +40,7 @@ interface FormData {
   confirmPassword: string;
   // Étape 2: Informations boutique
   organizationName: string;
+  organizationPhone: string;
   businessType: string;
   currency: string;
 }
@@ -58,6 +59,7 @@ export default function RegisterPage() {
     password: "",
     confirmPassword: "",
     organizationName: "",
+    organizationPhone: "",
     businessType: "boutique",
     currency: "CDF",
   });
@@ -99,6 +101,12 @@ export default function RegisterPage() {
     if (!formData.organizationName || formData.organizationName.length < 2) {
       newErrors.organizationName = "Le nom de l'établissement est requis";
     }
+    const orgPhone = formData.organizationPhone.trim();
+    if (!orgPhone) {
+      newErrors.organizationPhone = "Le téléphone de contact de l'établissement est requis";
+    } else if (orgPhone.length > 20) {
+      newErrors.organizationPhone = "Le numéro ne peut pas dépasser 20 caractères";
+    }
     if (!formData.businessType) {
       newErrors.businessType = "Veuillez sélectionner un type d'établissement";
     }
@@ -137,6 +145,7 @@ export default function RegisterPage() {
         last_name: formData.lastName,
         phone: formData.phone,
         organization_name: formData.organizationName,
+        organization_phone: formData.organizationPhone.trim(),
         business_type: formData.businessType,
         currency: formData.currency,
         country: "RDC",
@@ -344,6 +353,22 @@ export default function RegisterPage() {
                   disabled={isLoading}
                 />
                 {errors.organizationName && <p className="text-sm text-red-500">{errors.organizationName}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="organizationPhone">Téléphone de contact de l&apos;établissement *</Label>
+                <Input
+                  id="organizationPhone"
+                  type="tel"
+                  placeholder="+243 XXX XXX XXX"
+                  value={formData.organizationPhone}
+                  onChange={(e) => handleInputChange("organizationPhone", e.target.value)}
+                  className={errors.organizationPhone ? "border-red-500" : ""}
+                  disabled={isLoading}
+                />
+                {errors.organizationPhone && (
+                  <p className="text-sm text-red-500">{errors.organizationPhone}</p>
+                )}
               </div>
 
               <div className="space-y-2">

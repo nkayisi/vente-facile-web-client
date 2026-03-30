@@ -18,6 +18,13 @@ export interface PlanFeature {
   limit_value: number | null;
 }
 
+/** Devise liée au plan (API : id, code ISO, symbole d'affichage). */
+export interface PlanCurrency {
+  id: string;
+  code: string;
+  symbol: string;
+}
+
 export interface Plan {
   id: string;
   name: string;
@@ -25,7 +32,7 @@ export interface Plan {
   description: string;
   price_monthly: string;
   price_yearly: string;
-  currency: string;
+  currency: PlanCurrency;
   max_users: number;
   max_branches: number;
   max_products: number | null;
@@ -132,7 +139,7 @@ export interface PublicPlan {
   description: string;
   price_monthly: string;
   price_yearly: string;
-  currency: string;
+  currency: PlanCurrency;
   max_users: number;
   max_branches: number;
   max_products: number | null;

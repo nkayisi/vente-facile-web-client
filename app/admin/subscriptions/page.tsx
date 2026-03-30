@@ -659,7 +659,7 @@ export default function AdminSubscriptionsPage() {
                       <SelectItem key={plan.id} value={plan.id}>
                         <div className="flex items-center justify-between gap-4">
                           <span>{plan.name}</span>
-                          <span className="text-muted-foreground text-xs">{plan.price_monthly} {plan.currency}/mois</span>
+                          <span className="text-muted-foreground text-xs">{plan.price_monthly} {plan.currency.symbol}/mois</span>
                         </div>
                       </SelectItem>
                     ))}

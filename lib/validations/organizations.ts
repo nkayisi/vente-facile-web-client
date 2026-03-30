@@ -21,8 +21,9 @@ export const createOrganizationSchema = z.object({
     .optional(),
   phone: z
     .string()
-    .regex(/^\+243\d{9}$/, "Le numéro doit être au format +243XXXXXXXXX")
-    .optional(),
+    .trim()
+    .min(1, "Le numéro de téléphone de contact est requis")
+    .max(20, "Le numéro ne peut pas dépasser 20 caractères"),
   address: z
     .string()
     .max(255, "L'adresse ne peut pas dépasser 255 caractères")

@@ -61,6 +61,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { StatValue } from "@/components/shared/StatValue";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { generateReceiptPdfUrl, sharePdf, ReceiptData } from "@/lib/receipt-printer";
@@ -102,6 +103,8 @@ export default function POSPage() {
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [qtyPopoverProductId, setQtyPopoverProductId] = useState<string | null>(null);
+  const [qtyDraft, setQtyDraft] = useState("1");
 
   // Payment dialog
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
@@ -276,13 +279,29 @@ export default function POSPage() {
     return available - inCart;
   };
 
-  // Add product to cart
-  const addToCart = (product: Product) => {
-    // Check if product is locked by inventory
+  /** Quantité max qu’on peut encore ajouter au panier (respect du stock). */
+  const getMaxAddableQty = (product: Product) => {
+    if (!product.track_inventory || product.allow_negative_stock) return 9999;
+    return Math.max(0, getRemainingStock(product));
+  };
+
+  const canAddProductToCart = (product: Product) => {
+    if (lockedProductIds.has(product.id)) return false;
+    return getMaxAddableQty(product) > 0;
+  };
+
+  // Add product to cart (quantity = 1 par clic sur la carte, ou saisie manuelle via le popover)
+  const addToCart = (product: Product, addQty: number = 1) => {
+    const qty = Math.floor(Number(addQty));
+    if (!Number.isFinite(qty) || qty < 1) {
+      toast.error("Quantité invalide");
+      return;
+    }
+
     if (lockedProductIds.has(product.id)) {
-      const session = activeInventorySessions[0];
+      const invSession = activeInventorySessions[0];
       toast.error(
-        `"${product.name}" est bloqué par un inventaire en cours (${session?.reference || 'Inventaire'}). Veuillez attendre la fin de l'inventaire.`,
+        `"${product.name}" est bloqué par un inventaire en cours (${invSession?.reference || "Inventaire"}). Veuillez attendre la fin de l'inventaire.`,
         { duration: 5000 }
       );
       return;
@@ -292,9 +311,9 @@ export default function POSPage() {
     const existingIndex = cart.findIndex(item => item.product.id === product.id);
     const currentQty = existingIndex >= 0 ? cart[existingIndex].quantity : 0;
 
-    if (product.track_inventory && !product.allow_negative_stock && currentQty + 1 > available) {
+    if (product.track_inventory && !product.allow_negative_stock && currentQty + qty > available) {
       toast.warning(
-        `Stock insuffisant pour "${product.name}". Disponible: ${available}`,
+        `Stock insuffisant pour "${product.name}". Disponible: ${available}, déjà au panier: ${currentQty}.`,
         { duration: 4000 }
       );
       return;
@@ -302,14 +321,14 @@ export default function POSPage() {
 
     if (existingIndex >= 0) {
       const newCart = [...cart];
-      newCart[existingIndex].quantity += 1;
+      newCart[existingIndex].quantity += qty;
       setCart(newCart);
     } else {
       setCart([
         ...cart,
         {
           product,
-          quantity: 1,
+          quantity: qty,
           unit_price: parseFloat(product.selling_price),
           discount_percentage: 0,
         },
@@ -318,6 +337,27 @@ export default function POSPage() {
 
     setSearchQuery("");
     setSearchResults([]);
+  };
+
+  const commitCustomQuantity = (product: Product) => {
+    const raw = qtyDraft.trim();
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n) || n < 1) {
+      toast.error("Indiquez un nombre entier d’au moins 1");
+      return;
+    }
+    const max = getMaxAddableQty(product);
+    if (max <= 0) {
+      toast.warning(`Stock insuffisant pour "${product.name}"`);
+      setQtyPopoverProductId(null);
+      return;
+    }
+    const q = Math.min(n, max);
+    if (q < n) {
+      toast.warning(`Quantité ramenée à ${q} (stock disponible)`);
+    }
+    addToCart(product, q);
+    setQtyPopoverProductId(null);
   };
 
   // Update cart item quantity
@@ -345,6 +385,38 @@ export default function POSPage() {
     }
 
     newCart[index].quantity = newQty;
+    setCart(newCart);
+  };
+
+  /** Définit la quantité d’une ligne panier (saisie manuelle), avec plafond stock. */
+  const setCartLineQuantity = (
+    index: number,
+    raw: string,
+    inputEl?: HTMLInputElement
+  ) => {
+    const item = cart[index];
+    if (!item) return;
+    const n = parseInt(raw.trim(), 10);
+    if (!Number.isFinite(n) || n < 1) {
+      toast.error("Quantité invalide (entier ≥ 1)");
+      if (inputEl) inputEl.value = String(item.quantity);
+      return;
+    }
+    const newCart = [...cart];
+    if (item.product.track_inventory && !item.product.allow_negative_stock) {
+      const available = getAvailableStock(item.product);
+      if (n > available) {
+        toast.warning(
+          `Stock insuffisant pour "${item.product.name}". Maximum: ${available}`,
+          { duration: 4000 }
+        );
+        newCart[index] = { ...item, quantity: available };
+        setCart(newCart);
+        if (inputEl) inputEl.value = String(available);
+        return;
+      }
+    }
+    newCart[index] = { ...item, quantity: n };
     setCart(newCart);
   };
 
@@ -766,6 +838,16 @@ export default function POSPage() {
     };
   }, []);
 
+  // Fermer la saisie quantité (superposition carte) avec Échap
+  useEffect(() => {
+    if (!qtyPopoverProductId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setQtyPopoverProductId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [qtyPopoverProductId]);
+
   // Produits affichés : résultats de recherche backend ou produits initiaux
   const displayedProducts = searchQuery.trim() ? searchResults : products;
 
@@ -845,52 +927,168 @@ export default function POSPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {(searchQuery.trim() ? displayedProducts : products.slice(0, 20)).map(product => {
                 const isLocked = lockedProductIds.has(product.id);
+                const canAdd = canAddProductToCart(product);
+                const maxAdd = getMaxAddableQty(product);
+                const stockDepleted =
+                  product.track_inventory &&
+                  !product.allow_negative_stock &&
+                  getRemainingStock(product) <= 0;
+                const cardVisual = (
+                  <CardContent className="p-3">
+                    <div className="relative mb-2 flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+                      {product.image ? (
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className={`h-full w-full object-cover ${isLocked ? "grayscale" : ""}`}
+                        />
+                      ) : (
+                        <Package className="h-8 w-8 text-gray-300" />
+                      )}
+                      {isLocked ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-red-500/20">
+                          <div className="flex items-center gap-1 rounded bg-red-600 px-2 py-1 text-xs font-bold text-white">
+                            <AlertTriangle className="h-3 w-3" />
+                            INVENTAIRE
+                          </div>
+                        </div>
+                      ) : (
+                        product.track_inventory && (
+                          <div
+                            className={`absolute top-1 right-1 rounded px-2 py-0.5 text-xs font-semibold ${getRemainingStock(product) <= 0
+                              ? "bg-red-500 text-white"
+                              : getRemainingStock(product) <= (product.reorder_point || 5)
+                                ? "bg-amber-500 text-white"
+                                : "bg-green-600 text-white"
+                              }`}
+                          >
+                            Stock: {formatNumber(getAvailableStock(product))}
+                          </div>
+                        )
+                      )}
+                    </div>
+                    <h3
+                      className={`truncate text-sm font-medium ${isLocked ? "text-red-700" : "text-gray-900"}`}
+                    >
+                      {product.name}
+                    </h3>
+                    <p className="truncate text-xs text-gray-500">{product.sku}</p>
+                    <p
+                      className={`mt-1 text-sm font-bold ${isLocked ? "text-red-600" : "text-orange-600"}`}
+                    >
+                      {formatPrice(parseFloat(product.selling_price))}
+                    </p>
+                  </CardContent>
+                );
+
                 return (
                   <Card
                     key={product.id}
-                    className={`cursor-pointer hover:shadow-md transition-shadow py-0 ${isLocked
-                      ? 'opacity-60 cursor-not-allowed border-red-300 bg-red-50'
-                      : product.track_inventory && getRemainingStock(product) <= 0
-                        ? 'opacity-50'
-                        : ''
-                      }`}
-                    onClick={() => addToCart(product)}
+                    className={cn(
+                      "relative overflow-hidden py-0 transition-shadow",
+                      isLocked
+                        ? "border-red-300 bg-red-50 opacity-60"
+                        : stockDepleted
+                          ? "opacity-50"
+                          : canAdd
+                            ? "hover:shadow-md"
+                            : ""
+                    )}
                   >
-                    <CardContent className="p-3">
-                      <div className="aspect-square bg-gray-100 rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
-                        {product.image ? (
-                          <img
-                            src={product.image}
-                            alt={product.name}
-                            className={`w-full h-full object-cover ${isLocked ? 'grayscale' : ''}`}
-                          />
-                        ) : (
-                          <Package className="h-8 w-8 text-gray-300" />
-                        )}
-                        {isLocked ? (
-                          <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
-                            <div className="bg-red-600 text-white px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
-                              <AlertTriangle className="h-3 w-3" />
-                              INVENTAIRE
+                    {canAdd ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQtyPopoverProductId(product.id);
+                            setQtyDraft("1");
+                          }}
+                          className="block w-full cursor-pointer rounded-lg text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 hover:bg-gray-50/80"
+                        >
+                          {cardVisual}
+                        </button>
+                        {qtyPopoverProductId === product.id ? (
+                          <div
+                            className="absolute inset-0 z-20 flex flex-col rounded-xl border border-orange-200/90 bg-white/93 p-3 shadow-lg ring-1 ring-orange-500/15 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-150"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby={`qty-overlay-title-${product.id}`}
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex min-h-0 flex-1 flex-col gap-2">
+                              <div className="flex items-start gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <p
+                                    id={`qty-overlay-title-${product.id}`}
+                                    className="line-clamp-2 text-sm font-semibold leading-snug text-gray-900"
+                                  >
+                                    {product.name}
+                                  </p>
+                                  <p className="mt-1 text-base font-bold text-orange-600">
+                                    {formatPrice(parseFloat(product.selling_price))}
+                                  </p>
+                                  {product.track_inventory && !isLocked ? (
+                                    <p className="mt-1 text-[11px] leading-tight text-gray-600">
+                                      Stock :{" "}
+                                      <span className="font-semibold text-gray-800">
+                                        {formatNumber(getAvailableStock(product))}
+                                      </span>
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0 text-gray-500 hover:text-gray-900"
+                                  onClick={() => setQtyPopoverProductId(null)}
+                                  aria-label="Fermer"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              <div className="mt-auto flex flex-col gap-2 border-t border-gray-100 pt-2">
+                                <div className="min-w-0 flex-1">
+                                  <Label htmlFor={`qty-${product.id}`} className="sr-only">
+                                    Quantité
+                                  </Label>
+                                  <Input
+                                    id={`qty-${product.id}`}
+                                    type="number"
+                                    min={1}
+                                    max={maxAdd >= 9999 ? undefined : maxAdd}
+                                    value={qtyDraft}
+                                    onChange={(e) => setQtyDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        commitCustomQuantity(product);
+                                      }
+                                    }}
+                                    className="h-8 border-gray-200 text-center text-sm font-semibold tabular-nums"
+                                    autoComplete="off"
+                                    title={
+                                      product.track_inventory && !product.allow_negative_stock
+                                        ? `Maximum ${maxAdd}`
+                                        : undefined
+                                    }
+                                  />
+                                </div>
+                                <Button
+                                  type="button" size='sm'
+                                  className="h-6 shrink-0 bg-orange-500 px-4 font-medium hover:bg-orange-600"
+                                  onClick={() => commitCustomQuantity(product)}
+                                >
+                                  OK
+                                </Button>
+                              </div>
                             </div>
                           </div>
-                        ) : product.track_inventory && (
-                          <div className={`absolute top-1 right-1 px-2 py-0.5 rounded text-xs font-semibold ${getRemainingStock(product) <= 0
-                            ? 'bg-red-500 text-white'
-                            : getRemainingStock(product) <= (product.reorder_point || 5)
-                              ? 'bg-amber-500 text-white'
-                              : 'bg-green-600 text-white'
-                            }`}>
-                            Stock: {formatNumber(getAvailableStock(product))}
-                          </div>
-                        )}
-                      </div>
-                      <h3 className={`font-medium text-sm truncate ${isLocked ? 'text-red-700' : 'text-gray-900'}`}>{product.name}</h3>
-                      <p className="text-xs text-gray-500 truncate">{product.sku}</p>
-                      <p className={`text-sm font-bold mt-1 ${isLocked ? 'text-red-600' : 'text-orange-600'}`}>
-                        {formatPrice(parseFloat(product.selling_price))}
-                      </p>
-                    </CardContent>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div className="cursor-not-allowed">{cardVisual}</div>
+                    )}
                   </Card>
                 );
               })}
@@ -1012,7 +1210,21 @@ export default function POSPage() {
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => updateQuantity(index, -1)}>
                           <Minus className="h-4 w-4" />
                         </Button>
-                        <span className="w-8 text-center font-medium">{item.quantity}</span>
+                        <Input
+                          key={`m-cart-qty-${item.product.id}-${item.quantity}`}
+                          type="number"
+                          min={1}
+                          defaultValue={item.quantity}
+                          onBlur={(e) => setCartLineQuantity(index, e.currentTarget.value, e.currentTarget)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              (e.currentTarget as HTMLInputElement).blur();
+                            }
+                          }}
+                          className="h-8 w-14 border-gray-200 text-center text-sm font-medium tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                          aria-label="Quantité"
+                        />
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => updateQuantity(index, 1)}>
                           <Plus className="h-4 w-4" />
                         </Button>
@@ -1141,7 +1353,21 @@ export default function POSPage() {
                       >
                         <Minus className="h-4 w-4" />
                       </Button>
-                      <span className="w-8 text-center font-medium">{item.quantity}</span>
+                      <Input
+                        key={`cart-qty-${item.product.id}-${item.quantity}`}
+                        type="number"
+                        min={1}
+                        defaultValue={item.quantity}
+                        onBlur={(e) => setCartLineQuantity(index, e.currentTarget.value, e.currentTarget)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                        }}
+                        className="h-8 w-14 border-gray-200 text-center text-sm font-medium tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        aria-label="Quantité"
+                      />
                       <Button
                         variant="outline"
                         size="icon"

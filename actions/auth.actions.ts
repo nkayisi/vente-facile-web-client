@@ -12,6 +12,7 @@ export interface RegisterWithOrganizationData {
     last_name: string;
     phone?: string;
     organization_name: string;
+    organization_phone: string;
     business_type: string;
     currency: string;
     country: string;
