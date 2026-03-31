@@ -513,7 +513,7 @@ export default function SubscriptionPage() {
                 <div className="mt-3 flex items-baseline gap-1">
                   <span className="text-2xl font-bold text-orange-800">
                     {parseFloat(selectedPlan.price_monthly) > 0
-                      ? formatPrice(selectedPlan.price_monthly)
+                      ? selectedPlan.price_monthly
                       : "Gratuit"}
                   </span>
                   {parseFloat(selectedPlan.price_monthly) > 0 && (
