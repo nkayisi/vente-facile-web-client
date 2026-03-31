@@ -492,9 +492,9 @@ export default function SubscriptionPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Activate Dialog - Flux de paiement complet */}
+      {/* Dialog d'information - Paiement non disponible */}
       <Dialog open={showActivateDialog} onOpenChange={setShowActivateDialog}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-xl">Souscrire à un abonnement</DialogTitle>
           </DialogHeader>
@@ -510,270 +510,63 @@ export default function SubscriptionPage() {
                   </div>
                   <Crown className="h-8 w-8 text-orange-500" />
                 </div>
-              </div>
-
-              {/* Cycle de facturation */}
-              <div>
-                <Label className="text-base font-semibold mb-3 block">Cycle de facturation</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setBillingCycle("monthly")}
-                    className={`p-4 rounded-lg border-2 transition-all ${billingCycle === "monthly"
-                      ? "border-orange-500 bg-orange-50"
-                      : "border-gray-200 hover:border-gray-300"
-                      }`}
-                  >
-                    <div className="text-left">
-                      <p className="font-semibold">Mensuel</p>
-                      <p className="text-2xl font-bold text-orange-600 mt-1">
-                        {formatPrice(selectedPlan.price_monthly)}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">{selectedPlan.currency.symbol}/mois</p>
-                    </div>
-                  </button>
-                  {parseFloat(selectedPlan.price_yearly) > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setBillingCycle("yearly")}
-                      className={`p-4 rounded-lg border-2 transition-all relative ${billingCycle === "yearly"
-                        ? "border-orange-500 bg-orange-50"
-                        : "border-gray-200 hover:border-gray-300"
-                        }`}
-                    >
-                      <div className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full font-semibold">
-                        Économie
-                      </div>
-                      <div className="text-left">
-                        <p className="font-semibold">Annuel</p>
-                        <p className="text-2xl font-bold text-orange-600 mt-1">
-                          {formatPrice(selectedPlan.price_yearly)}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">{selectedPlan.currency.symbol}/an</p>
-                      </div>
-                    </button>
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-orange-800">
+                    {parseFloat(selectedPlan.price_monthly) > 0
+                      ? formatPrice(selectedPlan.price_monthly)
+                      : "Gratuit"}
+                  </span>
+                  {parseFloat(selectedPlan.price_monthly) > 0 && (
+                    <span className="text-orange-600 text-sm">{selectedPlan.currency.symbol}/mois</span>
                   )}
                 </div>
               </div>
 
-              {/* Moyen de paiement */}
-              <div>
-                <Label className="text-base font-semibold mb-3 block">Moyen de paiement</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("mobile_money")}
-                    className={`p-4 rounded-lg border-2 transition-all ${paymentMethod === "mobile_money"
-                      ? "border-orange-500 bg-orange-50"
-                      : "border-gray-200 hover:border-gray-300"
-                      }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-3xl mb-2">📱</div>
-                      <p className="font-semibold text-sm">Mobile Money</p>
-                      <p className="text-xs text-gray-500 mt-1">Airtel, Vodacom, Orange</p>
+              {/* Message paiement non disponible */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
+                      <Lock className="h-6 w-6 text-amber-600" />
                     </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("card")}
-                    className={`p-4 rounded-lg border-2 transition-all ${paymentMethod === "card"
-                      ? "border-orange-500 bg-orange-50"
-                      : "border-gray-200 hover:border-gray-300"
-                      }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-3xl mb-2">💳</div>
-                      <p className="font-semibold text-sm">Carte bancaire</p>
-                      <p className="text-xs text-gray-500 mt-1">Visa, Mastercard</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("bank_transfer")}
-                    className={`p-4 rounded-lg border-2 transition-all ${paymentMethod === "bank_transfer"
-                      ? "border-orange-500 bg-orange-50"
-                      : "border-gray-200 hover:border-gray-300"
-                      }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-3xl mb-2">🏦</div>
-                      <p className="font-semibold text-sm">Virement</p>
-                      <p className="text-xs text-gray-500 mt-1">Virement bancaire</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("manual")}
-                    className={`p-4 rounded-lg border-2 transition-all ${paymentMethod === "manual"
-                      ? "border-orange-500 bg-orange-50"
-                      : "border-gray-200 hover:border-gray-300"
-                      }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-3xl mb-2">📝</div>
-                      <p className="font-semibold text-sm">Manuel</p>
-                      <p className="text-xs text-gray-500 mt-1">Autre moyen</p>
-                    </div>
-                  </button>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-amber-900 text-base">
+                      Paiement en ligne bientôt disponible
+                    </h3>
+                    <p className="text-sm text-amber-800 mt-2 leading-relaxed">
+                      Le système de paiement en ligne est en cours de configuration.
+                      Pour activer votre abonnement, veuillez contacter notre équipe
+                      qui se chargera de l&apos;activation manuelle.
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* Formulaire Mobile Money */}
-              {paymentMethod === "mobile_money" && (
-                <div className="space-y-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="font-semibold text-blue-900">Informations Mobile Money</h3>
-                  <div>
-                    <Label>Opérateur</Label>
-                    <Select defaultValue="airtel">
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="airtel">Airtel Money</SelectItem>
-                        <SelectItem value="vodacom">M-Pesa (Vodacom)</SelectItem>
-                        <SelectItem value="orange">Orange Money</SelectItem>
-                        <SelectItem value="africell">Africell Money</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Numéro de téléphone</Label>
-                    <Input
-                      type="tel"
-                      placeholder="+243 XXX XXX XXX"
-                      className="text-lg"
-                    />
-                  </div>
-                  <div className="bg-blue-100 rounded-lg p-3 text-sm text-blue-800">
-                    <p className="font-semibold mb-1">💡 Comment ça marche ?</p>
-                    <p>Vous recevrez une notification sur votre téléphone pour confirmer le paiement.</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Formulaire Carte bancaire */}
-              {paymentMethod === "card" && (
-                <div className="space-y-4 bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <h3 className="font-semibold text-purple-900">Informations de carte</h3>
-                  <div>
-                    <Label>Numéro de carte</Label>
-                    <Input
-                      type="text"
-                      placeholder="1234 5678 9012 3456"
-                      className="text-lg font-mono"
-                      maxLength={19}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Date d&apos;expiration</Label>
-                      <Input
-                        type="text"
-                        placeholder="MM/AA"
-                        maxLength={5}
-                      />
-                    </div>
-                    <div>
-                      <Label>CVV</Label>
-                      <Input
-                        type="text"
-                        placeholder="123"
-                        maxLength={3}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Nom sur la carte</Label>
-                    <Input
-                      type="text"
-                      placeholder="JEAN DUPONT"
-                      className="uppercase"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <Lock className="h-3 w-3" />
-                    <span>Paiement sécurisé SSL 256-bit</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Référence (pour virement et manuel) */}
-              {(paymentMethod === "bank_transfer" || paymentMethod === "manual") && (
-                <div>
-                  <Label>Référence de paiement (optionnel)</Label>
-                  <Input
-                    placeholder="Ex: TXN-123456"
-                    value={paymentReference}
-                    onChange={(e) => setPaymentReference(e.target.value)}
-                  />
-                </div>
-              )}
-
-              {/* Récapitulatif */}
+              {/* Coordonnées de contact */}
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                <h3 className="font-semibold mb-3">Récapitulatif</h3>
+                <h3 className="font-semibold mb-3">Contactez-nous</h3>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Plan</span>
-                    <span className="font-medium">{selectedPlan.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">📧</span>
+                    <span className="text-gray-700">cdirinfo25@gmail.com</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Cycle</span>
-                    <span className="font-medium">
-                      {billingCycle === "monthly" ? "Mensuel" : "Annuel"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Moyen de paiement</span>
-                    <span className="font-medium">
-                      {paymentMethod === "mobile_money"
-                        ? "Mobile Money"
-                        : paymentMethod === "card"
-                          ? "Carte bancaire"
-                          : paymentMethod === "bank_transfer"
-                            ? "Virement"
-                            : "Manuel"}
-                    </span>
-                  </div>
-                  <div className="border-t pt-2 mt-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold">Total à payer</span>
-                      <span className="text-2xl font-bold text-orange-600">
-                        {formatPrice(
-                          billingCycle === "yearly"
-                            ? selectedPlan.price_yearly
-                            : selectedPlan.price_monthly
-                        )}{" "}
-                        {selectedPlan.currency.symbol}
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">📱</span>
+                    <span className="text-gray-700">+243 835 957 939</span>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setShowActivateDialog(false)}
-              disabled={isActivating}
-              className="flex-1"
+              className="w-full"
             >
-              Annuler
-            </Button>
-            <Button
-              className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 flex-1"
-              onClick={handleActivate}
-              disabled={isActivating}
-            >
-              {isActivating ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <CreditCard className="h-4 w-4 mr-2" />
-              )}
-              Payer maintenant
+              Fermer
             </Button>
           </DialogFooter>
         </DialogContent>
