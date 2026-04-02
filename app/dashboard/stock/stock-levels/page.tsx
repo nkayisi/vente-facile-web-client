@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -31,6 +31,7 @@ import {
   getWarehouses,
   getLowStock,
   Stock,
+  StockFilters,
   Warehouse,
 } from "@/actions/stock.actions";
 
@@ -48,12 +49,18 @@ export default function StocksPage() {
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [showLowStock, setShowLowStock] = useState(searchParams.get("filter") === "low");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
 
-  // Fetch data
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Organisation + entrepôts
   useEffect(() => {
     const fetchData = async () => {
       if (!session?.accessToken) return;
@@ -64,45 +71,72 @@ export default function StocksPage() {
           const org = orgResult.data[0];
           setOrganization(org);
 
-          // Fetch warehouses
           const warehousesResult = await getWarehouses(session.accessToken, org.id);
           if (warehousesResult.success && warehousesResult.data) {
             setWarehouses(warehousesResult.data);
           }
-
-          // Fetch stocks based on filter
-          if (showLowStock) {
-            const lowStockResult = await getLowStock(session.accessToken, org.id);
-            if (lowStockResult.success && lowStockResult.data) {
-              setStocks(lowStockResult.data);
-            }
-          } else {
-            const stocksResult = await getStocks(session.accessToken, org.id);
-            if (stocksResult.success && stocksResult.data) {
-              setStocks(stocksResult.data);
-            }
-          }
         }
       } catch (error) {
-        console.error("Error fetching stocks:", error);
-        toast.error("Erreur lors du chargement des stocks");
+        console.error("Error fetching data:", error);
+        toast.error("Erreur lors du chargement des données");
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchData();
-  }, [session?.accessToken, showLowStock]);
+  }, [session?.accessToken]);
 
-  // Filter stocks
-  const filteredStocks = stocks.filter(stock => {
-    const matchesSearch =
-      stock.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      stock.product_sku.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesWarehouse =
-      selectedWarehouse === "all" || stock.warehouse === selectedWarehouse;
-    return matchesSearch && matchesWarehouse;
-  });
+  // Liste des stocks (API : recherche + entrepôt en mode normal ; stock bas = sous-ensemble puis filtre local)
+  useEffect(() => {
+    const token = session?.accessToken;
+    const org = organization;
+    if (!token || !org) return;
+
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (showLowStock) {
+          const lowStockResult = await getLowStock(token, org.id);
+          if (!cancelled && lowStockResult.success && lowStockResult.data) {
+            setStocks(lowStockResult.data);
+          }
+          return;
+        }
+        const filters: StockFilters = {};
+        if (debouncedSearch) filters.search = debouncedSearch;
+        if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
+        const stocksResult = await getStocks(token, org.id, filters);
+        if (!cancelled && stocksResult.success && stocksResult.data) {
+          setStocks(stocksResult.data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Error fetching stocks:", error);
+          toast.error("Erreur lors du chargement des stocks");
+        }
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.accessToken, organization, showLowStock, debouncedSearch, selectedWarehouse]);
+
+  const filteredStocks = useMemo(() => {
+    if (!showLowStock) return stocks;
+    const q = searchQuery.trim().toLowerCase();
+    return stocks.filter(stock => {
+      const matchesSearch =
+        !q ||
+        stock.product_name.toLowerCase().includes(q) ||
+        stock.product_sku.toLowerCase().includes(q);
+      const matchesWarehouse =
+        selectedWarehouse === "all" || stock.warehouse === selectedWarehouse;
+      return matchesSearch && matchesWarehouse;
+    });
+  }, [stocks, showLowStock, searchQuery, selectedWarehouse]);
 
   // Pagination
   const totalPages = Math.ceil(filteredStocks.length / pageSize);

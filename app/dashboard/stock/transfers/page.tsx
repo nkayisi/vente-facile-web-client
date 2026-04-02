@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { SearchableSelectAsync, type AsyncSelectOption } from "@/components/ui/searchable-select-async";
+import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
   DialogContent,
@@ -53,7 +53,8 @@ import {
 import { toast } from "sonner";
 import { formatDate } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
-import { getProducts, Product } from "@/actions/products.actions";
+import { getProduct, Product } from "@/actions/products.actions";
+import { createProductSearchHandler } from "@/lib/product-search";
 import {
   getStockTransfers,
   createStockTransfer,
@@ -115,25 +116,21 @@ export default function TransfersPage() {
     quantity_requested: 0,
   });
 
-  // Recherche de produits côté backend
-  const searchProducts = useCallback(async (query: string): Promise<AsyncSelectOption[]> => {
-    if (!session?.accessToken || !organization) return [];
-    const result = await getProducts(session.accessToken, organization.id, {
-      search: query,
-      page_size: 30,
-      is_active: true,
-    });
-    if (result.success && result.data) {
-      const results = result.data.results || [];
-      setProducts(prev => {
-        const existingIds = new Set(prev.map(p => p.id));
-        const newProducts = results.filter(p => !existingIds.has(p.id));
-        return newProducts.length > 0 ? [...prev, ...newProducts] : prev;
-      });
-      return results.map(p => ({ value: p.id, label: p.name }));
-    }
-    return [];
-  }, [session?.accessToken, organization]);
+  const searchProducts = useCallback(
+    async (query: string) => {
+      if (!session?.accessToken || !organization) return [];
+      return createProductSearchHandler(session.accessToken, organization.id, {
+        onResults: results => {
+          setProducts(prev => {
+            const existingIds = new Set(prev.map(p => p.id));
+            const newProducts = results.filter(p => !existingIds.has(p.id));
+            return newProducts.length > 0 ? [...prev, ...newProducts] : prev;
+          });
+        },
+      })(query);
+    },
+    [session?.accessToken, organization]
+  );
 
   // Fetch data
   useEffect(() => {
@@ -150,12 +147,6 @@ export default function TransfersPage() {
           const warehousesResult = await getWarehouses(session.accessToken, org.id);
           if (warehousesResult.success && warehousesResult.data) {
             setWarehouses(warehousesResult.data);
-          }
-
-          // Fetch products
-          const productsResult = await getProducts(session.accessToken, org.id);
-          if (productsResult.success && productsResult.data) {
-            setProducts(productsResult.data.results || []);
           }
 
           // Fetch transfers
@@ -206,15 +197,24 @@ export default function TransfersPage() {
     }
   }, [organization, fetchTransfers]);
 
-  // Add item to transfer
-  const addItem = () => {
+  const addItem = async () => {
     if (!newItem.product || newItem.quantity_requested <= 0) {
       toast.error("Veuillez sélectionner un produit et une quantité valide");
       return;
     }
 
-    const product = products.find(p => p.id === newItem.product);
-    if (!product) return;
+    let product = products.find(p => p.id === newItem.product);
+    if (!product && session?.accessToken && organization) {
+      const res = await getProduct(session.accessToken, organization.id, newItem.product);
+      if (res.success && res.data) {
+        product = res.data;
+        setProducts(prev => (prev.some(p => p.id === product!.id) ? prev : [...prev, product!]));
+      }
+    }
+    if (!product) {
+      toast.error("Produit introuvable");
+      return;
+    }
 
     setFormData({
       ...formData,
@@ -561,7 +561,6 @@ export default function TransfersPage() {
               <div className="flex gap-2">
                 <SearchableSelectAsync
                   onSearch={searchProducts}
-                  initialOptions={products.map(p => ({ value: p.id, label: p.name }))}
                   value={newItem.product || undefined}
                   onValueChange={value => setNewItem({ ...newItem, product: value })}
                   placeholder="Sélectionner un produit"

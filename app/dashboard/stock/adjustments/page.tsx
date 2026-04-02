@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
   DialogContent,
@@ -51,7 +52,8 @@ import {
 import { toast } from "sonner";
 import { formatPrice, formatDate } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
-import { getProducts, Product } from "@/actions/products.actions";
+import { getProduct, Product } from "@/actions/products.actions";
+import { createProductSearchHandler } from "@/lib/product-search";
 import {
   getStockAdjustments,
   createStockAdjustment,
@@ -142,12 +144,6 @@ export default function AdjustmentsPage() {
             setWarehouses(warehousesResult.data);
           }
 
-          // Fetch products
-          const productsResult = await getProducts(session.accessToken, org.id);
-          if (productsResult.success && productsResult.data) {
-            setProducts(productsResult.data.results || []);
-          }
-
           // Fetch adjustments
           await fetchAdjustments(org.id);
         }
@@ -214,15 +210,46 @@ export default function AdjustmentsPage() {
     fetchWarehouseStocks();
   }, [formData.warehouse, session, organization]);
 
+  const searchProducts = useCallback(
+    async (query: string) => {
+      if (!session?.accessToken || !organization) return [];
+      return createProductSearchHandler(session.accessToken, organization.id, {
+        formatLabel: p => {
+          const stock = warehouseStocks.find(s => s.product === p.id);
+          const q = stock ? parseFloat(stock.quantity).toFixed(0) : "0";
+          return `${p.name} (Stock: ${q})`;
+        },
+        onResults: results => {
+          setProducts(prev => {
+            const existingIds = new Set(prev.map(p => p.id));
+            const newProducts = results.filter(p => !existingIds.has(p.id));
+            return newProducts.length > 0 ? [...prev, ...newProducts] : prev;
+          });
+        },
+      })(query);
+    },
+    [session?.accessToken, organization, warehouseStocks]
+  );
+
   // Add item to adjustment
-  const addItem = () => {
+  const addItem = async () => {
     if (!newItem.product) {
       toast.error("Veuillez sélectionner un produit");
       return;
     }
 
-    const product = products.find(p => p.id === newItem.product);
-    if (!product) return;
+    let product = products.find(p => p.id === newItem.product);
+    if (!product && session?.accessToken && organization) {
+      const res = await getProduct(session.accessToken, organization.id, newItem.product);
+      if (res.success && res.data) {
+        product = res.data;
+        setProducts(prev => (prev.some(p => p.id === product!.id) ? prev : [...prev, product!]));
+      }
+    }
+    if (!product) {
+      toast.error("Produit introuvable");
+      return;
+    }
 
     // Get expected quantity from warehouse stock
     const stock = warehouseStocks.find(s => s.product === newItem.product);
@@ -574,11 +601,8 @@ export default function AdjustmentsPage() {
               <div className="space-y-2">
                 <Label>Articles à ajuster</Label>
                 <div className="flex gap-2">
-                  <SearchableSelect
-                    options={products.map(product => {
-                      const stock = warehouseStocks.find(s => s.product === product.id);
-                      return { value: product.id, label: `${product.name} (Stock: ${stock ? parseFloat(stock.quantity).toFixed(0) : 0})` };
-                    })}
+                  <SearchableSelectAsync
+                    onSearch={searchProducts}
                     value={newItem.product || undefined}
                     onValueChange={value => {
                       const stock = warehouseStocks.find(s => s.product === value);

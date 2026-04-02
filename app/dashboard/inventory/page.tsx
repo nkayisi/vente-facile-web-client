@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -105,10 +105,12 @@ export default function InventoryPage() {
   const [sessions, setSessions] = useState<InventorySession[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [warehouseStockCounts, setWarehouseStockCounts] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [productSearch, setProductSearch] = useState("");
+  const [productSearchResults, setProductSearchResults] = useState<Product[]>([]);
+  const [productDetailsById, setProductDetailsById] = useState<Record<string, Product>>({});
+  const [productSearchLoading, setProductSearchLoading] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -164,14 +166,13 @@ export default function InventoryPage() {
     fetchOrg();
   }, [session?.accessToken]);
 
-  // Fetch warehouses, categories, and products
+  // Fetch warehouses and categories
   useEffect(() => {
     async function fetchData() {
       if (!session?.accessToken || !organization?.id) return;
-      const [whResult, catResult, prodResult] = await Promise.all([
+      const [whResult, catResult] = await Promise.all([
         getWarehouses(session.accessToken, organization.id),
         getCategories(session.accessToken, organization.id),
-        getProducts(session.accessToken, organization.id, { page_size: 500, is_active: true }),
       ]);
       if (whResult.success && whResult.data) {
         setWarehouses(whResult.data);
@@ -190,7 +191,6 @@ export default function InventoryPage() {
         setWarehouseStockCounts(stockCounts);
       }
       if (catResult.success && catResult.data) setCategories(catResult.data.results || []);
-      if (prodResult.success && prodResult.data) setProducts(prodResult.data.results || []);
     }
     fetchData();
   }, [session?.accessToken, organization?.id]);
@@ -254,6 +254,8 @@ export default function InventoryPage() {
       const newDate = new Date().toLocaleDateString("fr-CD", { day: "2-digit", month: "long", year: "numeric" });
       setNewSession({ name: `Inventaire du ${newDate}`, warehouse: "", scope_type: "full", notes: "", category_ids: [], product_ids: [] });
       setProductSearch("");
+      setProductSearchResults([]);
+      setProductDetailsById({});
       fetchSessions();
     } else {
       toast.error(result.message);
@@ -261,12 +263,46 @@ export default function InventoryPage() {
     setIsCreating(false);
   };
 
-  // Filtered products for search in product scope
-  const filteredProducts = products.filter((p) => {
-    if (!productSearch) return true;
-    const s = productSearch.toLowerCase();
-    return p.name.toLowerCase().includes(s) || (p.sku || "").toLowerCase().includes(s);
-  });
+  useEffect(() => {
+    if (newSession.scope_type !== "product" || !session?.accessToken || !organization?.id) return;
+    const token = session.accessToken;
+    const orgId = organization.id;
+    const q = productSearch.trim();
+    const handle = window.setTimeout(async () => {
+      setProductSearchLoading(true);
+      try {
+        const result = await getProducts(token, orgId, {
+          search: q,
+          page_size: 50,
+          is_active: true,
+        });
+        if (result.success && result.data) {
+          const list = result.data.results || [];
+          setProductSearchResults(list);
+          setProductDetailsById(prev => {
+            const next = { ...prev };
+            for (const p of list) {
+              next[p.id] = p;
+            }
+            return next;
+          });
+        }
+      } finally {
+        setProductSearchLoading(false);
+      }
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [productSearch, newSession.scope_type, session?.accessToken, organization?.id]);
+
+  const productScopeRows = useMemo(() => {
+    const selectedExtras = (newSession.product_ids || [])
+      .map(id => productDetailsById[id])
+      .filter(
+        (p): p is Product =>
+          !!p && !productSearchResults.some(r => r.id === p.id)
+      );
+    return [...selectedExtras, ...productSearchResults];
+  }, [newSession.product_ids, productDetailsById, productSearchResults]);
 
   // Delete session
   const handleDelete = async () => {
@@ -694,35 +730,54 @@ export default function InventoryPage() {
                   />
                 </div>
                 <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-1">
-                  {filteredProducts.map((prod) => (
-                    <label key={prod.id} className="flex items-center justify-between gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-2 py-1.5">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={newSession.product_ids?.includes(prod.id) || false}
-                          onChange={(e) => {
-                            const ids = newSession.product_ids || [];
-                            setNewSession({
-                              ...newSession,
-                              product_ids: e.target.checked
-                                ? [...ids, prod.id]
-                                : ids.filter((id) => id !== prod.id),
-                            });
-                          }}
-                          className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
-                        />
-                        <div>
-                          <span>{prod.name}</span>
-                          {prod.sku && <span className="text-xs text-gray-400 ml-2 font-mono">{prod.sku}</span>}
+                  {productSearchLoading && (
+                    <p className="text-sm text-gray-500 text-center py-2 flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Recherche…
+                    </p>
+                  )}
+                  {!productSearchLoading &&
+                    productScopeRows.map((prod) => (
+                      <label
+                        key={prod.id}
+                        className="flex items-center justify-between gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-2 py-1.5"
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={newSession.product_ids?.includes(prod.id) || false}
+                            onChange={(e) => {
+                              const ids = newSession.product_ids || [];
+                              setNewSession({
+                                ...newSession,
+                                product_ids: e.target.checked
+                                  ? [...ids, prod.id]
+                                  : ids.filter((id) => id !== prod.id),
+                              });
+                              if (e.target.checked) {
+                                setProductDetailsById(prev => ({ ...prev, [prod.id]: prod }));
+                              }
+                            }}
+                            className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                          />
+                          <div>
+                            <span>{prod.name}</span>
+                            {prod.sku && (
+                              <span className="text-xs text-gray-400 ml-2 font-mono">{prod.sku}</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      {prod.category_name && (
-                        <span className="text-xs text-gray-400">{prod.category_name}</span>
-                      )}
-                    </label>
-                  ))}
-                  {filteredProducts.length === 0 && (
-                    <p className="text-sm text-gray-500 text-center py-2">Aucun produit trouvé</p>
+                        {prod.category_name && (
+                          <span className="text-xs text-gray-400">{prod.category_name}</span>
+                        )}
+                      </label>
+                    ))}
+                  {!productSearchLoading && productScopeRows.length === 0 && (
+                    <p className="text-sm text-gray-500 text-center py-2">
+                      {productSearch.trim()
+                        ? "Aucun produit trouvé"
+                        : "Tapez pour rechercher des produits"}
+                    </p>
                   )}
                 </div>
               </div>

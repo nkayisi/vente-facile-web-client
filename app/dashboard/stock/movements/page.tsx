@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { SearchableSelectAsync, type AsyncSelectOption } from "@/components/ui/searchable-select-async";
+import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +41,8 @@ import {
 import { toast } from "sonner";
 import { formatPrice, formatDateTime } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
-import { getProducts, getProduct, Product } from "@/actions/products.actions";
+import { getProduct, Product } from "@/actions/products.actions";
+import { createProductSearchHandler } from "@/lib/product-search";
 import {
   getStockMovements,
   createStockMovement,
@@ -141,29 +142,21 @@ export default function MovementsPage() {
     loadLocations();
   }, [session?.accessToken, organization, formData.warehouse]);
 
-  // Recherche de produits côté backend
-  const searchProducts = useCallback(async (query: string): Promise<AsyncSelectOption[]> => {
-    if (!session?.accessToken || !organization) return [];
-    const result = await getProducts(session.accessToken, organization.id, {
-      search: query,
-      page_size: 30,
-      is_active: true,
-    });
-    if (result.success && result.data) {
-      const results = result.data.results || [];
-      // Mettre à jour le cache local des produits pour le pré-remplissage du unit_cost
-      setProducts(prev => {
-        const existingIds = new Set(prev.map(p => p.id));
-        const newProducts = results.filter(p => !existingIds.has(p.id));
-        return newProducts.length > 0 ? [...prev, ...newProducts] : prev;
-      });
-      return results.map(p => ({
-        value: p.id,
-        label: `${p.name} (${p.sku})`,
-      }));
-    }
-    return [];
-  }, [session?.accessToken, organization]);
+  const searchProducts = useCallback(
+    async (query: string) => {
+      if (!session?.accessToken || !organization) return [];
+      return createProductSearchHandler(session.accessToken, organization.id, {
+        onResults: results => {
+          setProducts(prev => {
+            const existingIds = new Set(prev.map(p => p.id));
+            const newProducts = results.filter(p => !existingIds.has(p.id));
+            return newProducts.length > 0 ? [...prev, ...newProducts] : prev;
+          });
+        },
+      })(query);
+    },
+    [session?.accessToken, organization]
+  );
 
   // Pré-remplir unit_cost quand le produit change
   useEffect(() => {
@@ -206,12 +199,6 @@ export default function MovementsPage() {
           const warehousesResult = await getWarehouses(session.accessToken, org.id);
           if (warehousesResult.success && warehousesResult.data) {
             setWarehouses(warehousesResult.data);
-          }
-
-          // Fetch products
-          const productsResult = await getProducts(session.accessToken, org.id);
-          if (productsResult.success && productsResult.data) {
-            setProducts(productsResult.data.results || []);
           }
 
           // Fetch movements
@@ -543,7 +530,6 @@ export default function MovementsPage() {
               <Label htmlFor="product">Produit *</Label>
               <SearchableSelectAsync
                 onSearch={searchProducts}
-                initialOptions={products.map(p => ({ value: p.id, label: `${p.name} (${p.sku})` }))}
                 value={formData.product || undefined}
                 onValueChange={value => setFormData({ ...formData, product: value })}
                 placeholder="Sélectionner un produit"
