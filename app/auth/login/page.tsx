@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
 import { toast } from "sonner";
-import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 import { getUserOrganizations } from "@/actions/organization.actions";
 
 function LoginForm() {
@@ -212,6 +212,15 @@ function LoginForm() {
             Pas encore de compte ?{" "}
             <Link href="/auth/register" className="text-orange-600 hover:underline">
               Créer un compte
+            </Link>
+          </p>
+        </div>
+
+        <div className="mt-6 text-center">
+          <p className="text-sm text-orange-600 inline-flex items-center gap-1">
+            <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+            <Link href="/" className="text-orange-600 hover:underline">
+              Retour à la page d&apos;accueil
             </Link>
           </p>
         </div>

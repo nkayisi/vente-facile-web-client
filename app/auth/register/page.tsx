@@ -342,7 +342,7 @@ export default function RegisterPage() {
           {currentStep === 2 && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="organizationName">Nom de l'établissement *</Label>
+                <Label htmlFor="organizationName">Nom de l&apos;établissement *</Label>
                 <Input
                   id="organizationName"
                   type="text"
@@ -372,7 +372,7 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Type d'établissement *</Label>
+                <Label>Type d&apos;établissement *</Label>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {businessTypes.map((type) => {
                     const Icon = type.icon;
@@ -430,8 +430,8 @@ export default function RegisterPage() {
               <div className="flex items-center space-x-2 pt-2">
                 <input id="terms" type="checkbox" required className="rounded border-gray-300" />
                 <Label htmlFor="terms" className="text-sm">
-                  J'accepte les{" "}
-                  <Link href="/terms" className="text-orange-600 hover:underline">conditions d'utilisation</Link>
+                  J&apos;accepte les{" "}
+                  <Link href="/terms" className="text-orange-600 hover:underline">conditions d&apos;utilisation</Link>
                   {" "}et la{" "}
                   <Link href="/privacy" className="text-orange-600 hover:underline">politique de confidentialité</Link>
                 </Label>
@@ -464,6 +464,15 @@ export default function RegisterPage() {
           <p className="text-sm text-gray-600">
             Déjà un compte ?{" "}
             <Link href="/auth/login" className="text-orange-600 hover:underline">Se connecter</Link>
+          </p>
+        </div>
+
+        <div className="mt-6 text-center">
+          <p className="text-sm text-orange-600 inline-flex items-center gap-1">
+            <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+            <Link href="/" className="text-orange-600 hover:underline">
+              Retour à la page d&apos;accueil
+            </Link>
           </p>
         </div>
       </CardContent>

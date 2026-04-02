@@ -71,7 +71,13 @@ import {
   Sale,
   PaymentMethod,
 } from "@/actions/sales.actions";
-import { generatePaymentReceiptPdfUrl, sharePdf, PaymentReceiptData } from "@/lib/receipt-printer";
+import {
+  assignPdfToPrintWindow,
+  closePrintTabIfBlank,
+  generatePaymentReceiptPdfUrl,
+  openPrintTab,
+  PaymentReceiptData,
+} from "@/lib/receipt-printer";
 import { getCustomerLoyalty, CustomerLoyalty, LoyaltyProgram, getLoyaltyProgram } from "@/actions/settings.actions";
 import { Star } from "lucide-react";
 
@@ -254,6 +260,7 @@ export default function CustomerDetailPage() {
       return;
     }
 
+    const printTab = openPrintTab();
     setIsSubmitting(true);
     try {
       const result = await addPaymentToSale(
@@ -268,9 +275,6 @@ export default function CustomerDetailPage() {
       );
 
       if (result.success) {
-        toast.success("Paiement ajouté avec succès");
-
-        // Print payment receipt
         const selectedMethod = paymentMethods.find(m => m.id === selectedPaymentMethod);
         const previouslyPaid = parseFloat(selectedSale.amount_paid);
         const remainingBalance = amountDue - amount;
@@ -292,7 +296,16 @@ export default function CustomerDetailPage() {
         };
 
         const pdfUrl = generatePaymentReceiptPdfUrl(receiptData);
-        sharePdf(pdfUrl, `paiement-${selectedSale.reference}.pdf`);
+        const pdfOutcome = assignPdfToPrintWindow(printTab, pdfUrl, {
+          filename: `paiement-${selectedSale.reference}.pdf`,
+        });
+
+        toast.success("Paiement ajouté avec succès", {
+          description:
+            pdfOutcome === "opened"
+              ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
+              : "Reçu téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+        });
 
         setShowInvoicePaymentDialog(false);
         setSelectedSale(null);
@@ -305,9 +318,11 @@ export default function CustomerDetailPage() {
         loadTransactions();
         loadPendingSales();
       } else {
+        closePrintTabIfBlank(printTab);
         toast.error(result.message || "Erreur lors de l'ajout du paiement");
       }
     } catch (error) {
+      closePrintTabIfBlank(printTab);
       console.error("Error adding payment:", error);
       toast.error("Erreur lors de l'ajout du paiement");
     } finally {

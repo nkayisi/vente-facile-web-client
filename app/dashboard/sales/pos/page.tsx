@@ -64,7 +64,13 @@ import { formatPrice, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { StatValue } from "@/components/shared/StatValue";
 import { useCurrency } from "@/components/providers/currency-provider";
-import { generateReceiptPdfUrl, sharePdf, ReceiptData } from "@/lib/receipt-printer";
+import {
+  assignPdfToPrintWindow,
+  closePrintTabIfBlank,
+  generateReceiptPdfUrl,
+  openPrintTab,
+  ReceiptData,
+} from "@/lib/receipt-printer";
 
 /** Aligné sur le défaut backend (`max_sale_discount_percent` dans les paramètres org). */
 const MAX_SALE_DISCOUNT_PERCENT = 50;
@@ -572,6 +578,7 @@ export default function POSPage() {
       }
     }
 
+    const printTab = openPrintTab();
     setIsProcessing(true);
 
     try {
@@ -616,76 +623,94 @@ export default function POSPage() {
       });
 
       if (result.success && result.data) {
-        toast.success(`Vente ${result.data.reference} créée avec succès`);
-
-        // Print receipt
-        const selectedMethodObj = getSelectedMethod();
-        const receiptPayments = [];
-
-        const primaryCode = getPrimaryCurrency()?.currency_code || "CDF";
-        const primarySymbol = getPrimaryCurrency()?.currency_symbol || "FC";
-
-        // Ajouter le paiement si montant > 0
-        if (rawAmount > 0 && selectedMethodObj) {
-          const payLabel = !isPrimaryPayment()
-            ? `${selectedMethodObj.name} (${formatPrice(rawAmount, getPaymentCurrencyObj()?.currency_symbol)})`
-            : selectedMethodObj.name;
-          receiptPayments.push({
-            method: payLabel,
-            amount: amountInPrimary,
-            currency: primaryCode
+        const pdfOutcome = (() => {
+          const paperWidth = (orgSettings?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
+          const receiptData: ReceiptData = {
+            orgName: organization.name || "Vente Facile",
+            orgAddress: organization.address || undefined,
+            orgPhone: organization.phone || undefined,
+            registerName: currentSession.register_name,
+            cashierName: currentSession.opened_by_name,
+            reference: result.data.reference,
+            date: new Date().toLocaleString("fr-CD"),
+            customerName: selectedCustomer?.name,
+            customerPhone: selectedCustomer?.phone || undefined,
+            items: cart.map(item => ({
+              name: item.product.name,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              discount_percentage: item.discount_percentage,
+              total: r2(item.quantity * item.unit_price * (1 - item.discount_percentage / 100)),
+            })),
+            subtotal: calculateSubtotal(),
+            taxAmount: calculateTax(),
+            discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount() + pointsDiscount),
+            globalDiscountPercent: globalDiscount,
+            total: total - pointsDiscount,
+            payments: (() => {
+              const receiptPayments: { method: string; amount: number; currency: string }[] = [];
+              const selectedMethodObj = getSelectedMethod();
+              const primaryCode = getPrimaryCurrency()?.currency_code || "CDF";
+              if (rawAmount > 0 && selectedMethodObj) {
+                const payLabel = !isPrimaryPayment()
+                  ? `${selectedMethodObj.name} (${formatPrice(rawAmount, getPaymentCurrencyObj()?.currency_symbol)})`
+                  : selectedMethodObj.name;
+                receiptPayments.push({
+                  method: payLabel,
+                  amount: amountInPrimary,
+                  currency: primaryCode,
+                });
+              }
+              if (creditAmount > 0) {
+                receiptPayments.push({
+                  method: "À crédit",
+                  amount: creditAmount,
+                  currency: primaryCode,
+                });
+              }
+              return receiptPayments;
+            })(),
+            amountPaid: amountInPrimary,
+            change: !isCreditSale ? Math.max(0, amountInPrimary - (total - pointsDiscount)) : 0,
+            currency: getPrimaryCurrency()?.currency_code || "CDF",
+            receiptHeader: orgSettings?.receipt_header || undefined,
+            receiptFooter: orgSettings?.receipt_footer || undefined,
+            isCreditSale: creditAmount > 0,
+            amountDue: creditAmount > 0 ? creditAmount : 0,
+            showLoyaltyPoints: !!(
+              orgSettings?.show_loyalty_points_on_receipt &&
+              selectedCustomer &&
+              loyaltyProgram?.is_active
+            ),
+            loyaltyPointsEarned: loyaltyProgram?.is_active
+              ? Math.floor(
+                  ((total - pointsDiscount) *
+                    (loyaltyProgram.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1)) /
+                    100
+                )
+              : 0,
+            loyaltyPointsBalance: customerLoyalty
+              ? customerLoyalty.current_points -
+                (usePoints ? pointsToUse : 0) +
+                Math.floor(
+                  ((total - pointsDiscount) *
+                    (loyaltyProgram?.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1)) /
+                    100
+                )
+              : 0,
+          };
+          const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
+          return assignPdfToPrintWindow(printTab, pdfUrl, {
+            filename: `recu-${result.data.reference}.pdf`,
           });
-        }
+        })();
 
-        // Ajouter le crédit si montant à crédit > 0
-        if (creditAmount > 0) {
-          receiptPayments.push({
-            method: "À crédit",
-            amount: creditAmount,
-            currency: primaryCode
-          });
-        }
-
-        const receiptData: ReceiptData = {
-          orgName: organization.name || "Vente Facile",
-          orgAddress: organization.address || undefined,
-          orgPhone: organization.phone || undefined,
-          registerName: currentSession.register_name,
-          cashierName: currentSession.opened_by_name,
-          reference: result.data.reference,
-          date: new Date().toLocaleString("fr-CD"),
-          customerName: selectedCustomer?.name,
-          customerPhone: selectedCustomer?.phone || undefined,
-          items: cart.map(item => ({
-            name: item.product.name,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            discount_percentage: item.discount_percentage,
-            total: r2(item.quantity * item.unit_price * (1 - item.discount_percentage / 100)),
-          })),
-          subtotal: calculateSubtotal(),
-          taxAmount: calculateTax(),
-          discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount() + pointsDiscount),
-          globalDiscountPercent: globalDiscount,
-          total: total - pointsDiscount,
-          payments: receiptPayments,
-          amountPaid: amountInPrimary,
-          change: !isCreditSale ? Math.max(0, amountInPrimary - (total - pointsDiscount)) : 0,
-          currency: primaryCode,
-          receiptHeader: orgSettings?.receipt_header || undefined,
-          receiptFooter: orgSettings?.receipt_footer || undefined,
-          isCreditSale: creditAmount > 0,
-          amountDue: creditAmount > 0 ? creditAmount : 0,
-          // Loyalty points on receipt
-          showLoyaltyPoints: !!(orgSettings?.show_loyalty_points_on_receipt && selectedCustomer && loyaltyProgram?.is_active),
-          loyaltyPointsEarned: loyaltyProgram?.is_active ? Math.floor((total - pointsDiscount) * (loyaltyProgram.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1) / 100) : 0,
-          loyaltyPointsBalance: customerLoyalty ? (customerLoyalty.current_points - (usePoints ? pointsToUse : 0) + Math.floor((total - pointsDiscount) * (loyaltyProgram?.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1) / 100)) : 0,
-        };
-
-        // Générer le PDF et l'ouvrir dans l'onglet pré-ouvert
-        const paperWidth = (orgSettings?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
-        const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
-        sharePdf(pdfUrl, `recu-${result.data.reference}.pdf`);
+        toast.success(`Vente ${result.data.reference} créée avec succès`, {
+          description:
+            pdfOutcome === "opened"
+              ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
+              : "Reçu téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+        });
 
         // Mark receipt as printed
         markReceiptPrinted(session.accessToken, organization.id, result.data.id).catch((err: any) => {
@@ -738,8 +763,10 @@ export default function POSPage() {
         if (errorMsg.includes("Stock") || errorMsg.includes("stock")) {
           setShowPaymentDialog(false);
         }
+        closePrintTabIfBlank(printTab);
       }
     } catch (error) {
+      closePrintTabIfBlank(printTab);
       toast.error("Une erreur est survenue lors du paiement");
     } finally {
       setIsProcessing(false);

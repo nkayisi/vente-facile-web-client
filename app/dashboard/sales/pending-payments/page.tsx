@@ -40,7 +40,13 @@ import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import { useCurrency } from "@/components/providers/currency-provider";
-import { generatePaymentReceiptPdfUrl, sharePdf, PaymentReceiptData } from "@/lib/receipt-printer";
+import {
+  assignPdfToPrintWindow,
+  closePrintTabIfBlank,
+  generatePaymentReceiptPdfUrl,
+  openPrintTab,
+  PaymentReceiptData,
+} from "@/lib/receipt-printer";
 import {
   getSales,
   addPaymentToSale,
@@ -179,6 +185,7 @@ export default function PendingPaymentsPage() {
       return;
     }
 
+    const printTab = openPrintTab();
     setIsProcessing(true);
 
     try {
@@ -198,9 +205,6 @@ export default function PendingPaymentsPage() {
       );
 
       if (result.success) {
-        toast.success("Paiement ajouté avec succès");
-
-        // Print payment receipt
         const selectedMethod = paymentMethods.find(m => m.id === selectedPaymentMethod);
         const previouslyPaid = parseFloat(selectedSale.amount_paid);
         const remainingBalance = amountDue - amountInPrimary;
@@ -227,7 +231,16 @@ export default function PendingPaymentsPage() {
         };
 
         const pdfUrl = generatePaymentReceiptPdfUrl(receiptData);
-        sharePdf(pdfUrl, `paiement-${selectedSale.reference}.pdf`);
+        const pdfOutcome = assignPdfToPrintWindow(printTab, pdfUrl, {
+          filename: `paiement-${selectedSale.reference}.pdf`,
+        });
+
+        toast.success("Paiement ajouté avec succès", {
+          description:
+            pdfOutcome === "opened"
+              ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
+              : "Reçu téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+        });
 
         setShowPaymentDialog(false);
 
@@ -243,9 +256,11 @@ export default function PendingPaymentsPage() {
         ];
         setPendingSales(allSales);
       } else {
+        closePrintTabIfBlank(printTab);
         toast.error(result.message || "Erreur lors de l'ajout du paiement");
       }
     } catch (error) {
+      closePrintTabIfBlank(printTab);
       console.error("Error adding payment:", error);
       toast.error("Erreur lors de l'ajout du paiement");
     } finally {

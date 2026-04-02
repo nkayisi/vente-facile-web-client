@@ -40,7 +40,13 @@ import {
   Sale,
   SaleStatus,
 } from "@/actions/sales.actions";
-import { generateReceiptPdfUrl, sharePdf, ReceiptData } from "@/lib/receipt-printer";
+import {
+  assignPdfToPrintWindow,
+  closePrintTabIfBlank,
+  generateReceiptPdfUrl,
+  openPrintTab,
+  ReceiptData,
+} from "@/lib/receipt-printer";
 
 const STATUS_CONFIG: Record<SaleStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -96,6 +102,7 @@ export default function SaleDetailPage() {
   const handlePrintReceipt = async () => {
     if (!session?.accessToken || !organization?.id || !sale) return;
 
+    const printTab = openPrintTab();
     setIsPrinting(true);
 
     try {
@@ -140,18 +147,25 @@ export default function SaleDetailPage() {
         amountDue: parseFloat(sale.amount_due),
       };
 
-      // Générer le PDF et l'ouvrir dans l'onglet pré-ouvert
       const paperWidth = (settingsResult.success && settingsResult.data?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
       const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
-      sharePdf(pdfUrl, `recu-${sale.reference}.pdf`);
+      const pdfOutcome = assignPdfToPrintWindow(printTab, pdfUrl, {
+        filename: `recu-${sale.reference}.pdf`,
+      });
 
       // Mark as printed
       const result = await markReceiptPrinted(session.accessToken, organization.id, sale.id);
       if (result.success && result.data) {
         setSale(result.data);
-        toast.success("Reçu imprimé avec succès");
+        toast.success("Reçu prêt", {
+          description:
+            pdfOutcome === "opened"
+              ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
+              : "Reçu téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+        });
       }
     } catch (error) {
+      closePrintTabIfBlank(printTab);
       console.error("Error printing receipt:", error);
       toast.error("Erreur lors de l'impression du reçu");
     } finally {

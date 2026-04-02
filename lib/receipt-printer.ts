@@ -1,7 +1,7 @@
 /**
  * Receipt Printer Utility for Thermal Printers (58mm / 80mm)
- * Generates PDF receipts with exact thermal paper dimensions.
- * Uses jsPDF for PDF generation with dynamic height based on content.
+ * Generates PDF receipts with exact thermal paper dimensions (Thermer-compatible).
+ * Uses jsPDF with dynamic height based on wrapped content.
  */
 
 import { jsPDF } from "jspdf";
@@ -44,7 +44,6 @@ export interface ReceiptData {
   receiptFooter?: string;
   isCreditSale?: boolean;
   amountDue?: number;
-  // Loyalty points
   showLoyaltyPoints?: boolean;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
@@ -52,127 +51,263 @@ export interface ReceiptData {
 
 type PaperWidth = 58 | 80;
 
-// Font sizes in points (optimised for thermal printers)
 const FONT_SIZE_NORMAL = 11;
 const FONT_SIZE_SMALL = 9;
-const LINE_HEIGHT = 4.2; // mm per line
-const LINE_HEIGHT_SMALL = 3.5; // mm per line for small text
-const MARGIN = 1; // mm margins
+const LINE_HEIGHT = 4.2;
+const LINE_HEIGHT_SMALL = 3.5;
+const MARGIN = 2.5;
+/** Espace blanc au-dessus de l’en-tête (mm) — confort sur imprimante thermique / Thermer */
+const TOP_MARGIN_BEFORE_HEADER = 5;
+
+const DEFAULT_REVOKE_OPEN_MS = 180_000;
+const DEFAULT_REVOKE_DOWNLOAD_MS = 120_000;
+
+function pdfDocOptions(paperWidth: number, height: number) {
+  return {
+    orientation: "portrait" as const,
+    unit: "mm" as const,
+    format: [paperWidth, height] as [number, number],
+    compress: true,
+  };
+}
 
 function formatAmount(amount: number, decimals: number = 2): string {
-  // Utiliser toFixed pour conserver les décimales exactes sans arrondi
   const formatted = amount.toFixed(decimals);
-  // Séparer les milliers avec des espaces
-  const parts = formatted.split('.');
+  const parts = formatted.split(".");
   parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  return parts.join('.');
+  return parts.join(".");
 }
 
 function formatAmountWithCurrency(amount: number, currency: string, decimals: number = 2): string {
   return `${formatAmount(amount, decimals)} ${currency}`;
 }
 
-/**
- * Calculate the total height needed for the receipt content
- */
-function calculateReceiptHeight(data: ReceiptData): number {
-  let lines = 0;
+/** Line count for text wrapped like jsPDF splitTextToSize (mm width, helvetica). */
+function wrappedLineCount(
+  measureDoc: jsPDF,
+  text: string,
+  maxWidthMm: number,
+  fontSize: number,
+  bold: boolean
+): number {
+  measureDoc.setFontSize(fontSize);
+  measureDoc.setFont("helvetica", bold ? "bold" : "normal");
+  return measureDoc.splitTextToSize(text, maxWidthMm).length;
+}
 
-  // Header section
-  lines += 1; // org name
-  if (data.orgAddress) lines += 1;
-  if (data.orgPhone) lines += 1;
-  if (data.receiptHeader) lines += data.receiptHeader.split("\n").length;
-  lines += 1; // separator
+function estimateSaleReceiptHeightMm(data: ReceiptData, paperWidth: PaperWidth): number {
+  const contentWidth = paperWidth - MARGIN * 2;
+  const itemNameMaxW = contentWidth * 0.4;
+  const m = new jsPDF(pdfDocOptions(paperWidth, 400));
+  let h = MARGIN + TOP_MARGIN_BEFORE_HEADER + 1;
 
-  // Credit sale banner
-  if (data.isCreditSale) lines += 2;
-
-  // Loyalty points
-  if (data.showLoyaltyPoints && data.loyaltyPointsEarned) lines += 3;
-
-  // Receipt info
-  lines += 2; // reference + date
-  if (data.registerName) lines += 1;
-  if (data.cashierName) lines += 1;
-  if (data.customerName) {
-    lines += 1;
-    if (data.customerPhone) lines += 1;
-  }
-  lines += 1; // separator
-
-  // Items header
-  lines += 2; // header + separator
-
-  // Items
-  data.items.forEach(item => {
-    lines += 1;
-    if (item.discount_percentage > 0) lines += 1;
-  });
-
-  lines += 1; // separator
-
-  // Totals
-  lines += 1; // subtotal
-  if (data.discountAmount > 0) lines += 1;
-  if (data.taxAmount > 0) lines += 1;
-  lines += 2; // separator + total + separator
-
-  // Payments
-  lines += 1; // empty line
-  lines += data.payments.length;
-  if (data.change > 0) lines += 2;
-  if (data.isCreditSale && data.amountDue && data.amountDue > 0) lines += 2;
-
-  // Footer
-  lines += 1; // empty line
-  if (data.receiptFooter) {
-    lines += data.receiptFooter.split("\n").length;
+  if (data.receiptHeader) {
+    for (const raw of data.receiptHeader.split("\n")) {
+      const n = wrappedLineCount(m, raw.trim(), contentWidth, FONT_SIZE_SMALL, false);
+      h += Math.max(1, n) * LINE_HEIGHT_SMALL;
+    }
   } else {
-    lines += 2; // default footer
+    h +=
+      wrappedLineCount(m, data.orgName.toUpperCase(), contentWidth, FONT_SIZE_NORMAL, true) * LINE_HEIGHT;
+    if (data.orgAddress) {
+      h += wrappedLineCount(m, data.orgAddress, contentWidth, FONT_SIZE_SMALL, false) * LINE_HEIGHT_SMALL;
+    }
+    if (data.orgPhone) {
+      h +=
+        wrappedLineCount(m, `Tel: ${data.orgPhone}`, contentWidth, FONT_SIZE_SMALL, false) *
+        LINE_HEIGHT_SMALL;
+    }
   }
-  lines += 2; // empty + powered by
 
-  // Calculate height: lines * line height + margins
-  return (lines * LINE_HEIGHT) + (MARGIN * 2) + 5; // +5mm buffer
+  h += 0.5 + LINE_HEIGHT_SMALL;
+
+  if (data.isCreditSale) {
+    h += LINE_HEIGHT + LINE_HEIGHT_SMALL;
+  }
+
+  h += 2 * LINE_HEIGHT_SMALL;
+  if (data.registerName) h += LINE_HEIGHT_SMALL;
+  if (data.cashierName) h += LINE_HEIGHT_SMALL;
+  if (data.customerName) {
+    h += LINE_HEIGHT_SMALL;
+    if (data.customerPhone) h += LINE_HEIGHT_SMALL;
+  }
+  h += LINE_HEIGHT_SMALL;
+
+  h += 0.5 + LINE_HEIGHT_SMALL + LINE_HEIGHT_SMALL;
+
+  for (const item of data.items) {
+    const nameLines = wrappedLineCount(m, item.name, itemNameMaxW, FONT_SIZE_SMALL, false);
+    h += Math.max(1, nameLines) * LINE_HEIGHT_SMALL;
+    if (item.discount_percentage > 0) h += LINE_HEIGHT_SMALL;
+  }
+
+  h += LINE_HEIGHT_SMALL;
+
+  h += LINE_HEIGHT_SMALL;
+  if (data.discountAmount > 0) h += LINE_HEIGHT_SMALL;
+  if (data.taxAmount > 0) h += LINE_HEIGHT_SMALL;
+  h += 0.5 + LINE_HEIGHT_SMALL + LINE_HEIGHT + LINE_HEIGHT_SMALL;
+
+  h += 1;
+  h += data.payments.length * LINE_HEIGHT_SMALL;
+  if (data.change > 0) h += LINE_HEIGHT_SMALL;
+  if (data.isCreditSale && data.amountDue && data.amountDue > 0) h += LINE_HEIGHT_SMALL;
+
+  if (data.showLoyaltyPoints && data.loyaltyPointsEarned && data.loyaltyPointsEarned > 0) {
+    h += 1 + LINE_HEIGHT_SMALL + LINE_HEIGHT_SMALL * 2;
+    if (data.loyaltyPointsBalance !== undefined) h += LINE_HEIGHT_SMALL;
+  }
+
+  h += 1;
+  if (data.receiptFooter) {
+    for (const raw of data.receiptFooter.split("\n")) {
+      const n = wrappedLineCount(m, raw.trim(), contentWidth, FONT_SIZE_SMALL, false);
+      h += Math.max(1, n) * LINE_HEIGHT_SMALL;
+    }
+  } else {
+    h += LINE_HEIGHT_SMALL * 2;
+  }
+
+  h += 1 + LINE_HEIGHT_SMALL;
+
+  return h + MARGIN + 6;
+}
+
+export type ThermalPdfPresentResult = "opened" | "downloaded";
+
+function downloadThermalPdf(pdfUrl: string, filename: string = "recu.pdf"): void {
+  const a = document.createElement("a");
+  a.href = pdfUrl;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/**
+ * Open the PDF in a new tab for viewing / sharing to Thermer, and save the file (download).
+ * Falls back to download-only if the popup is blocked.
+ */
+export function openThermalPdf(
+  pdfUrl: string,
+  options?: { filename?: string; revokeAfterMs?: number }
+): ThermalPdfPresentResult {
+  const filename = options?.filename ?? "recu.pdf";
+  const revokeMs = options?.revokeAfterMs ?? DEFAULT_REVOKE_OPEN_MS;
+  downloadThermalPdf(pdfUrl, filename);
+  const w = window.open(pdfUrl, "_blank", "noopener,noreferrer");
+  if (w) {
+    setTimeout(() => URL.revokeObjectURL(pdfUrl), revokeMs);
+    return "opened";
+  }
+  setTimeout(() => URL.revokeObjectURL(pdfUrl), DEFAULT_REVOKE_DOWNLOAD_MS);
+  return "downloaded";
+}
+
+/**
+ * Use when a tab was opened synchronously (e.g. about:blank before an async sale).
+ * Navigates that tab to the blob URL; falls back to openThermalPdf if the tab is missing or closed.
+ */
+export function assignPdfToPrintWindow(
+  printWindow: Window | null,
+  pdfUrl: string,
+  options?: { filename?: string; revokeAfterMs?: number }
+): ThermalPdfPresentResult {
+  const revokeMs = options?.revokeAfterMs ?? DEFAULT_REVOKE_OPEN_MS;
+  const filename = options?.filename ?? "recu.pdf";
+  if (printWindow && !printWindow.closed) {
+    printWindow.location.replace(pdfUrl);
+    downloadThermalPdf(pdfUrl, filename);
+    setTimeout(() => URL.revokeObjectURL(pdfUrl), revokeMs);
+    return "opened";
+  }
+  return openThermalPdf(pdfUrl, { filename, revokeAfterMs: revokeMs });
+}
+
+/**
+ * Open a blank tab synchronously on user gesture; returns null if blocked.
+ * Do not pass `noopener`: the window reference would be null while the tab still opens,
+ * which would trigger a second tab when assigning the PDF URL.
+ */
+export function openPrintTab(): Window | null {
+  return window.open("about:blank", "_blank");
+}
+
+/**
+ * Close a pre-opened print tab when the operation is aborted (validation error, API failure).
+ */
+export function closePrintTabIfBlank(w: Window | null): void {
+  if (w && !w.closed) {
+    try {
+      w.close();
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /**
  * Generate a PDF receipt and return the blob URL.
- * Use this when you need to control how/when the PDF is opened.
  */
 export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth = 58): string {
   const contentWidth = paperWidth - (MARGIN * 2);
-  const height = calculateReceiptHeight(data);
+  const height = estimateSaleReceiptHeightMm(data, paperWidth);
+  const doc = new jsPDF(pdfDocOptions(paperWidth, height));
 
-  // Create PDF with custom dimensions (width x height in mm)
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: [paperWidth, height],
-  });
-
-  let y = MARGIN + 1;
+  let y = MARGIN + TOP_MARGIN_BEFORE_HEADER + 1;
   const leftX = MARGIN;
   const rightX = paperWidth - MARGIN;
   const centerX = paperWidth / 2;
+  const itemNameMaxW = contentWidth * 0.4;
 
-  // Helper functions
-  const drawCenteredText = (text: string, fontSize: number = FONT_SIZE_NORMAL, bold: boolean = false, lineHeight: number = LINE_HEIGHT) => {
+  const drawCenteredText = (
+    text: string,
+    fontSize: number = FONT_SIZE_NORMAL,
+    bold: boolean = false,
+    lineHeight: number = LINE_HEIGHT
+  ) => {
     doc.setFontSize(fontSize);
     doc.setFont("helvetica", bold ? "bold" : "normal");
     doc.text(text, centerX, y, { align: "center" });
     y += lineHeight;
   };
 
-  const drawLeftText = (text: string, fontSize: number = FONT_SIZE_NORMAL, bold: boolean = false, lineHeight: number = LINE_HEIGHT) => {
+  const drawCenteredWrapped = (
+    text: string,
+    fontSize: number,
+    bold: boolean,
+    lineHeight: number
+  ) => {
+    doc.setFontSize(fontSize);
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    const lines = doc.splitTextToSize(text.trim(), contentWidth);
+    for (const line of lines) {
+      doc.text(line, centerX, y, { align: "center" });
+      y += lineHeight;
+    }
+  };
+
+  const drawLeftText = (
+    text: string,
+    fontSize: number = FONT_SIZE_NORMAL,
+    bold: boolean = false,
+    lineHeight: number = LINE_HEIGHT
+  ) => {
     doc.setFontSize(fontSize);
     doc.setFont("helvetica", bold ? "bold" : "normal");
     doc.text(text, leftX, y);
     y += lineHeight;
   };
 
-  const drawLeftRightText = (left: string, right: string, fontSize: number = FONT_SIZE_NORMAL, bold: boolean = false, lineHeight: number = LINE_HEIGHT) => {
+  const drawLeftRightText = (
+    left: string,
+    right: string,
+    fontSize: number = FONT_SIZE_NORMAL,
+    bold: boolean = false,
+    lineHeight: number = LINE_HEIGHT
+  ) => {
     doc.setFontSize(fontSize);
     doc.setFont("helvetica", bold ? "bold" : "normal");
     doc.text(left, leftX, y);
@@ -182,36 +317,32 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
 
   const drawSeparator = (char: string = "-", lineHeight: number = LINE_HEIGHT_SMALL) => {
     doc.setDrawColor(0, 0, 0);
-    if (char === "=") {
-      doc.setLineWidth(0.3);
-      doc.line(leftX, y - 1, rightX, y - 1);
-    } else {
-      doc.setLineWidth(0.1);
-      doc.line(leftX, y - 1, rightX, y - 1);
-    }
+    doc.setLineWidth(char === "=" ? 0.3 : 0.1);
+    doc.line(leftX, y - 1, rightX, y - 1);
     y += lineHeight;
   };
 
-  // === HEADER ===
+  doc.setTextColor(0, 0, 0);
+
   if (data.receiptHeader) {
-    // Si un en-tête personnalisé existe, afficher uniquement celui-ci
-    data.receiptHeader.split("\n").forEach(line => drawCenteredText(line.trim(), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL));
+    for (const raw of data.receiptHeader.split("\n")) {
+      drawCenteredWrapped(raw, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    }
   } else {
-    // Sinon, afficher les informations par défaut
-    drawCenteredText(data.orgName.toUpperCase(), FONT_SIZE_NORMAL, true);
-    if (data.orgAddress) drawCenteredText(data.orgAddress, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
-    if (data.orgPhone) drawCenteredText(`Tel: ${data.orgPhone}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    drawCenteredWrapped(data.orgName.toUpperCase(), FONT_SIZE_NORMAL, true, LINE_HEIGHT);
+    if (data.orgAddress) drawCenteredWrapped(data.orgAddress, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    if (data.orgPhone) {
+      drawCenteredWrapped(`Tel: ${data.orgPhone}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    }
   }
   y += 0.5;
   drawSeparator("=");
 
-  // === CREDIT SALE BANNER ===
   if (data.isCreditSale) {
     drawCenteredText("** VENTE A CREDIT **", FONT_SIZE_NORMAL, true);
     drawSeparator();
   }
 
-  // === RECEIPT INFO ===
   drawLeftText(`Recu: ${data.reference}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   drawLeftText(`Date: ${data.date}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   if (data.registerName) drawLeftText(`Caisse: ${data.registerName}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
@@ -222,7 +353,6 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
   }
   drawSeparator();
 
-  // === ITEMS HEADER ===
   y += 0.5;
   doc.setFontSize(FONT_SIZE_SMALL);
   doc.setFont("helvetica", "normal");
@@ -233,37 +363,36 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
   y += LINE_HEIGHT_SMALL;
   drawSeparator();
 
-  // === ITEMS ===
-  doc.setFont("helvetica", "normal");
-  data.items.forEach((item, index) => {
-    const maxNameWidth = contentWidth * 0.4;
-    let name = item.name;
-    // Truncate name if too long
-    while (doc.getTextWidth(name) > maxNameWidth && name.length > 3) {
-      name = name.slice(0, -1);
-    }
-    if (name !== item.name) name += "..";
+  const colQtyX = leftX + contentWidth * 0.45;
+  const colPuX = leftX + contentWidth * 0.7;
 
+  doc.setFont("helvetica", "normal");
+  for (const item of data.items) {
     doc.setFontSize(FONT_SIZE_SMALL);
-    doc.text(name, leftX, y);
-    doc.text(item.quantity.toString(), leftX + contentWidth * 0.45, y, { align: "right" });
-    doc.text(formatAmount(item.unit_price, 2), leftX + contentWidth * 0.7, y, { align: "right" });
-    doc.text(formatAmount(item.total, 2), rightX, y, { align: "right" });
-    y += LINE_HEIGHT_SMALL;
+    const nameLines = doc.splitTextToSize(item.name, itemNameMaxW);
+    nameLines.forEach((line: string, i: number) => {
+      doc.text(line, leftX, y);
+      if (i === 0) {
+        doc.text(item.quantity.toString(), colQtyX, y, { align: "right" });
+        doc.text(formatAmount(item.unit_price, 2), colPuX, y, { align: "right" });
+        doc.text(formatAmount(item.total, 2), rightX, y, { align: "right" });
+      }
+      y += LINE_HEIGHT_SMALL;
+    });
 
     if (item.discount_percentage > 0) {
       doc.setFontSize(FONT_SIZE_SMALL - 0.5);
       doc.text(`  Remise: -${item.discount_percentage}%`, leftX + 2, y);
       y += LINE_HEIGHT_SMALL;
     }
-  });
+  }
   drawSeparator();
 
-  // === TOTALS ===
   drawLeftRightText("Sous-total", formatAmount(data.subtotal, 2), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
 
   if (data.discountAmount > 0) {
-    const discLabel = data.globalDiscountPercent > 0 ? `Remise (${data.globalDiscountPercent}%)` : "Remises";
+    const discLabel =
+      data.globalDiscountPercent > 0 ? `Remise (${data.globalDiscountPercent}%)` : "Remises";
     drawLeftRightText(discLabel, `-${formatAmount(data.discountAmount, 2)}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
 
@@ -276,21 +405,37 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
   drawLeftRightText("Total a payer", formatAmountWithCurrency(data.total, data.currency, 2), FONT_SIZE_NORMAL);
   drawSeparator("=");
 
-  // === PAYMENTS ===
   y += 1;
-  data.payments.forEach(p => {
-    drawLeftRightText(p.method, formatAmountWithCurrency(p.amount, p.currency, 2), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
-  });
+  for (const p of data.payments) {
+    drawLeftRightText(
+      p.method,
+      formatAmountWithCurrency(p.amount, p.currency, 2),
+      FONT_SIZE_SMALL,
+      false,
+      LINE_HEIGHT_SMALL
+    );
+  }
 
   if (data.change > 0) {
-    drawLeftRightText("Monnaie a rendre", formatAmountWithCurrency(data.change, data.currency, 2), FONT_SIZE_SMALL);
+    drawLeftRightText(
+      "Monnaie a rendre",
+      formatAmountWithCurrency(data.change, data.currency, 2),
+      FONT_SIZE_SMALL,
+      false,
+      LINE_HEIGHT_SMALL
+    );
   }
 
   if (data.isCreditSale && data.amountDue && data.amountDue > 0) {
-    drawLeftRightText("Reste a payer", formatAmountWithCurrency(data.amountDue, data.currency, 2), FONT_SIZE_SMALL);
+    drawLeftRightText(
+      "Reste a payer",
+      formatAmountWithCurrency(data.amountDue, data.currency, 2),
+      FONT_SIZE_SMALL,
+      false,
+      LINE_HEIGHT_SMALL
+    );
   }
 
-  // === LOYALTY POINTS ===
   if (data.showLoyaltyPoints && data.loyaltyPointsEarned && data.loyaltyPointsEarned > 0) {
     y += 1;
     drawSeparator();
@@ -301,73 +446,24 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
     }
   }
 
-  // === FOOTER ===
   y += 1;
   if (data.receiptFooter) {
-    data.receiptFooter.split("\n").forEach(line => drawCenteredText(line.trim(), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL));
+    for (const raw of data.receiptFooter.split("\n")) {
+      drawCenteredWrapped(raw, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    }
   } else {
     drawCenteredText("Merci pour votre achat !", FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
     drawCenteredText("A bientot !", FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
 
   y += 1;
-  doc.setTextColor(158, 158, 158); // gray
+  doc.setTextColor(158, 158, 158);
   drawCenteredText("Powered by Vente Facile", FONT_SIZE_SMALL - 1, false, LINE_HEIGHT_SMALL);
 
-  // Return the PDF blob URL
   const pdfBlob = doc.output("blob");
   return URL.createObjectURL(pdfBlob);
 }
 
-/**
- * Generate and open a PDF receipt in a new tab.
- * For use in synchronous contexts (direct user click).
- */
-export function printReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): void {
-  const pdfUrl = generateReceiptPdfUrl(data, paperWidth);
-  window.open(pdfUrl, "_blank");
-  setTimeout(() => URL.revokeObjectURL(pdfUrl), 5000);
-}
-
-/**
- * Download a PDF receipt file.
- */
-export function sharePdf(pdfUrl: string, filename: string = "recu.pdf"): void {
-  const a = document.createElement("a");
-  a.href = pdfUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-
-  // Libérer la mémoire du blob URL après téléchargement
-  setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
-}
-
-/**
- * Download the receipt as a PDF file
- */
-export function downloadReceipt(data: ReceiptData, paperWidth: PaperWidth = 58): void {
-  const contentWidth = paperWidth - (MARGIN * 2);
-  const height = calculateReceiptHeight(data);
-
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: [paperWidth, height],
-  });
-
-  // Reuse the same generation logic - for now just call printReceipt
-  // In production, we'd refactor to share the generation code
-  doc.save(`recu-${data.reference}.pdf`);
-}
-
-/**
- * Generate receipt text only (for ESC/POS raw printing or preview).
- */
-/**
- * Payment Receipt Data for credit/debt payments
- */
 export interface PaymentReceiptData {
   orgName: string;
   orgAddress?: string;
@@ -380,78 +476,123 @@ export interface PaymentReceiptData {
   paymentReference?: string;
   amountPaid: number;
   currency: string;
-  // For sale-linked payments
   saleReference?: string;
   saleTotalAmount?: number;
   previouslyPaid?: number;
   remainingBalance?: number;
-  // For general debt payments
   previousDebt?: number;
   newDebt?: number;
   cashierName?: string;
   notes?: string;
 }
 
+function estimatePaymentReceiptHeightMm(data: PaymentReceiptData, paperWidth: PaperWidth): number {
+  const contentWidth = paperWidth - MARGIN * 2;
+  const m = new jsPDF(pdfDocOptions(paperWidth, 400));
+  let h = MARGIN + TOP_MARGIN_BEFORE_HEADER + 1;
+
+  h += wrappedLineCount(m, data.orgName.toUpperCase(), contentWidth, FONT_SIZE_NORMAL, true) * LINE_HEIGHT;
+  if (data.orgAddress) {
+    h += wrappedLineCount(m, data.orgAddress, contentWidth, FONT_SIZE_SMALL, false) * LINE_HEIGHT_SMALL;
+  }
+  if (data.orgPhone) {
+    h += wrappedLineCount(m, `Tél: ${data.orgPhone}`, contentWidth, FONT_SIZE_SMALL, false) * LINE_HEIGHT_SMALL;
+  }
+
+  h += 0.5 + 1.5;
+  h += LINE_HEIGHT + 1.5;
+
+  h += 2 * LINE_HEIGHT_SMALL;
+  if (data.cashierName) h += LINE_HEIGHT_SMALL;
+  if (data.customerName) {
+    h += LINE_HEIGHT_SMALL;
+    if (data.customerPhone) h += LINE_HEIGHT_SMALL;
+  }
+  h += 1.5;
+
+  if (data.saleReference) {
+    h += 4 * LINE_HEIGHT_SMALL + 1.5;
+  }
+
+  h += 0.5 + LINE_HEIGHT_SMALL + 0.5 + 1.5 + LINE_HEIGHT + 1.5;
+
+  if (data.paymentReference) h += LINE_HEIGHT_SMALL;
+
+  if (data.previousDebt !== undefined && data.newDebt !== undefined) {
+    h += 1 + 2 * LINE_HEIGHT_SMALL;
+  }
+
+  if (data.notes) {
+    m.setFontSize(FONT_SIZE_SMALL);
+    m.setFont("helvetica", "italic");
+    const noteLines = m.splitTextToSize(data.notes, contentWidth).length;
+    h += 0.5 + noteLines * LINE_HEIGHT_SMALL + 1;
+  }
+
+  h += 1 + 1.5 + 2 * LINE_HEIGHT_SMALL;
+
+  return Math.max(80, h + MARGIN + 6);
+}
+
 /**
  * Generate a payment receipt PDF and return the blob URL.
  */
-export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidth: PaperWidth = 58): string {
+export function generatePaymentReceiptPdfUrl(
+  data: PaymentReceiptData,
+  paperWidth: PaperWidth = 58
+): string {
   const contentWidth = paperWidth - MARGIN * 2;
   const leftX = MARGIN;
+  const rightX = paperWidth - MARGIN;
+  const height = estimatePaymentReceiptHeightMm(data, paperWidth);
+  const doc = new jsPDF(pdfDocOptions(paperWidth, height));
 
-  // Calculate height
-  let estimatedLines = 20; // Base lines
-  if (data.saleReference) estimatedLines += 4;
-  if (data.notes) estimatedLines += 2;
-  const height = Math.max(80, estimatedLines * LINE_HEIGHT + 30);
+  let y = MARGIN + TOP_MARGIN_BEFORE_HEADER + 1;
 
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: [paperWidth, height],
-  });
-
-  let y = MARGIN + 1;
-
-  // Helper functions
   const drawCenteredText = (text: string, fontSize: number, bold = false) => {
     doc.setFontSize(fontSize);
     doc.setFont("helvetica", bold ? "bold" : "normal");
-    const textWidth = doc.getTextWidth(text);
-    doc.text(text, paperWidth / 2 - textWidth / 2, y);
+    doc.text(text, paperWidth / 2, y, { align: "center" });
     y += fontSize === FONT_SIZE_SMALL ? LINE_HEIGHT_SMALL : LINE_HEIGHT;
+  };
+
+  const drawCenteredWrapped = (text: string, fontSize: number, bold: boolean) => {
+    doc.setFontSize(fontSize);
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    const lines = doc.splitTextToSize(text, contentWidth);
+    const lh = fontSize === FONT_SIZE_SMALL ? LINE_HEIGHT_SMALL : LINE_HEIGHT;
+    for (const line of lines) {
+      doc.text(line, paperWidth / 2, y, { align: "center" });
+      y += lh;
+    }
   };
 
   const drawLeftRightText = (left: string, right: string, fontSize: number, bold = false) => {
     doc.setFontSize(fontSize);
     doc.setFont("helvetica", bold ? "bold" : "normal");
     doc.text(left, leftX, y);
-    const rightWidth = doc.getTextWidth(right);
-    doc.text(right, paperWidth - MARGIN - rightWidth, y);
+    doc.text(right, rightX, y, { align: "right" });
     y += fontSize === FONT_SIZE_SMALL ? LINE_HEIGHT_SMALL : LINE_HEIGHT;
   };
 
   const drawSeparator = (char: string = "-") => {
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(char === "=" ? 0.3 : 0.1);
-    doc.line(leftX, y - 1, paperWidth - MARGIN, y - 1);
+    doc.line(leftX, y - 1, rightX, y - 1);
     y += 1.5;
   };
 
-  // Header
   doc.setTextColor(0, 0, 0);
-  drawCenteredText(data.orgName.toUpperCase(), FONT_SIZE_NORMAL, true);
-  if (data.orgAddress) drawCenteredText(data.orgAddress, FONT_SIZE_SMALL);
-  if (data.orgPhone) drawCenteredText(`Tél: ${data.orgPhone}`, FONT_SIZE_SMALL);
+  drawCenteredWrapped(data.orgName.toUpperCase(), FONT_SIZE_NORMAL, true);
+  if (data.orgAddress) drawCenteredWrapped(data.orgAddress, FONT_SIZE_SMALL, false);
+  if (data.orgPhone) drawCenteredWrapped(`Tél: ${data.orgPhone}`, FONT_SIZE_SMALL, false);
 
   y += 0.5;
   drawSeparator("=");
 
-  // Receipt type
   drawCenteredText("REÇU DE PAIEMENT", FONT_SIZE_NORMAL, true);
   drawSeparator();
 
-  // Receipt info
   drawLeftRightText("N°:", data.receiptNumber, FONT_SIZE_SMALL);
   drawLeftRightText("Date:", data.date, FONT_SIZE_SMALL);
   if (data.cashierName) {
@@ -465,7 +606,6 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
   }
   drawSeparator();
 
-  // Sale reference if linked to a sale
   if (data.saleReference) {
     drawLeftRightText("Facture:", data.saleReference, FONT_SIZE_SMALL);
     if (data.saleTotalAmount !== undefined) {
@@ -480,7 +620,6 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
     drawSeparator();
   }
 
-  // Payment details
   y += 0.5;
   drawLeftRightText("Mode:", data.paymentMethod, FONT_SIZE_SMALL);
   y += 0.5;
@@ -492,7 +631,6 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
     drawLeftRightText("Réf:", data.paymentReference, FONT_SIZE_SMALL);
   }
 
-  // Debt summary (for general payments)
   if (data.previousDebt !== undefined && data.newDebt !== undefined) {
     y += 1;
     drawLeftRightText("Dette avant:", formatAmountWithCurrency(data.previousDebt, data.currency), FONT_SIZE_SMALL);
@@ -503,7 +641,6 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
     }
   }
 
-  // Notes
   if (data.notes) {
     y += 0.5;
     doc.setFontSize(FONT_SIZE_SMALL);
@@ -513,73 +650,11 @@ export function generatePaymentReceiptPdfUrl(data: PaymentReceiptData, paperWidt
     y += splitNotes.length * LINE_HEIGHT_SMALL + 1;
   }
 
-  // Footer
   y += 1;
   drawSeparator("=");
   drawCenteredText("Merci pour votre paiement !", FONT_SIZE_SMALL);
   drawCenteredText("Ce reçu fait foi de paiement", FONT_SIZE_SMALL);
 
-  // Return the PDF blob URL
   const pdfBlob = doc.output("blob");
   return URL.createObjectURL(pdfBlob);
-}
-
-/**
- * Print a payment receipt (wrapper that opens in new tab).
- * For synchronous contexts only.
- */
-export function printPaymentReceipt(data: PaymentReceiptData, paperWidth: PaperWidth = 58): void {
-  const pdfUrl = generatePaymentReceiptPdfUrl(data, paperWidth);
-  window.open(pdfUrl, "_blank");
-  setTimeout(() => URL.revokeObjectURL(pdfUrl), 5000);
-}
-
-export function getReceiptText(data: ReceiptData, paperWidth: PaperWidth = 58): string {
-  const cols = paperWidth === 58 ? 32 : 48;
-  const lines: string[] = [];
-
-  const padRight = (str: string, len: number) => str.length >= len ? str.substring(0, len) : str + " ".repeat(len - str.length);
-  const padLeft = (str: string, len: number) => str.length >= len ? str.substring(0, len) : " ".repeat(len - str.length) + str;
-  const centerText = (text: string, width: number) => {
-    if (text.length >= width) return text.substring(0, width);
-    const pad = Math.floor((width - text.length) / 2);
-    return " ".repeat(pad) + text;
-  };
-  const line = (char: string, width: number) => char.repeat(width);
-
-  lines.push(centerText(data.orgName.toUpperCase(), cols));
-  if (data.orgAddress) lines.push(centerText(data.orgAddress, cols));
-  if (data.orgPhone) lines.push(centerText(`Tel: ${data.orgPhone}`, cols));
-  lines.push(line("=", cols));
-
-  if (data.isCreditSale) {
-    lines.push(centerText("** VENTE A CREDIT **", cols));
-    lines.push(line("-", cols));
-  }
-
-  lines.push(`Recu: ${data.reference}`);
-  lines.push(`Date: ${data.date}`);
-  if (data.registerName) lines.push(`Caisse: ${data.registerName}`);
-  if (data.cashierName) lines.push(`Caissier: ${data.cashierName}`);
-  if (data.customerName) {
-    lines.push(`Client: ${data.customerName}`);
-    if (data.customerPhone) lines.push(`Tel: ${data.customerPhone}`);
-  }
-  lines.push(line("-", cols));
-
-  const totalW = paperWidth === 80 ? 12 : 9;
-  const labelW = cols - totalW - 1;
-
-  data.items.forEach(item => {
-    lines.push(`${item.name.substring(0, 20)} x${item.quantity} = ${formatAmount(item.total)}`);
-  });
-
-  lines.push(line("-", cols));
-  lines.push(padRight("TOTAL", labelW) + " " + padLeft(formatAmountWithCurrency(data.total, data.currency), totalW));
-  lines.push(line("=", cols));
-
-  lines.push("");
-  lines.push(centerText("Merci pour votre achat !", cols));
-
-  return lines.join("\n");
 }
