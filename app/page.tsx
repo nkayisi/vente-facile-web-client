@@ -574,6 +574,7 @@ export default function LandingPage() {
                   ? Math.round(yearlyPrice / 12)
                   : monthlyPrice;
                 const totalYearly = yearlyPrice;
+                const planCheckoutUrl = `/dashboard/subscription/checkout?planId=${plan.id}&cycle=${billingCycle}`;
 
                 return (
                   <motion.div
@@ -622,11 +623,32 @@ export default function LandingPage() {
                             {plan.trial_days} jours d&apos;essai gratuit
                           </p>
                         )}
-                        <Link href="/auth/register" className="block pt-2">
-                          <Button className={`w-full ${plan.is_featured ? 'bg-orange-500 hover:bg-orange-600' : ''}`} variant={plan.is_featured ? 'default' : 'outline'}>
-                            {isCustom ? "Essai gratuit" : "Continuer avec ce plan"}
-                          </Button>
-                        </Link>
+                        {isCustom ? (
+                          <Link href="/auth/register" className="block pt-2">
+                            <Button
+                              className={`w-full ${plan.is_featured ? "bg-orange-500 hover:bg-orange-600" : ""}`}
+                              variant={plan.is_featured ? "default" : "outline"}
+                            >
+                              Essai gratuit
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Link
+                            href={
+                              isAuthenticated
+                                ? planCheckoutUrl
+                                : `/auth/login?callbackUrl=${encodeURIComponent(planCheckoutUrl)}`
+                            }
+                            className="block pt-2"
+                          >
+                            <Button
+                              className={`w-full ${plan.is_featured ? "bg-orange-500 hover:bg-orange-600" : ""}`}
+                              variant={plan.is_featured ? "default" : "outline"}
+                            >
+                              Continuer avec ce plan
+                            </Button>
+                          </Link>
+                        )}
                       </CardContent>
                     </Card>
                   </motion.div>

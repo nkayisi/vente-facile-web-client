@@ -240,6 +240,47 @@ export async function getCurrentSubscription(
   }
 }
 
+export type MokoOperator = "airtel" | "orange" | "mpesa" | "africell";
+
+export interface MokoInitiatePayload {
+  plan_id: string;
+  billing_cycle: "monthly" | "quarterly" | "yearly";
+  method: MokoOperator;
+  customer_number: string;
+}
+
+export interface MokoInitiateResponse {
+  reference: string;
+  transaction_id: string | null;
+  subscription_activated: boolean;
+  moko_ack_success: boolean;
+  message: string;
+}
+
+export async function initiateMokoSubscriptionPayment(
+  accessToken: string,
+  organizationId: string,
+  payload: MokoInitiatePayload
+): Promise<ApiResponse<MokoInitiateResponse>> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/subscriptions/moko/initiate/`,
+      payload,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    const d = error?.response?.data?.detail;
+    const msg =
+      typeof d === "string"
+        ? d
+        : Array.isArray(d)
+          ? d.map((x: { string?: string }) => x?.string || "").join(" ")
+          : "Erreur lors du paiement";
+    return { success: false, error: msg };
+  }
+}
+
 export async function activateSubscription(
   accessToken: string,
   organizationId: string,

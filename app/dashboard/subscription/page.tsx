@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { useSubscription } from "@/components/auth/subscription-guard";
@@ -8,50 +9,28 @@ import {
   getPlans,
   getSubscriptionPayments,
   getSubscriptionInvoices,
-  activateSubscription,
   Plan,
   SubscriptionPayment,
   SubscriptionInvoice,
-  ActivateSubscriptionData,
 } from "@/actions/subscription.actions";
 import { formatPrice } from "@/lib/format";
 import { toast } from "sonner";
 import {
   Crown,
   CreditCard,
-  Clock,
   Check,
   Shield,
   Users,
   Building2,
   Package,
   HardDrive,
-  Receipt,
   Loader2,
-  ChevronRight,
   Star,
   Zap,
-  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -84,22 +63,15 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
 };
 
 export default function SubscriptionPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const { organization } = useOrganization();
-  const { subscriptionStatus, refreshSubscription } = useSubscription();
+  const { subscriptionStatus } = useSubscription();
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [payments, setPayments] = useState<SubscriptionPayment[]>([]);
   const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Dialog state
-  const [showActivateDialog, setShowActivateDialog] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
-  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
-  const [paymentMethod, setPaymentMethod] = useState<string>("mobile_money");
-  const [paymentReference, setPaymentReference] = useState("");
-  const [isActivating, setIsActivating] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -127,55 +99,8 @@ export default function SubscriptionPage() {
   }, [session?.accessToken, organization]);
 
   function handleSelectPlan(plan: Plan) {
-    setSelectedPlan(plan);
-    setBillingCycle("monthly");
-    setPaymentReference("");
-    setShowActivateDialog(true);
-  }
-
-  async function handleActivate() {
-    if (!session?.accessToken || !organization?.id || !selectedPlan) return;
-
-    setIsActivating(true);
-    try {
-      const price =
-        billingCycle === "yearly"
-          ? parseFloat(selectedPlan.price_yearly)
-          : parseFloat(selectedPlan.price_monthly);
-
-      const data: ActivateSubscriptionData = {
-        plan_id: selectedPlan.id,
-        billing_cycle: billingCycle,
-        payment_method: paymentMethod as ActivateSubscriptionData["payment_method"],
-        amount: price,
-        reference: paymentReference,
-      };
-
-      const result = await activateSubscription(
-        session.accessToken,
-        organization.id,
-        data
-      );
-
-      if (result.success) {
-        toast.success("Abonnement activé avec succès !");
-        setShowActivateDialog(false);
-        await refreshSubscription();
-        // Reload payments & invoices
-        const [paymentsRes, invoicesRes] = await Promise.all([
-          getSubscriptionPayments(session.accessToken, organization.id),
-          getSubscriptionInvoices(session.accessToken, organization.id),
-        ]);
-        if (paymentsRes.success && paymentsRes.data) setPayments(paymentsRes.data);
-        if (invoicesRes.success && invoicesRes.data) setInvoices(invoicesRes.data);
-      } else {
-        toast.error(result.error || "Erreur lors de l'activation");
-      }
-    } catch {
-      toast.error("Erreur lors de l'activation");
-    } finally {
-      setIsActivating(false);
-    }
+    const q = new URLSearchParams({ planId: plan.id, cycle: "monthly" });
+    router.push(`/dashboard/subscription/checkout?${q.toString()}`);
   }
 
   const subscription = subscriptionStatus?.subscription;
@@ -491,86 +416,6 @@ export default function SubscriptionPage() {
           </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Dialog d'information - Paiement non disponible */}
-      <Dialog open={showActivateDialog} onOpenChange={setShowActivateDialog}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-xl">Souscrire à un abonnement</DialogTitle>
-          </DialogHeader>
-
-          {selectedPlan && (
-            <div className="space-y-6">
-              {/* Plan sélectionné */}
-              <div className="bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-200 rounded-xl p-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="font-bold text-xl text-orange-900">{selectedPlan.name}</p>
-                    <p className="text-sm text-orange-700 mt-1">{selectedPlan.description}</p>
-                  </div>
-                  <Crown className="h-8 w-8 text-orange-500" />
-                </div>
-                <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-2xl font-bold text-orange-800">
-                    {parseFloat(selectedPlan.price_monthly) > 0
-                      ? selectedPlan.price_monthly
-                      : "Gratuit"}
-                  </span>
-                  {parseFloat(selectedPlan.price_monthly) > 0 && (
-                    <span className="text-orange-600 text-sm">{selectedPlan.currency.symbol}/mois</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Message paiement non disponible */}
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
-                <div className="flex gap-4">
-                  <div className="flex-shrink-0">
-                    <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
-                      <Lock className="h-6 w-6 text-amber-600" />
-                    </div>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-amber-900 text-base">
-                      Paiement en ligne bientôt disponible
-                    </h3>
-                    <p className="text-sm text-amber-800 mt-2 leading-relaxed">
-                      Le système de paiement en ligne est en cours de configuration.
-                      Pour activer votre abonnement, veuillez contacter notre équipe
-                      qui se chargera de l&apos;activation manuelle.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Coordonnées de contact */}
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                <h3 className="font-semibold mb-3">Contactez-nous</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">📧</span>
-                    <span className="text-gray-700">cdirinfo25@gmail.com</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">📱</span>
-                    <span className="text-gray-700">+243 835 957 939</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowActivateDialog(false)}
-              className="w-full"
-            >
-              Fermer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
