@@ -153,8 +153,8 @@ export default function AdminOrganizationsPage() {
         <p className="text-muted-foreground">{totalCount} commerce{totalCount > 1 ? "s" : ""} enregistré{totalCount > 1 ? "s" : ""}</p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 relative">
+      <div className="flex flex-col sm:flex-row justify-between gap-3">
+        <div className="flex-1 relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Rechercher..."
@@ -163,6 +163,7 @@ export default function AdminOrganizationsPage() {
             className="pl-9"
           />
         </div>
+        <div className="grid grid-cols-2 gap-3">
         <Select
           value={statusFilter}
           onValueChange={(v) => {
@@ -196,6 +197,7 @@ export default function AdminOrganizationsPage() {
             ))}
           </SelectContent>
         </Select>
+        </div>
       </div>
 
       <Card className="border">

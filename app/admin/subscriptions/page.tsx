@@ -330,11 +330,12 @@ export default function AdminSubscriptionsPage() {
         </Button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 relative">
+      <div className="flex flex-col sm:flex-row justify-between gap-3">
+        <div className="flex-1 max-w-sm relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Rechercher..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" />
         </div>
+        <div className="grid grid-cols-2 gap-3">
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Statut" /></SelectTrigger>
           <SelectContent>
@@ -355,6 +356,7 @@ export default function AdminSubscriptionsPage() {
             <SelectItem value="yearly">Annuel</SelectItem>
           </SelectContent>
         </Select>
+        </div>
       </div>
 
       <Card className="border">

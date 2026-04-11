@@ -42,7 +42,7 @@ export function useSubscription() {
 }
 
 // Pages autorisées même sans abonnement
-const ALLOWED_PATHS = ["/dashboard/subscription"];
+const ALLOWED_PATHS = ["/dashboard/subscription", "/payment"];
 
 export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();

@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { getDefaultRedirectPath } from "@/lib/auth/redirect";
 import { NextResponse } from "next/server";
 
 // Routes publiques (accessibles sans authentification)
@@ -11,6 +12,7 @@ const AUTH_ROUTES = ["/auth/login", "/auth/register"];
 const PROTECTED_ROUTE_PREFIXES = [
   "/dashboard",
   "/admin",
+  "/payment",
   "/products",
   "/sales",
   "/customers",
@@ -57,8 +59,9 @@ export default auth((req) => {
 
   // 2. Utilisateur connecté essaie d'accéder aux pages d'auth
   if (isLoggedIn && hasValidToken && isAuthRoute) {
-    console.log("[Middleware] Utilisateur connecté, redirection vers dashboard");
-    return NextResponse.redirect(new URL("/dashboard", nextUrl));
+    const redirectPath = getDefaultRedirectPath(session?.isStaff);
+    console.log(`[Middleware] Utilisateur connecté, redirection vers ${redirectPath}`);
+    return NextResponse.redirect(new URL(redirectPath, nextUrl));
   }
 
   // 3. Utilisateur non connecté essaie d'accéder à une route protégée

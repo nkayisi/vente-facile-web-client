@@ -85,7 +85,7 @@ export default function SubscriptionPage() {
         ]);
 
         if (plansRes.success && plansRes.data) {
-          setPlans(plansRes.data.filter((p) => p.code !== "trial"));
+          setPlans(plansRes.data.filter((p) => p.code.toLowerCase() !== "trial"));
         }
         if (paymentsRes.success && paymentsRes.data) setPayments(paymentsRes.data);
         if (invoicesRes.success && invoicesRes.data) setInvoices(invoicesRes.data);
@@ -100,7 +100,7 @@ export default function SubscriptionPage() {
 
   function handleSelectPlan(plan: Plan) {
     const q = new URLSearchParams({ planId: plan.id, cycle: "monthly" });
-    router.push(`/dashboard/subscription/checkout?${q.toString()}`);
+    router.push(`/payment/checkout?${q.toString()}`);
   }
 
   const subscription = subscriptionStatus?.subscription;

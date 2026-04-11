@@ -1,8 +1,10 @@
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "next-auth/jwt";
+import { refreshWithMutex } from "./refresh-mutex";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+const isDev = process.env.NODE_ENV === "development";
 
 // Durées de validité des tokens (en millisecondes)
 // Doit correspondre à la configuration SIMPLE_JWT du backend Django
@@ -11,14 +13,20 @@ const REFRESH_TOKEN_LIFETIME = 7 * 24 * 60 * 60 * 1000; // 7 jours (backend: 7 j
 // Rafraîchir 2 minutes avant l'expiration pour éviter les problèmes de timing
 const REFRESH_BUFFER = 2 * 60 * 1000; // 2 minutes
 
+// Nombre de tentatives de retry sur erreur réseau
+const MAX_REFRESH_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
+
 /**
- * Rafraîchit le token d'accès en utilisant le refresh token
+ * Rafraîchit le token d'accès en utilisant le refresh token.
+ * Inclut une logique de retry pour les erreurs réseau temporaires.
  */
-async function refreshAccessToken(token: JWT): Promise<JWT> {
+async function refreshAccessTokenInternal(token: JWT, retryCount = 0): Promise<JWT> {
   try {
-    console.log("[Auth] Tentative de rafraîchissement du token...");
-    console.log("[Auth] Refresh token (premiers 20 chars):", token.refreshToken?.substring(0, 20));
-    console.log("[Auth] Refresh token expires:", token.refreshTokenExpires ? new Date(token.refreshTokenExpires).toISOString() : "N/A");
+    if (isDev) {
+      console.log("[Auth] Tentative de rafraîchissement du token...");
+      console.log("[Auth] Refresh token expires:", token.refreshTokenExpires ? new Date(token.refreshTokenExpires as number).toISOString() : "N/A");
+    }
 
     const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
       method: "POST",
@@ -32,10 +40,28 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error("[Auth] Échec du rafraîchissement:", response.status, errorData);
-      console.error("[Auth] Refresh token utilisé (premiers 20 chars):", token.refreshToken?.substring(0, 20));
+      console.error("[Auth] Échec du rafraîchissement:", response.status);
+      if (isDev) {
+        console.error("[Auth] Détails:", errorData);
+      }
 
-      // Le refresh token est invalide ou expiré
+      // 401/403 = refresh token invalide, pas de retry
+      if (response.status === 401 || response.status === 403) {
+        return {
+          ...token,
+          accessToken: undefined,
+          accessTokenExpires: 0,
+          error: "RefreshAccessTokenError",
+        };
+      }
+
+      // Autres erreurs (5xx, etc.) : retry si possible
+      if (retryCount < MAX_REFRESH_RETRIES - 1) {
+        console.log(`[Auth] Retry ${retryCount + 1}/${MAX_REFRESH_RETRIES} dans ${RETRY_DELAY_MS}ms...`);
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (retryCount + 1)));
+        return refreshAccessTokenInternal(token, retryCount + 1);
+      }
+
       return {
         ...token,
         accessToken: undefined,
@@ -45,7 +71,9 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
     }
 
     const refreshedTokens = await response.json();
-    console.log("[Auth] Token rafraîchi avec succès");
+    if (isDev) {
+      console.log("[Auth] Token rafraîchi avec succès");
+    }
 
     // Si le backend renvoie un nouveau refresh token (ROTATE_REFRESH_TOKENS=True),
     // on le stocke avec une nouvelle expiration. Sinon, on conserve l'ancien.
@@ -63,7 +91,14 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
       error: undefined,
     };
   } catch (error) {
-    console.error("[Auth] Erreur lors du rafraîchissement:", error);
+    // Erreur réseau : retry si possible
+    if (retryCount < MAX_REFRESH_RETRIES - 1) {
+      console.log(`[Auth] Erreur réseau, retry ${retryCount + 1}/${MAX_REFRESH_RETRIES}...`);
+      await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (retryCount + 1)));
+      return refreshAccessTokenInternal(token, retryCount + 1);
+    }
+
+    console.error("[Auth] Erreur lors du rafraîchissement après tous les retries:", error);
     return {
       ...token,
       accessToken: undefined,
@@ -71,6 +106,13 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
       error: "RefreshAccessTokenError",
     };
   }
+}
+
+/**
+ * Wrapper avec mutex pour éviter les race conditions lors du refresh.
+ */
+async function refreshAccessToken(token: JWT): Promise<JWT> {
+  return refreshWithMutex(token, refreshAccessTokenInternal);
 }
 
 export const authConfig: NextAuthConfig = {

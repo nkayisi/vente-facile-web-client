@@ -63,8 +63,8 @@ export default function AdminDashboardPage() {
   const statCards = [
     { title: "Établissements", value: formatNumber(stats.total_organizations), sub: `${stats.active_organizations} actifs`, icon: Building2, color: "text-primary" },
     { title: "Utilisateurs", value: formatNumber(stats.total_users), sub: `+${stats.new_users_this_month} ce mois`, icon: Users, color: "text-blue-600" },
-    { title: "Revenu total", value: formatPrice(parseFloat(stats.total_revenue)), icon: DollarSign, color: "text-green-600" },
-    { title: "Revenu mensuel", value: formatPrice(parseFloat(stats.revenue_this_month)), icon: TrendingUp, color: "text-violet-600" },
+    { title: "Revenu total", value: parseFloat(stats.total_revenue), icon: DollarSign, color: "text-green-600" },
+    { title: "Revenu mensuel", value: parseFloat(stats.revenue_this_month), icon: TrendingUp, color: "text-violet-600" },
   ];
 
   const subscriptionStatusData = Object.entries(stats.subscriptions_by_status).map(
@@ -83,7 +83,7 @@ export default function AdminDashboardPage() {
         <p className="text-muted-foreground">Vue d&apos;ensemble de la plateforme</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((card) => (
           <Card key={card.title} className="border">
             <CardContent>

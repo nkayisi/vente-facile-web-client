@@ -26,7 +26,7 @@ export function AdminHeader({ onMenuClick }: AdminHeaderProps) {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-border px-4 lg:px-6 flex items-center justify-between">
+    <header className="h-16 bg-white border-b border-border px-2 lg:px-6 flex items-center justify-between">
       <Button
         variant="ghost"
         size="icon"

@@ -117,9 +117,9 @@ export default function LandingPage() {
 
           <div className="hidden md:flex items-center space-x-4">
             {isAuthenticated ? (
-              <Link href="/dashboard">
+              <Link href={session?.isStaff ? "/admin" : "/dashboard"}>
                 <Button className="bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/25">
-                  Mon compte
+                  {session?.isStaff ? "Administration" : "Mon compte"}
                 </Button>
               </Link>
             ) : (
@@ -167,9 +167,9 @@ export default function LandingPage() {
             </Link>
             <div className="pt-4 space-y-2">
               {isAuthenticated ? (
-                <Link href="/dashboard" className="block">
+                <Link href={session?.isStaff ? "/admin" : "/dashboard"} className="block">
                   <Button className="w-full bg-orange-500 hover:bg-orange-600">
-                    Mon compte
+                    {session?.isStaff ? "Administration" : "Mon compte"}
                   </Button>
                 </Link>
               ) : (
@@ -574,7 +574,7 @@ export default function LandingPage() {
                   ? Math.round(yearlyPrice / 12)
                   : monthlyPrice;
                 const totalYearly = yearlyPrice;
-                const planCheckoutUrl = `/dashboard/subscription/checkout?planId=${plan.id}&cycle=${billingCycle}`;
+                const planCheckoutUrl = `/payment/checkout?planId=${plan.id}&cycle=${billingCycle}`;
 
                 return (
                   <motion.div

@@ -12,11 +12,12 @@ import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
 import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 import { getUserOrganizations } from "@/actions/organization.actions";
+import { getDefaultRedirectPath } from "@/lib/auth/redirect";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const callbackUrlParam = searchParams.get("callbackUrl");
   const sessionError = searchParams.get("error");
   const [isLoading, setIsLoading] = useState(false);
   const [isCleaningSession, setIsCleaningSession] = useState(false);
@@ -66,7 +67,7 @@ function LoginForm() {
     // Validation du mot de passe
     if (!formData.password) {
       newErrors.password = "Le mot de passe est requis";
-    } 
+    }
     // else if (formData.password.length < 6) {
     //   newErrors.password = "Le mot de passe doit contenir au moins 6 caractères";
     // }
@@ -105,11 +106,16 @@ function LoginForm() {
       if (result?.ok) {
         toast.success("Connexion réussie !");
         const updatedSession = await getSession();
-        if (updatedSession?.isStaff) {
-          router.push("/admin");
-        } else {
-          router.push(callbackUrl);
-        }
+
+        // Déterminer la redirection :
+        // - Si callbackUrl spécifique (autre que /dashboard), l'utiliser
+        // - Sinon, rediriger selon le type d'utilisateur (admin -> /admin, user -> /dashboard)
+        const defaultPath = getDefaultRedirectPath(updatedSession?.isStaff);
+        const shouldUseCallback = callbackUrlParam &&
+          callbackUrlParam !== "/dashboard" &&
+          !callbackUrlParam.startsWith("/dashboard");
+
+        router.push(shouldUseCallback ? callbackUrlParam : defaultPath);
         router.refresh();
       }
     } catch (error) {
@@ -176,17 +182,7 @@ function LoginForm() {
             )}
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <input
-                id="remember"
-                type="checkbox"
-                className="rounded border-gray-300"
-              />
-              <Label htmlFor="remember" className="text-sm">
-                Se souvenir de moi
-              </Label>
-            </div>
+          <div className="flex items-center justify-end">
             <Link
               href="/auth/forgot-password"
               className="text-sm text-orange-600 hover:underline"

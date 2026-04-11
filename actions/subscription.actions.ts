@@ -338,3 +338,36 @@ export async function getSubscriptionInvoices(
     };
   }
 }
+
+// ============================================================================
+// MOKO Payment Status Polling
+// ============================================================================
+
+export interface MokoPaymentStatusResponse {
+  status: "pending" | "completed" | "failed" | "unknown";
+  message: string;
+  subscription_activated: boolean;
+}
+
+export async function checkMokoPaymentStatus(
+  accessToken: string,
+  organizationId: string,
+  reference: string
+): Promise<ApiResponse<MokoPaymentStatusResponse>> {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/subscriptions/moko/status/`,
+      {
+        headers: getHeaders(accessToken, organizationId),
+        params: { reference },
+      }
+    );
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    const detail = error?.response?.data?.detail;
+    return {
+      success: false,
+      error: typeof detail === "string" ? detail : "Erreur lors de la vérification du statut",
+    };
+  }
+}
