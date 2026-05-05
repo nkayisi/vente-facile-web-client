@@ -1768,37 +1768,37 @@ export default function ReportsPage() {
           {/* Profit Summary */}
           {profitMargins && (
             <div className="space-y-2">
-            <p className="text-xs text-gray-500">
-              Marges calculées sur le CA hors TVA, après remises (lignes et globale). Le bénéfice net déduit les dépenses enregistrées comme payées sur la période.
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Card className="p-0">
-                <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">CA (HT net)</p>
-                  <p className="text-xl mt-1 font-bold">{formatPrice(parseFloat(profitMargins.total_revenue))}</p>
-                </CardContent>
-              </Card>
-              <Card className="p-0">
-                <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Coût des marchandises</p>
-                  <p className="text-xl mt-1 font-bold">{formatPrice(parseFloat(profitMargins.total_cost))}</p>
-                </CardContent>
-              </Card>
-              <Card className="p-0">
-                <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Bénéfice brut</p>
-                  <p className="text-xl mt-1 font-bold text-green-600">{formatPrice(parseFloat(profitMargins.gross_profit))}</p>
-                  <p className="text-xs float-right text-green-600">Marge: {profitMargins.gross_margin_percentage}%</p>
-                </CardContent>
-              </Card>
-              <Card className="p-0">
-                <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Bénéfice net</p>
-                  <p className="text-xl mt-1 font-bold text-purple-600">{formatPrice(parseFloat(profitMargins.net_profit))}</p>
-                  <p className="text-xs float-right text-purple-600">Marge: {profitMargins.net_margin_percentage}%</p>
-                </CardContent>
-              </Card>
-            </div>
+              <p className="text-xs text-gray-500">
+                Marges calculées sur le CA hors TVA, après remises (lignes et globale). Le bénéfice net déduit les dépenses enregistrées comme payées sur la période.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <Card className="p-0">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-gray-500">CA (HT net)</p>
+                    <p className="text-xl mt-1 font-bold">{formatPrice(parseFloat(profitMargins.total_revenue))}</p>
+                  </CardContent>
+                </Card>
+                <Card className="p-0">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-gray-500">Coût des marchandises</p>
+                    <p className="text-xl mt-1 font-bold">{formatPrice(parseFloat(profitMargins.total_cost))}</p>
+                  </CardContent>
+                </Card>
+                <Card className="p-0">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-gray-500">Bénéfice brut</p>
+                    <p className="text-xl mt-1 font-bold text-green-600">{formatPrice(parseFloat(profitMargins.gross_profit))}</p>
+                    <p className="text-xs float-right text-green-600">Marge: {profitMargins.gross_margin_percentage}%</p>
+                  </CardContent>
+                </Card>
+                <Card className="p-0">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-gray-500">Bénéfice net</p>
+                    <p className="text-xl mt-1 font-bold text-purple-600">{formatPrice(parseFloat(profitMargins.net_profit))}</p>
+                    <p className="text-xs float-right text-purple-600">Marge: {profitMargins.net_margin_percentage}%</p>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           )}
 

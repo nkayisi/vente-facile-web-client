@@ -47,7 +47,18 @@ export interface ReceiptData {
   showLoyaltyPoints?: boolean;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
+  /** Document d’offre — pas de vente, pas de paiement affiché */
+  isProforma?: boolean;
 }
+
+const PROFORMA_BANNER = "** FACTURE PROFORMA **";
+const PROFORMA_SUBTITLE = "Sans valeur comptable / non fiscale";
+
+const PROFORMA_FOOTER_LINES = [
+  "Document sans valeur comptable.",
+  "Ne constitue pas une facture.",
+  "Stocks non réservés.",
+];
 
 type PaperWidth = 58 | 80;
 
@@ -121,7 +132,9 @@ function estimateSaleReceiptHeightMm(data: ReceiptData, paperWidth: PaperWidth):
 
   h += 0.5 + LINE_HEIGHT_SMALL;
 
-  if (data.isCreditSale) {
+  if (data.isProforma) {
+    h += LINE_HEIGHT + LINE_HEIGHT_SMALL + LINE_HEIGHT_SMALL;
+  } else if (data.isCreditSale) {
     h += LINE_HEIGHT + LINE_HEIGHT_SMALL;
   }
 
@@ -150,11 +163,18 @@ function estimateSaleReceiptHeightMm(data: ReceiptData, paperWidth: PaperWidth):
   h += 0.5 + LINE_HEIGHT_SMALL + LINE_HEIGHT + LINE_HEIGHT_SMALL;
 
   h += 1;
-  h += data.payments.length * LINE_HEIGHT_SMALL;
-  if (data.change > 0) h += LINE_HEIGHT_SMALL;
-  if (data.isCreditSale && data.amountDue && data.amountDue > 0) h += LINE_HEIGHT_SMALL;
+  if (!data.isProforma) {
+    h += data.payments.length * LINE_HEIGHT_SMALL;
+    if (data.change > 0) h += LINE_HEIGHT_SMALL;
+    if (data.isCreditSale && data.amountDue && data.amountDue > 0) h += LINE_HEIGHT_SMALL;
+  }
 
-  if (data.showLoyaltyPoints && data.loyaltyPointsEarned && data.loyaltyPointsEarned > 0) {
+  if (
+    !data.isProforma &&
+    data.showLoyaltyPoints &&
+    data.loyaltyPointsEarned &&
+    data.loyaltyPointsEarned > 0
+  ) {
     h += 1 + LINE_HEIGHT_SMALL + LINE_HEIGHT_SMALL * 2;
     if (data.loyaltyPointsBalance !== undefined) h += LINE_HEIGHT_SMALL;
   }
@@ -163,6 +183,11 @@ function estimateSaleReceiptHeightMm(data: ReceiptData, paperWidth: PaperWidth):
   if (data.receiptFooter) {
     for (const raw of data.receiptFooter.split("\n")) {
       const n = wrappedLineCount(m, raw.trim(), contentWidth, FONT_SIZE_SMALL, false);
+      h += Math.max(1, n) * LINE_HEIGHT_SMALL;
+    }
+  } else if (data.isProforma) {
+    for (const line of PROFORMA_FOOTER_LINES) {
+      const n = wrappedLineCount(m, line, contentWidth, FONT_SIZE_SMALL, false);
       h += Math.max(1, n) * LINE_HEIGHT_SMALL;
     }
   } else {
@@ -338,12 +363,21 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
   y += 0.5;
   drawSeparator("=");
 
-  if (data.isCreditSale) {
+  if (data.isProforma) {
+    drawCenteredText(PROFORMA_BANNER, FONT_SIZE_NORMAL, true);
+    drawCenteredText(PROFORMA_SUBTITLE, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    drawSeparator();
+  } else if (data.isCreditSale) {
     drawCenteredText("** VENTE A CREDIT **", FONT_SIZE_NORMAL, true);
     drawSeparator();
   }
 
-  drawLeftText(`Recu: ${data.reference}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+  drawLeftText(
+    `${data.isProforma ? "Ref proforma" : "Recu"}: ${data.reference}`,
+    FONT_SIZE_SMALL,
+    false,
+    LINE_HEIGHT_SMALL
+  );
   drawLeftText(`Date: ${data.date}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   if (data.registerName) drawLeftText(`Caisse: ${data.registerName}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   if (data.cashierName) drawLeftText(`Caissier: ${data.cashierName}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
@@ -402,41 +436,52 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
 
   y += 0.5;
   drawSeparator("=");
-  drawLeftRightText("Total a payer", formatAmountWithCurrency(data.total, data.currency, 2), FONT_SIZE_NORMAL);
+  drawLeftRightText(
+    data.isProforma ? "Total (estimatif)" : "Total a payer",
+    formatAmountWithCurrency(data.total, data.currency, 2),
+    FONT_SIZE_NORMAL
+  );
   drawSeparator("=");
 
   y += 1;
-  for (const p of data.payments) {
-    drawLeftRightText(
-      p.method,
-      formatAmountWithCurrency(p.amount, p.currency, 2),
-      FONT_SIZE_SMALL,
-      false,
-      LINE_HEIGHT_SMALL
-    );
+  if (!data.isProforma) {
+    for (const p of data.payments) {
+      drawLeftRightText(
+        p.method,
+        formatAmountWithCurrency(p.amount, p.currency, 2),
+        FONT_SIZE_SMALL,
+        false,
+        LINE_HEIGHT_SMALL
+      );
+    }
+
+    if (data.change > 0) {
+      drawLeftRightText(
+        "Monnaie a rendre",
+        formatAmountWithCurrency(data.change, data.currency, 2),
+        FONT_SIZE_SMALL,
+        false,
+        LINE_HEIGHT_SMALL
+      );
+    }
+
+    if (data.isCreditSale && data.amountDue && data.amountDue > 0) {
+      drawLeftRightText(
+        "Reste a payer",
+        formatAmountWithCurrency(data.amountDue, data.currency, 2),
+        FONT_SIZE_SMALL,
+        false,
+        LINE_HEIGHT_SMALL
+      );
+    }
   }
 
-  if (data.change > 0) {
-    drawLeftRightText(
-      "Monnaie a rendre",
-      formatAmountWithCurrency(data.change, data.currency, 2),
-      FONT_SIZE_SMALL,
-      false,
-      LINE_HEIGHT_SMALL
-    );
-  }
-
-  if (data.isCreditSale && data.amountDue && data.amountDue > 0) {
-    drawLeftRightText(
-      "Reste a payer",
-      formatAmountWithCurrency(data.amountDue, data.currency, 2),
-      FONT_SIZE_SMALL,
-      false,
-      LINE_HEIGHT_SMALL
-    );
-  }
-
-  if (data.showLoyaltyPoints && data.loyaltyPointsEarned && data.loyaltyPointsEarned > 0) {
+  if (
+    !data.isProforma &&
+    data.showLoyaltyPoints &&
+    data.loyaltyPointsEarned &&
+    data.loyaltyPointsEarned > 0
+  ) {
     y += 1;
     drawSeparator();
     drawCenteredText("*** POINTS DE FIDELITE ***", FONT_SIZE_SMALL, true, LINE_HEIGHT_SMALL);
@@ -450,6 +495,10 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
   if (data.receiptFooter) {
     for (const raw of data.receiptFooter.split("\n")) {
       drawCenteredWrapped(raw, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    }
+  } else if (data.isProforma) {
+    for (const line of PROFORMA_FOOTER_LINES) {
+      drawCenteredWrapped(line, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
     }
   } else {
     drawCenteredText("Merci pour votre achat !", FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);

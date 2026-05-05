@@ -51,6 +51,7 @@ import {
   X,
   Printer,
   Receipt,
+  FileText,
   HandCoins,
   CircleDollarSign,
   Star,
@@ -117,6 +118,7 @@ export default function POSPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isGeneratingProforma, setIsGeneratingProforma] = useState(false);
   const [isCreditSale, setIsCreditSale] = useState(false);
   const [paymentReference, setPaymentReference] = useState("");
 
@@ -713,7 +715,7 @@ export default function POSPage() {
         });
 
         // Mark receipt as printed
-        markReceiptPrinted(session.accessToken, organization.id, result.data.id).catch((err: any) => {
+        markReceiptPrinted(session.accessToken, organization.id, result.data.id).catch((err: unknown) => {
           console.error("Failed to mark receipt as printed:", err);
         });
 
@@ -770,6 +772,94 @@ export default function POSPage() {
       toast.error("Une erreur est survenue lors du paiement");
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  /** PDF proforma uniquement — aucun appel API vente, pas de mouvement de stock. */
+  const handleGenerateProforma = () => {
+    const total = calculateTotal();
+    if (cart.length === 0) {
+      toast.error("Le panier est vide");
+      return;
+    }
+    if (total < 0) {
+      toast.error("Le total ne peut pas être négatif.");
+      return;
+    }
+    if (!organization || !currentSession) {
+      toast.error("Session invalide");
+      return;
+    }
+
+    const printTab = openPrintTab();
+    setIsGeneratingProforma(true);
+
+    try {
+      const dateCompact = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const ref = `PROF-${dateCompact}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      const paperWidth = (orgSettings?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
+      const primaryCode = getPrimaryCurrency()?.currency_code || "CDF";
+
+      const receiptData: ReceiptData = {
+        orgName: organization.name || "Vente Facile",
+        orgAddress: organization.address || undefined,
+        orgPhone: organization.phone || undefined,
+        registerName: currentSession.register_name,
+        cashierName: currentSession.opened_by_name,
+        reference: ref,
+        date: new Date().toLocaleString("fr-CD"),
+        customerName: selectedCustomer?.name,
+        customerPhone: selectedCustomer?.phone || undefined,
+        items: cart.map(item => ({
+          name: item.product.name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          discount_percentage: item.discount_percentage,
+          total: r2(item.quantity * item.unit_price * (1 - item.discount_percentage / 100)),
+        })),
+        subtotal: calculateSubtotal(),
+        taxAmount: calculateTax(),
+        discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount()),
+        globalDiscountPercent: globalDiscount,
+        total,
+        payments: [],
+        amountPaid: 0,
+        change: 0,
+        currency: primaryCode,
+        receiptHeader: orgSettings?.receipt_header || undefined,
+        isProforma: true,
+        isCreditSale: false,
+        showLoyaltyPoints: false,
+      };
+
+      const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
+      const pdfOutcome = assignPdfToPrintWindow(printTab, pdfUrl, {
+        filename: `proforma-${ref}.pdf`,
+      });
+
+      toast.success(`Proforma ${ref}`, {
+        description:
+          pdfOutcome === "opened"
+            ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
+            : "PDF téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+      });
+
+      setCart([]);
+      setSelectedCustomer(null);
+      setGlobalDiscount(0);
+      setPaymentAmount("");
+      setPaymentReference("");
+      setIsCreditSale(false);
+      setShowPaymentDialog(false);
+      setUsePoints(false);
+      setPointsToUse(0);
+      setCustomerLoyalty(null);
+      setShowMobileCart(false);
+    } catch {
+      closePrintTabIfBlank(printTab);
+      toast.error("Erreur lors de la génération du PDF");
+    } finally {
+      setIsGeneratingProforma(false);
     }
   };
 
@@ -1170,7 +1260,7 @@ export default function POSPage() {
       {showMobileCart && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileCart(false)} />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[85vh] flex flex-col animate-in slide-in-from-bottom duration-300">
+          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[85vh] flex min-h-0 flex-col animate-in slide-in-from-bottom duration-300">
             {/* Mobile Cart Handle */}
             <div className="flex items-center justify-center pt-3 pb-1">
               <div className="w-10 h-1 bg-gray-300 rounded-full" />
@@ -1211,7 +1301,7 @@ export default function POSPage() {
               </div>
             </div>
             {/* Mobile Cart Items */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3">
               {cart.map((item, index) => {
                 const stockAvailable = getAvailableStock(item.product);
                 const overStock = item.product.track_inventory && !item.product.allow_negative_stock && item.quantity > stockAvailable;
@@ -1264,10 +1354,10 @@ export default function POSPage() {
                 );
               })}
             </div>
-            {/* Mobile Cart Footer */}
-            <div className="p-4 border-t space-y-3">
+            {/* Mobile Cart Footer — compact pour laisser max. de place aux lignes */}
+            <div className="shrink-0 border-t px-3 py-2.5 space-y-2">
               <div className="flex items-center gap-2">
-                <Percent className="h-4 w-4 text-gray-400" />
+                <Percent className="h-4 w-4 shrink-0 text-gray-400" />
                 <Input
                   type="number"
                   placeholder="Remise %"
@@ -1278,31 +1368,50 @@ export default function POSPage() {
                   max={MAX_SALE_DISCOUNT_PERCENT}
                 />
               </div>
-              <div className="flex justify-between text-lg font-bold">
+              <div className="flex justify-between text-base font-bold">
                 <span>Total</span>
                 <span className="text-orange-600">{formatPrice(total)}</span>
               </div>
-              <Button
-                className="w-full h-12 text-lg bg-orange-500 hover:bg-orange-600"
-                disabled={cart.length === 0 || total < 0}
-                onClick={() => {
-                  setShowMobileCart(false);
-                  openPaymentDialog();
-                }}
-              >
-                <CreditCard className="h-5 w-5 mr-2" />
-                Payer {formatPrice(total)}
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  title="Générer une facture proforma (sans vente ni stock)"
+                  className="h-10 min-w-0 px-2 text-sm font-medium"
+                  disabled={cart.length === 0 || total < 0 || isGeneratingProforma || isProcessing}
+                  onClick={handleGenerateProforma}
+                >
+                  {isGeneratingProforma ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                  ) : (
+                    <FileText className="h-4 w-4 shrink-0" />
+                  )}
+                  <span className="ml-1.5 truncate">Proforma</span>
+                </Button>
+                <Button
+                  type="button"
+                  title={`Encaisser ${formatPrice(total)}`}
+                  className="h-10 min-w-0 bg-orange-500 px-2 text-sm font-medium hover:bg-orange-600"
+                  disabled={cart.length === 0 || total < 0 || isProcessing || isGeneratingProforma}
+                  onClick={() => {
+                    setShowMobileCart(false);
+                    openPaymentDialog();
+                  }}
+                >
+                  <CreditCard className="h-4 w-4 shrink-0" />
+                  <span className="ml-1.5 truncate">Payer</span>
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Cart Section - Desktop */}
-      <div className="hidden lg:flex w-96 flex-col bg-white rounded-lg shadow-lg">
+      {/* Cart Section - Desktop — min-h-0 pour que la liste scroll et prenne tout l’espace vertical */}
+      <div className="hidden min-h-0 w-96 shrink-0 flex-col rounded-lg bg-white shadow-lg lg:flex">
         {/* Cart Header */}
-        <div className="p-4 border-b">
-          <div className="flex items-center justify-between mb-3">
+        <div className="shrink-0 border-b px-3 py-2.5">
+          <div className="mb-2 flex items-center justify-between">
             <h2 className="text-lg font-bold text-gray-900">Panier</h2>
             <Badge variant="secondary">{cart.length} articles</Badge>
           </div>
@@ -1333,7 +1442,7 @@ export default function POSPage() {
         </div>
 
         {/* Cart Items */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3">
           {cart.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400">
               <ShoppingCart className="h-12 w-12 mb-2" />
@@ -1414,11 +1523,11 @@ export default function POSPage() {
           )}
         </div>
 
-        {/* Cart Footer */}
-        <div className="p-4 border-t space-y-3">
+        {/* Cart Footer — compact : une rangée d’actions + totaux resserrés */}
+        <div className="shrink-0 space-y-2 border-t px-3 py-2.5">
           {/* Global Discount */}
           <div className="flex items-center gap-2">
-            <Percent className="h-4 w-4 text-gray-400" />
+            <Percent className="h-4 w-4 shrink-0 text-gray-400" />
             <Input
               type="number"
               placeholder="Remise %"
@@ -1431,44 +1540,63 @@ export default function POSPage() {
           </div>
 
           {/* Totals */}
-          <div className="space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Sous-total</span>
-              <span>{formatPrice(calculateSubtotal())}</span>
+          <div className="space-y-0.5 text-xs leading-tight">
+            <div className="flex justify-between text-gray-600">
+              <span>Sous-total</span>
+              <span className="tabular-nums">{formatPrice(calculateSubtotal())}</span>
             </div>
             {calculateItemDiscount() > 0 && (
               <div className="flex justify-between text-orange-600">
-                <span>Remises articles</span>
-                <span>-{formatPrice(calculateItemDiscount())}</span>
+                <span>Rem. articles</span>
+                <span className="tabular-nums">-{formatPrice(calculateItemDiscount())}</span>
               </div>
             )}
             {globalDiscount > 0 && (
               <div className="flex justify-between text-orange-600">
-                <span>Remise globale ({globalDiscount}%)</span>
-                <span>-{formatPrice(calculateGlobalDiscountAmount())}</span>
+                <span>Rem. globale ({globalDiscount}%)</span>
+                <span className="tabular-nums">-{formatPrice(calculateGlobalDiscountAmount())}</span>
               </div>
             )}
             {calculateTax() > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>Taxes (TVA)</span>
-                <span>+{formatPrice(calculateTax())}</span>
+              <div className="flex justify-between text-green-700">
+                <span>TVA</span>
+                <span className="tabular-nums">+{formatPrice(calculateTax())}</span>
               </div>
             )}
-            <div className="flex justify-between text-lg font-bold pt-2 border-t">
-              <span>Total à payer</span>
-              <span className="text-orange-600">{formatPrice(total)}</span>
+            <div className="flex justify-between border-t border-gray-200 pt-1 text-sm font-bold text-gray-900">
+              <span>Total</span>
+              <span className="text-orange-600 tabular-nums">{formatPrice(total)}</span>
             </div>
           </div>
 
-          {/* Payment Button */}
-          <Button
-            className="w-full h-12 text-lg bg-orange-500 hover:bg-orange-600"
-            disabled={cart.length === 0 || total < 0}
-            onClick={openPaymentDialog}
-          >
-            <CreditCard className="h-5 w-5 mr-2" />
-            Payer {formatPrice(total)}
-          </Button>
+          {/* Paiement / proforma — une ligne, hauteur réduite */}
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              type="button"
+              title="Générer une facture proforma (sans vente ni stock)"
+              className="h-10 min-w-0 px-2 text-sm font-medium"
+              disabled={cart.length === 0 || total < 0 || isGeneratingProforma || isProcessing}
+              onClick={handleGenerateProforma}
+            >
+              {isGeneratingProforma ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              ) : (
+                <FileText className="h-4 w-4 shrink-0" />
+              )}
+              <span className="ml-1.5 truncate">Proforma</span>
+            </Button>
+            <Button
+              type="button"
+              title={`Encaisser ${formatPrice(total)}`}
+              className="h-10 min-w-0 bg-orange-500 px-2 text-sm font-medium hover:bg-orange-600"
+              disabled={cart.length === 0 || total < 0 || isProcessing || isGeneratingProforma}
+              onClick={openPaymentDialog}
+            >
+              <CreditCard className="h-4 w-4 shrink-0" />
+              <span className="ml-1.5 truncate">Payer</span>
+            </Button>
+          </div>
         </div>
       </div>
 
