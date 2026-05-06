@@ -939,6 +939,7 @@ export default function POSPage() {
       const result = await getProducts(session.accessToken, organization.id, {
         search: query,
         is_active: true,
+        in_stock: true,
         page_size: 50,
       });
       if (result.success && result.data) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -61,6 +61,9 @@ import {
   Shield,
   Loader2,
   ShieldAlert,
+  Key,
+  Check,
+  X,
 } from "lucide-react";
 import { usePermissions } from "@/components/auth/permissions-provider";
 import { formatDateTime, getMediaUrl } from "@/lib/format";
@@ -72,10 +75,14 @@ import {
   createUser,
   updateMember,
   removeMember,
+  getMemberPermissions,
+  updateMemberPermissions,
   type OrganizationMember,
   type CreateUserData,
   type MemberFilters,
+  type MemberPermissions,
 } from "@/actions/users.actions";
+import { getWarehouses, type Warehouse } from "@/actions/stock.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 
 const ROLE_COLORS: Record<string, string> = {
@@ -84,6 +91,26 @@ const ROLE_COLORS: Record<string, string> = {
   stock_keeper: "bg-green-100 text-green-800",
   cashier: "bg-orange-100 text-orange-800",
 };
+
+function roleNeedsWarehouses(role: string) {
+  return (
+    role === "manager" ||
+    role === "cashier" ||
+    role === "stock_keeper"
+  );
+}
+
+function warehouseSelectionError(role: string, ids: string[]): string | null {
+  if (!roleNeedsWarehouses(role)) return null;
+  if (role === "manager") {
+    return ids.length < 1
+      ? "Sélectionnez au moins un entrepôt pour un gérant."
+      : null;
+  }
+  return ids.length !== 1
+    ? "Les rôles caissier et magasinier doivent avoir exactement un entrepôt assigné."
+    : null;
+}
 
 export default function UsersPage() {
   const { data: session } = useSession();
@@ -103,6 +130,8 @@ export default function UsersPage() {
   const [hasPrevious, setHasPrevious] = useState(false);
   const pageSize = 20;
 
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+
   // Create dialog
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -113,6 +142,7 @@ export default function UsersPage() {
     phone: "",
     password: "",
     role: "cashier",
+    warehouse_ids: [],
   });
 
   // Edit dialog
@@ -121,6 +151,7 @@ export default function UsersPage() {
     null
   );
   const [editRole, setEditRole] = useState("");
+  const [editWarehouseIds, setEditWarehouseIds] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Delete dialog
@@ -134,6 +165,15 @@ export default function UsersPage() {
     null
   );
   const [isToggling, setIsToggling] = useState(false);
+
+  // Permissions dialog
+  const [showPermissionsDialog, setShowPermissionsDialog] = useState(false);
+  const [permissionsMember, setPermissionsMember] = useState<OrganizationMember | null>(null);
+  const [memberPerms, setMemberPerms] = useState<MemberPermissions | null>(null);
+  const [selectedExtraPerms, setSelectedExtraPerms] = useState<string[]>([]);
+  const [isLoadingPerms, setIsLoadingPerms] = useState(false);
+  const [isSavingPerms, setIsSavingPerms] = useState(false);
+  const [permSearchQuery, setPermSearchQuery] = useState("");
 
   // Fetch members
   const fetchMembers = useCallback(async () => {
@@ -168,12 +208,31 @@ export default function UsersPage() {
     fetchMembers();
   }, [fetchMembers]);
 
+  useEffect(() => {
+    async function loadWarehouses() {
+      if (!session?.accessToken || !organizationId) return;
+      const res = await getWarehouses(session.accessToken, organizationId, {
+        is_active: true,
+      });
+      if (res.success && res.data) {
+        setWarehouses(res.data);
+      }
+    }
+    loadWarehouses();
+  }, [session?.accessToken, organizationId]);
+
   // Create user
   const handleCreate = async () => {
     if (!session?.accessToken || !organizationId) return;
 
     if (!createForm.email || !createForm.first_name || !createForm.last_name || !createForm.password) {
       toast.error("Veuillez remplir tous les champs obligatoires");
+      return;
+    }
+
+    const whErr = warehouseSelectionError(createForm.role, createForm.warehouse_ids);
+    if (whErr) {
+      toast.error(whErr);
       return;
     }
 
@@ -190,6 +249,7 @@ export default function UsersPage() {
         phone: "",
         password: "",
         role: "cashier",
+        warehouse_ids: [],
       });
       fetchMembers();
     } else {
@@ -198,20 +258,37 @@ export default function UsersPage() {
     setIsCreating(false);
   };
 
-  // Edit role
-  const handleEditRole = async () => {
+  const editHasChanges = useMemo(() => {
+    if (!editingMember) return false;
+    const initialIds = [
+      ...(editingMember.assigned_warehouses?.map((w) => w.id) ?? []),
+    ]
+      .sort()
+      .join(",");
+    const nextIds = [...editWarehouseIds].sort().join(",");
+    return editRole !== editingMember.role || initialIds !== nextIds;
+  }, [editingMember, editRole, editWarehouseIds]);
+
+  // Edit member (rôle + entrepôts)
+  const handleSaveMember = async () => {
     if (!session?.accessToken || !organizationId || !editingMember) return;
+
+    const whErr = warehouseSelectionError(editRole, editWarehouseIds);
+    if (whErr) {
+      toast.error(whErr);
+      return;
+    }
 
     setIsUpdating(true);
     const result = await updateMember(
       session.accessToken,
       organizationId,
       editingMember.id,
-      { role: editRole }
+      { role: editRole, warehouse_ids: editWarehouseIds }
     );
 
     if (result.success) {
-      toast.success("Rôle mis à jour avec succès");
+      toast.success("Membre mis à jour avec succès");
       setShowEditDialog(false);
       setEditingMember(null);
       fetchMembers();
@@ -272,8 +349,92 @@ export default function UsersPage() {
   const openEditDialog = (member: OrganizationMember) => {
     setEditingMember(member);
     setEditRole(member.role);
+    setEditWarehouseIds(
+      member.assigned_warehouses?.map((w) => w.id) ?? []
+    );
     setShowEditDialog(true);
   };
+
+  // Open permissions dialog
+  const openPermissionsDialog = async (member: OrganizationMember) => {
+    if (!session?.accessToken || !organizationId) return;
+    
+    setPermissionsMember(member);
+    setShowPermissionsDialog(true);
+    setIsLoadingPerms(true);
+    setPermSearchQuery("");
+    
+    const result = await getMemberPermissions(session.accessToken, organizationId, member.id);
+    if (result.success && result.data) {
+      setMemberPerms(result.data);
+      setSelectedExtraPerms(result.data.extra_permissions || []);
+    } else {
+      toast.error(result.error || "Erreur lors du chargement des permissions");
+      setShowPermissionsDialog(false);
+    }
+    setIsLoadingPerms(false);
+  };
+
+  // Save permissions
+  const handleSavePermissions = async () => {
+    if (!session?.accessToken || !organizationId || !permissionsMember) return;
+    
+    setIsSavingPerms(true);
+    const result = await updateMemberPermissions(
+      session.accessToken,
+      organizationId,
+      permissionsMember.id,
+      selectedExtraPerms
+    );
+    
+    if (result.success) {
+      toast.success("Permissions mises à jour avec succès");
+      setShowPermissionsDialog(false);
+      setPermissionsMember(null);
+      setMemberPerms(null);
+      fetchMembers();
+    } else {
+      toast.error(result.error || "Erreur lors de la mise à jour des permissions");
+    }
+    setIsSavingPerms(false);
+  };
+
+  // Toggle a permission in extra_permissions
+  const toggleExtraPerm = (perm: string) => {
+    setSelectedExtraPerms((prev) =>
+      prev.includes(perm)
+        ? prev.filter((p) => p !== perm)
+        : [...prev, perm]
+    );
+  };
+
+  // Check if permissions have changed
+  const permsHaveChanged = useMemo(() => {
+    if (!memberPerms) return false;
+    const original = [...(memberPerms.extra_permissions || [])].sort().join(",");
+    const current = [...selectedExtraPerms].sort().join(",");
+    return original !== current;
+  }, [memberPerms, selectedExtraPerms]);
+
+  // Filter available permissions (exclude those already in role)
+  const availableExtraPerms = useMemo(() => {
+    if (!memberPerms) return [];
+    const rolePermsSet = new Set(memberPerms.role_permissions || []);
+    return (memberPerms.all_permissions || []).filter(
+      (p) => !rolePermsSet.has(p) && p.toLowerCase().includes(permSearchQuery.toLowerCase())
+    );
+  }, [memberPerms, permSearchQuery]);
+
+  // Group permissions by module for better display
+  const groupedPerms = useMemo(() => {
+    const groups: Record<string, string[]> = {};
+    for (const perm of availableExtraPerms) {
+      const [module] = perm.split(".");
+      if (!groups[module]) groups[module] = [];
+      groups[module].push(perm);
+    }
+    return groups;
+  }, [availableExtraPerms]);
 
   if (!hasPermission("users.view")) {
     return (
@@ -381,6 +542,9 @@ export default function UsersPage() {
                 <TableRow>
                   <TableHead>Utilisateur</TableHead>
                   <TableHead>Rôle</TableHead>
+                  <TableHead className="hidden md:table-cell min-w-[140px]">
+                    Entrepôts
+                  </TableHead>
                   <TableHead className="hidden md:table-cell">Téléphone</TableHead>
                   <TableHead className="hidden md:table-cell">Statut</TableHead>
                   <TableHead className="hidden lg:table-cell">Dernière connexion</TableHead>
@@ -405,6 +569,32 @@ export default function UsersPage() {
                           <div className="text-sm text-gray-500">
                             {member.user_email}
                           </div>
+                          <div className="md:hidden mt-2 flex flex-wrap gap-1 items-center">
+                            <span className="text-[10px] uppercase tracking-wide text-gray-400 mr-1">
+                              Entrepôts
+                            </span>
+                            {member.role === "owner" ||
+                            member.warehouse_access === "all" ? (
+                              <span className="text-xs text-gray-600">
+                                Tous
+                              </span>
+                            ) : member.assigned_warehouses &&
+                              member.assigned_warehouses.length > 0 ? (
+                              member.assigned_warehouses.map((w) => (
+                                <Badge
+                                  key={w.id}
+                                  variant="outline"
+                                  className="text-[10px] font-normal px-1.5 py-0"
+                                >
+                                  {w.name}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-xs text-amber-700">
+                                Non défini
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </TableCell>
@@ -416,6 +606,31 @@ export default function UsersPage() {
                         <Shield className="h-3 w-3 mr-1" />
                         {member.role_display || ROLE_LABELS[member.role as Role] || member.role}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell align-top">
+                      {member.role === "owner" ||
+                      member.warehouse_access === "all" ? (
+                        <span className="text-sm text-gray-600">
+                          Tous les entrepôts
+                        </span>
+                      ) : member.assigned_warehouses &&
+                        member.assigned_warehouses.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 max-w-[240px]">
+                          {member.assigned_warehouses.map((w) => (
+                            <Badge
+                              key={w.id}
+                              variant="outline"
+                              className="text-xs font-normal text-gray-700"
+                            >
+                              {w.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-amber-700">
+                          Non défini
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-gray-500">
                       {member.user_phone || "—"}
@@ -454,7 +669,11 @@ export default function UsersPage() {
                             <PermissionGate permission="users.edit">
                               <DropdownMenuItem onClick={() => openEditDialog(member)}>
                                 <Edit className="h-4 w-4 mr-2" />
-                                Modifier le rôle
+                                Modifier le membre
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => openPermissionsDialog(member)}>
+                                <Key className="h-4 w-4 mr-2" />
+                                Gérer les permissions
                               </DropdownMenuItem>
                             </PermissionGate>
                             <PermissionGate permission="users.deactivate">
@@ -511,7 +730,7 @@ export default function UsersPage() {
 
       {/* Create User Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Créer un utilisateur</DialogTitle>
             <DialogDescription>
@@ -583,7 +802,14 @@ export default function UsersPage() {
               <Select
                 value={createForm.role}
                 onValueChange={(value) =>
-                  setCreateForm({ ...createForm, role: value })
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    role: value,
+                    warehouse_ids:
+                      value === "manager"
+                        ? prev.warehouse_ids
+                        : prev.warehouse_ids.slice(0, 1),
+                  }))
                 }
               >
                 <SelectTrigger className="w-full">
@@ -598,6 +824,84 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {roleNeedsWarehouses(createForm.role) ? (
+              <div className="space-y-2">
+                <Label>
+                  {createForm.role === "manager"
+                    ? "Entrepôts assignés *"
+                    : "Entrepôt assigné *"}
+                </Label>
+                {warehouses.length === 0 ? (
+                  <p className="text-sm text-amber-600 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                    Aucun entrepôt actif. Créez un entrepôt dans Stock avant
+                    d&apos;ajouter des utilisateurs avec un périmètre limité.
+                  </p>
+                ) : createForm.role === "manager" ? (
+                  <>
+                    <div className="max-h-44 overflow-y-auto rounded-md border border-gray-200 p-3 space-y-2">
+                      {warehouses.map((w) => (
+                        <label
+                          key={w.id}
+                          className="flex items-center gap-2 text-sm cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300"
+                            checked={createForm.warehouse_ids.includes(w.id)}
+                            onChange={() =>
+                              setCreateForm((f) => ({
+                                ...f,
+                                warehouse_ids: f.warehouse_ids.includes(w.id)
+                                  ? f.warehouse_ids.filter((id) => id !== w.id)
+                                  : [...f.warehouse_ids, w.id],
+                              }))
+                            }
+                          />
+                          <span>
+                            {w.name}
+                            {w.code ? (
+                              <span className="text-gray-500 ml-1">
+                                ({w.code})
+                              </span>
+                            ) : null}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Cochez tous les entrepôts que ce gérant pourra gérer.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Select
+                      value={createForm.warehouse_ids[0] ?? ""}
+                      onValueChange={(v) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          warehouse_ids: v ? [v] : [],
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Choisir un entrepôt" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {warehouses.map((w) => (
+                          <SelectItem key={w.id} value={w.id}>
+                            {w.name}
+                            {w.code ? ` (${w.code})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500">
+                      Ce compte n&apos;aura accès qu&apos;à cet entrepôt.
+                    </p>
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
@@ -621,18 +925,26 @@ export default function UsersPage() {
 
       {/* Edit Role Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Modifier le rôle</DialogTitle>
+            <DialogTitle>Modifier le membre</DialogTitle>
             <DialogDescription>
-              Changer le rôle de{" "}
+              Rôle et entrepôts pour{" "}
               <strong>{editingMember?.user_name}</strong>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>Nouveau rôle</Label>
-              <Select value={editRole} onValueChange={setEditRole}>
+              <Label>Rôle</Label>
+              <Select
+                value={editRole}
+                onValueChange={(value) => {
+                  setEditRole(value);
+                  setEditWarehouseIds((prev) =>
+                    value === "manager" ? prev : prev.slice(0, 1)
+                  );
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -645,6 +957,69 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {roleNeedsWarehouses(editRole) ? (
+              <div className="space-y-2">
+                <Label>
+                  {editRole === "manager"
+                    ? "Entrepôts assignés"
+                    : "Entrepôt assigné"}
+                </Label>
+                {warehouses.length === 0 ? (
+                  <p className="text-sm text-amber-600 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                    Aucun entrepôt actif disponible.
+                  </p>
+                ) : editRole === "manager" ? (
+                  <div className="max-h-44 overflow-y-auto rounded-md border border-gray-200 p-3 space-y-2">
+                    {warehouses.map((w) => (
+                      <label
+                        key={w.id}
+                        className="flex items-center gap-2 text-sm cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300"
+                          checked={editWarehouseIds.includes(w.id)}
+                          onChange={() =>
+                            setEditWarehouseIds((prev) =>
+                              prev.includes(w.id)
+                                ? prev.filter((id) => id !== w.id)
+                                : [...prev, w.id]
+                            )
+                          }
+                        />
+                        <span>
+                          {w.name}
+                          {w.code ? (
+                            <span className="text-gray-500 ml-1">
+                              ({w.code})
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <Select
+                    value={editWarehouseIds[0] ?? ""}
+                    onValueChange={(v) =>
+                      setEditWarehouseIds(v ? [v] : [])
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Choisir un entrepôt" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {warehouses.map((w) => (
+                        <SelectItem key={w.id} value={w.id}>
+                          {w.name}
+                          {w.code ? ` (${w.code})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
@@ -655,8 +1030,8 @@ export default function UsersPage() {
               Annuler
             </Button>
             <Button
-              onClick={handleEditRole}
-              disabled={isUpdating || editRole === editingMember?.role}
+              onClick={handleSaveMember}
+              disabled={isUpdating || !editHasChanges}
               className="bg-orange-600 hover:bg-orange-700"
             >
               {isUpdating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -726,6 +1101,159 @@ export default function UsersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Permissions Management Dialog */}
+      <Dialog open={showPermissionsDialog} onOpenChange={setShowPermissionsDialog}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5 text-orange-600" />
+              Gérer les permissions
+            </DialogTitle>
+            <DialogDescription>
+              Permissions pour <strong>{permissionsMember?.user_name}</strong> ({permissionsMember?.role_display})
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingPerms ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-orange-600" />
+            </div>
+          ) : memberPerms ? (
+            <div className="space-y-6 py-2">
+              {/* Permissions du rôle (lecture seule) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-blue-600" />
+                  Permissions du rôle ({memberPerms.role_display})
+                </Label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Ces permissions sont héritées du rôle et ne peuvent pas être modifiées.
+                </p>
+                <div className="flex flex-wrap gap-1.5 p-3 bg-gray-50 rounded-lg border max-h-32 overflow-y-auto">
+                  {memberPerms.role_permissions.length > 0 ? (
+                    memberPerms.role_permissions.map((perm) => (
+                      <Badge
+                        key={perm}
+                        variant="secondary"
+                        className="text-xs bg-blue-100 text-blue-800"
+                      >
+                        {perm}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-xs text-gray-400">Aucune permission de rôle</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Permissions additionnelles */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <Key className="h-4 w-4 text-green-600" />
+                  Permissions additionnelles
+                </Label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Ajoutez des permissions supplémentaires à cet utilisateur.
+                </p>
+                
+                {/* Permissions sélectionnées */}
+                <div className="flex flex-wrap gap-1.5 p-3 bg-green-50 rounded-lg border border-green-200 min-h-[40px]">
+                  {selectedExtraPerms.length > 0 ? (
+                    selectedExtraPerms.map((perm) => (
+                      <Badge
+                        key={perm}
+                        variant="secondary"
+                        className="text-xs bg-green-100 text-green-800 cursor-pointer hover:bg-green-200 pr-1"
+                        onClick={() => toggleExtraPerm(perm)}
+                      >
+                        {perm}
+                        <X className="h-3 w-3 ml-1" />
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-xs text-gray-400">Aucune permission additionnelle</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Sélecteur de permissions disponibles */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Ajouter une permission</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Rechercher une permission..."
+                    value={permSearchQuery}
+                    onChange={(e) => setPermSearchQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                
+                <div className="max-h-48 overflow-y-auto rounded-lg border p-2 space-y-3">
+                  {Object.keys(groupedPerms).length > 0 ? (
+                    Object.entries(groupedPerms).map(([module, perms]) => (
+                      <div key={module}>
+                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 px-1">
+                          {module}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {perms.map((perm) => {
+                            const isSelected = selectedExtraPerms.includes(perm);
+                            return (
+                              <Badge
+                                key={perm}
+                                variant="outline"
+                                className={`text-xs cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? "bg-green-100 text-green-800 border-green-300"
+                                    : "hover:bg-gray-100"
+                                }`}
+                                onClick={() => toggleExtraPerm(perm)}
+                              >
+                                {isSelected && <Check className="h-3 w-3 mr-1" />}
+                                {perm.split(".")[1]}
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-gray-400 text-center py-4">
+                      {permSearchQuery
+                        ? "Aucune permission trouvée"
+                        : "Toutes les permissions sont déjà incluses dans le rôle"}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPermissionsDialog(false);
+                setPermissionsMember(null);
+                setMemberPerms(null);
+              }}
+              disabled={isSavingPerms}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleSavePermissions}
+              disabled={isSavingPerms || !permsHaveChanged}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {isSavingPerms && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

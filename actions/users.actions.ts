@@ -1,11 +1,20 @@
 "use server";
 
-import { formatApiErrorBody, formatAxiosErrorMessage } from "@/lib/api/drf-error";
+import {
+  formatApiErrorBody,
+  formatAxiosErrorMessage,
+} from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 // Types
+export interface AssignedWarehouse {
+  id: string;
+  name: string;
+  code: string;
+}
+
 export interface OrganizationMember {
   id: string;
   user: string;
@@ -24,6 +33,24 @@ export interface OrganizationMember {
   invited_by: string | null;
   invited_by_name: string | null;
   joined_at: string;
+  /** ``all`` = administrateur (tous les entrepôts) ; ``restricted`` = périmètre assigné */
+  warehouse_access?: "all" | "restricted";
+  assigned_warehouses?: AssignedWarehouse[];
+  /** Permissions additionnelles accordées à ce membre */
+  extra_permissions?: string[];
+  /** Permissions héritées du rôle */
+  role_permissions?: string[];
+  /** Permissions effectives (role + extra) */
+  effective_permissions?: string[];
+}
+
+export interface MemberPermissions {
+  role: string;
+  role_display: string;
+  role_permissions: string[];
+  extra_permissions: string[];
+  effective_permissions: string[];
+  all_permissions: string[];
 }
 
 export interface CreateUserData {
@@ -33,11 +60,15 @@ export interface CreateUserData {
   phone?: string;
   password: string;
   role: string;
+  /** Obligatoire côté API pour les rôles non administrateur (≥ 1 UUID) */
+  warehouse_ids: string[];
 }
 
 export interface UpdateMemberData {
   role?: string;
   is_active?: boolean;
+  warehouse_ids?: string[];
+  extra_permissions?: string[];
 }
 
 interface MembersListResponse {
@@ -198,9 +229,15 @@ export async function updateMember(
       data: response.data,
     };
   } catch (error: unknown) {
+    const err = error as { response?: { data?: Record<string, unknown> } };
+    const errorData = err?.response?.data;
+    const fallback = "Erreur lors de la mise à jour du membre";
+    const errorMsg = errorData
+      ? formatApiErrorBody(errorData, fallback)
+      : formatAxiosErrorMessage(error, fallback);
     return {
       success: false,
-      error: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour du membre"),
+      error: errorMsg,
     };
   }
 }
@@ -226,6 +263,70 @@ export async function removeMember(
     return {
       success: false,
       error: formatAxiosErrorMessage(error, "Erreur lors de la suppression du membre"),
+    };
+  }
+}
+
+/**
+ * Récupère les permissions détaillées d'un membre
+ */
+export async function getMemberPermissions(
+  accessToken: string,
+  organizationId: string,
+  memberId: string
+): Promise<{ success: boolean; data?: MemberPermissions; error?: string }> {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/memberships/${memberId}/permissions/`,
+      {
+        headers: getHeaders(accessToken, organizationId),
+      }
+    );
+
+    return {
+      success: true,
+      data: response.data,
+    };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: formatAxiosErrorMessage(error, "Erreur lors de la récupération des permissions"),
+    };
+  }
+}
+
+/**
+ * Met à jour les permissions additionnelles d'un membre
+ */
+export async function updateMemberPermissions(
+  accessToken: string,
+  organizationId: string,
+  memberId: string,
+  extraPermissions: string[]
+): Promise<{ success: boolean; data?: MemberPermissions; error?: string }> {
+  try {
+    const response = await axios.patch(
+      `${API_BASE_URL}/memberships/${memberId}/permissions/`,
+      { extra_permissions: extraPermissions },
+      {
+        headers: getHeaders(accessToken, organizationId),
+      }
+    );
+
+    return {
+      success: true,
+      data: response.data,
+    };
+  } catch (error: unknown) {
+    const err = error as { response?: { data?: Record<string, unknown> } };
+    const errorData = err?.response?.data;
+    const fallback = "Erreur lors de la mise à jour des permissions";
+    const errorMsg = errorData
+      ? formatApiErrorBody(errorData, fallback)
+      : formatAxiosErrorMessage(error, fallback);
+    return {
+      success: false,
+      error: errorMsg,
     };
   }
 }

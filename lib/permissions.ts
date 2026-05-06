@@ -24,8 +24,15 @@ export interface ManageableRole {
 export interface UserPermissions {
   role: Role;
   role_display: string;
+  /** Permissions héritées du rôle */
+  role_permissions?: string[];
+  /** Permissions additionnelles accordées individuellement */
+  extra_permissions?: string[];
+  /** Permissions effectives (role + extra) - utilisées pour les vérifications */
   permissions: string[];
   manageable_roles: ManageableRole[];
+  /** Toutes les permissions disponibles dans le système */
+  all_permissions?: string[];
 }
 
 export function hasPermission(
