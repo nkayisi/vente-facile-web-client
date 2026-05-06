@@ -1,5 +1,6 @@
 "use server";
 
+import { formatAxiosErrorMessage } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 import axiosPlain from "axios";
 
@@ -35,6 +36,7 @@ export interface Plan {
   currency: PlanCurrency;
   max_users: number;
   max_branches: number;
+  max_warehouses: number;
   max_products: number | null;
   max_monthly_transactions: number | null;
   storage_limit_mb: number;
@@ -43,6 +45,7 @@ export interface Plan {
   is_featured: boolean;
   trial_days: number;
   sort_order: number;
+  tier: number;
   plan_features: PlanFeature[];
 }
 
@@ -69,6 +72,26 @@ export interface Subscription {
   created_at: string;
 }
 
+/** Usage et plafonds renvoyés par GET /subscriptions/status/ */
+export interface SubscriptionQuotas {
+  has_plan: boolean;
+  users: {
+    current: number;
+    limit: number | null;
+    pending_invitations?: number;
+  };
+  branches: { current: number; limit: number | null };
+  warehouses: { current: number; limit: number | null };
+  products: { current: number; limit: number | null };
+  plan_tier: number | null;
+  current_plan_id: string | null;
+  subscription_floor_tier: number;
+  period_end: string | null;
+  period_not_ended: boolean;
+  can_renew_same_plan: boolean;
+  can_upgrade: boolean;
+}
+
 export interface SubscriptionStatus {
   has_subscription: boolean;
   is_active: boolean;
@@ -79,6 +102,7 @@ export interface SubscriptionStatus {
   days_remaining_grace?: number;
   subscription: Subscription | null;
   plan: Plan | null;
+  quotas?: SubscriptionQuotas;
 }
 
 export interface SubscriptionPayment {
@@ -142,12 +166,14 @@ export interface PublicPlan {
   currency: PlanCurrency;
   max_users: number;
   max_branches: number;
+  max_warehouses: number;
   max_products: number | null;
   max_monthly_transactions: number | null;
   storage_limit_mb: number;
   is_featured: boolean;
   trial_days: number;
   sort_order: number;
+  tier: number;
   plan_features: PlanFeature[];
 }
 
@@ -165,10 +191,10 @@ export async function getPublicPlans(): Promise<ApiResponse<PublicPlan[]>> {
   try {
     const response = await axiosPlain.get(`${API_BASE_URL}/plans/public/`);
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors du chargement des plans",
+      error: formatAxiosErrorMessage(error, "Erreur lors du chargement des plans"),
     };
   }
 }
@@ -198,10 +224,10 @@ export async function getSubscriptionStatus(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la vérification de l'abonnement",
+      error: formatAxiosErrorMessage(error, "Erreur lors de la vérification de l'abonnement"),
     };
   }
 }
@@ -214,10 +240,10 @@ export async function getPlans(
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors du chargement des plans",
+      error: formatAxiosErrorMessage(error, "Erreur lors du chargement des plans"),
     };
   }
 }
@@ -232,10 +258,10 @@ export async function getCurrentSubscription(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Aucun abonnement actif",
+      error: formatAxiosErrorMessage(error, "Aucun abonnement actif"),
     };
   }
 }
@@ -269,15 +295,11 @@ export async function initiateMokoSubscriptionPayment(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    const d = error?.response?.data?.detail;
-    const msg =
-      typeof d === "string"
-        ? d
-        : Array.isArray(d)
-          ? d.map((x: { string?: string }) => x?.string || "").join(" ")
-          : "Erreur lors du paiement";
-    return { success: false, error: msg };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: formatAxiosErrorMessage(error, "Erreur lors du paiement"),
+    };
   }
 }
 
@@ -293,10 +315,10 @@ export async function activateSubscription(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de l'activation de l'abonnement",
+      error: formatAxiosErrorMessage(error, "Erreur lors de l'activation de l'abonnement"),
     };
   }
 }
@@ -312,10 +334,10 @@ export async function getSubscriptionPayments(
     );
     const data = response.data;
     return { success: true, data: Array.isArray(data) ? data : data.results || [] };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors du chargement des paiements",
+      error: formatAxiosErrorMessage(error, "Erreur lors du chargement des paiements"),
     };
   }
 }
@@ -331,10 +353,10 @@ export async function getSubscriptionInvoices(
     );
     const data = response.data;
     return { success: true, data: Array.isArray(data) ? data : data.results || [] };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors du chargement des factures",
+      error: formatAxiosErrorMessage(error, "Erreur lors du chargement des factures"),
     };
   }
 }
@@ -363,11 +385,10 @@ export async function checkMokoPaymentStatus(
       }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    const detail = error?.response?.data?.detail;
+  } catch (error: unknown) {
     return {
       success: false,
-      error: typeof detail === "string" ? detail : "Erreur lors de la vérification du statut",
+      error: formatAxiosErrorMessage(error, "Erreur lors de la vérification du statut"),
     };
   }
 }

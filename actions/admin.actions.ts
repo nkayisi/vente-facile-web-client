@@ -92,6 +92,7 @@ export interface AdminPlan {
   currency: AdminPlanCurrency;
   max_users: number;
   max_branches: number;
+  max_warehouses: number;
   max_products?: number;
   max_monthly_transactions?: number;
   storage_limit_mb: number;
@@ -100,6 +101,7 @@ export interface AdminPlan {
   is_featured: boolean;
   trial_days: number;
   sort_order: number;
+  tier: number;
   plan_features?: Array<{
     id: string;
     name: string;
@@ -141,6 +143,7 @@ export interface CreatePlanData {
   currency: string;
   max_users: number;
   max_branches: number;
+  max_warehouses: number;
   max_products?: number;
   max_monthly_transactions?: number;
   storage_limit_mb: number;
@@ -149,6 +152,8 @@ export interface CreatePlanData {
   is_featured: boolean;
   trial_days: number;
   sort_order: number;
+  /** Palier : compare upgrade/downgrade (plus grand = offre supérieure). */
+  tier: number;
 }
 
 export interface UpdatePlanData extends Partial<CreatePlanData> {}

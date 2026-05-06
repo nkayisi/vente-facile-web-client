@@ -69,10 +69,12 @@ import {
   StockMovement,
   CreateWarehouseData,
 } from "@/actions/stock.actions";
+import { useSubscription } from "@/components/auth/subscription-guard";
 
 export default function StockPage() {
   const { data: session } = useSession();
   const router = useRouter();
+  const { subscriptionStatus, refreshSubscription } = useSubscription();
 
   // State
   const [isLoading, setIsLoading] = useState(true);
@@ -177,6 +179,7 @@ export default function StockPage() {
           toast.success("Entrepôt créé avec succès");
           setWarehouses(prev => [...prev, result.data!]);
           setShowWarehouseDialog(false);
+          await refreshSubscription();
         } else {
           toast.error(result.message || "Erreur lors de la création");
         }
@@ -256,6 +259,12 @@ export default function StockPage() {
   const safeLowStock = Array.isArray(lowStockItems) ? lowStockItems : [];
   const safeExpiring = Array.isArray(expiringBatches) ? expiringBatches : [];
 
+  const warehouseQuota = subscriptionStatus?.quotas?.warehouses;
+  const warehouseLimit = warehouseQuota?.limit;
+  const warehouseCurrent = warehouseQuota?.current ?? safeWarehouses.length;
+  const warehouseQuotaReached =
+    warehouseLimit != null && warehouseCurrent >= warehouseLimit;
+
   const totalProducts = new Set(safeStocks.map(s => s.product)).size;
   const totalQuantity = safeStocks.reduce((sum, s) => sum + parseFloat(s.quantity || "0"), 0);
   const totalValue = safeWarehouses.reduce((sum, w) => sum + parseFloat(w.stock_value || "0"), 0);
@@ -294,7 +303,7 @@ export default function StockPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Gestion de stock</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Vue d'ensemble de vos entrepôts, niveaux de stock et mouvements
+            Vue d&apos;ensemble de vos entrepôts, niveaux de stock et mouvements
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -305,12 +314,27 @@ export default function StockPage() {
             <Activity className="h-4 w-4 mr-2" />
             Entrée de stock
           </Button>
-          <Button onClick={openCreateDialog} className="bg-orange-500 hover:bg-orange-600">
+          <Button
+            onClick={openCreateDialog}
+            className="bg-orange-500 hover:bg-orange-600"
+            disabled={warehouseQuotaReached}
+            title={
+              warehouseQuotaReached
+                ? "Limite d'entrepôts atteinte pour votre formule"
+                : undefined
+            }
+          >
             <Plus className="h-4 w-4 mr-2" />
             Nouvel entrepôt
           </Button>
         </div>
       </div>
+      {warehouseQuotaReached && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Limite d&apos;entrepôts atteinte ({warehouseCurrent}/{warehouseLimit}). Passez à une
+          offre supérieure pour en ajouter.
+        </p>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -463,7 +487,16 @@ export default function StockPage() {
                   <p className="text-sm text-gray-500 mb-4">
                     Créez votre premier entrepôt pour commencer à gérer votre stock.
                   </p>
-                  <Button onClick={openCreateDialog} className="bg-orange-500 hover:bg-orange-600">
+                  <Button
+                    onClick={openCreateDialog}
+                    className="bg-orange-500 hover:bg-orange-600"
+                    disabled={warehouseQuotaReached}
+                    title={
+                      warehouseQuotaReached
+                        ? "Limite d'entrepôts atteinte pour votre formule"
+                        : undefined
+                    }
+                  >
                     <Plus className="h-4 w-4 mr-2" />
                     Créer un entrepôt
                   </Button>
@@ -472,50 +505,76 @@ export default function StockPage() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {filteredWarehouses.map(warehouse => (
-                  <Link key={warehouse.id} href={`/dashboard/stock/warehouses/${warehouse.id}`}>
-                    <Card className="p-0 hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-blue-100 rounded-lg">
+                  <Card key={warehouse.id} className="p-0 hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div
+                        role="link"
+                        tabIndex={0}
+                        className="cursor-pointer rounded-md -m-1 p-1 outline-none hover:bg-gray-50/80 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
+                        onClick={() =>
+                          router.push(`/dashboard/stock/warehouses/${warehouse.id}`)
+                        }
+                        onKeyDown={e => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            router.push(`/dashboard/stock/warehouses/${warehouse.id}`);
+                          }
+                        }}
+                      >
+                        <div className="flex items-start justify-between mb-3 gap-2">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="p-2 bg-blue-100 rounded-lg shrink-0">
                               <WarehouseIcon className="h-5 w-5 text-blue-600" />
                             </div>
-                            <div>
-                              <h3 className="font-medium text-gray-900">{warehouse.name}</h3>
+                            <div className="min-w-0">
+                              <h3 className="font-medium text-gray-900 truncate">
+                                {warehouse.name}
+                              </h3>
                               <p className="text-xs text-gray-500">{warehouse.code}</p>
                             </div>
                           </div>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  router.push(`/dashboard/stock/warehouses/${warehouse.id}`)
-                                }
-                              >
-                                <Eye className="h-4 w-4 mr-2" />
-                                Voir détails
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => openEditDialog(warehouse)}>
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Modifier
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setSelectedWarehouse(warehouse);
-                                  setShowDeleteDialog(true);
-                                }}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Supprimer
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <div
+                            className="shrink-0"
+                            onClick={e => e.stopPropagation()}
+                            onPointerDown={e => e.stopPropagation()}
+                          >
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    router.push(`/dashboard/stock/warehouses/${warehouse.id}`)
+                                  }
+                                >
+                                  <Eye className="h-4 w-4 mr-2" />
+                                  Voir détails
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openEditDialog(warehouse)}>
+                                  <Pencil className="h-4 w-4 mr-2" />
+                                  Modifier
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedWarehouse(warehouse);
+                                    setShowDeleteDialog(true);
+                                  }}
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Supprimer
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
 
                         {warehouse.address && (
@@ -547,9 +606,9 @@ export default function StockPage() {
                             </span>
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             )}
@@ -770,7 +829,9 @@ export default function StockPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <Label htmlFor="is_active">Actif</Label>
-                  <p className="text-xs text-gray-500">L'entrepôt peut recevoir des opérations</p>
+                  <p className="text-xs text-gray-500">
+                    L&apos;entrepôt peut recevoir des opérations
+                  </p>
                 </div>
                 <Switch
                   id="is_active"
@@ -819,9 +880,9 @@ export default function StockPage() {
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Supprimer l'entrepôt</DialogTitle>
+            <DialogTitle>Supprimer l&apos;entrepôt</DialogTitle>
             <DialogDescription>
-              Êtes-vous sûr de vouloir supprimer l'entrepôt &quot;{selectedWarehouse?.name}&quot; ?
+              Êtes-vous sûr de vouloir supprimer l&apos;entrepôt &quot;{selectedWarehouse?.name}&quot; ?
               Cette action est irréversible.
             </DialogDescription>
           </DialogHeader>

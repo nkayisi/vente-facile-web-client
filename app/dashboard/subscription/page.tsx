@@ -104,6 +104,53 @@ export default function SubscriptionPage() {
   }
 
   const subscription = subscriptionStatus?.subscription;
+  const quotas = subscriptionStatus?.quotas;
+
+  function getPlanAction(plan: Plan): {
+    disabled: boolean;
+    label: string;
+    title?: string;
+    isCurrent: boolean;
+  } {
+    const isCurrent = subscription?.plan === plan.id;
+    const floor = quotas?.subscription_floor_tier ?? 0;
+    if (plan.tier < floor) {
+      return {
+        disabled: true,
+        label: "Offre indisponible",
+        title:
+          "Vous ne pouvez pas souscrire à une offre de palier inférieur à celui déjà utilisé sur ce compte.",
+        isCurrent,
+      };
+    }
+    if (isCurrent) {
+      if (quotas?.period_not_ended) {
+        return {
+          disabled: true,
+          label: "Plan actuel",
+          title:
+            "Le renouvellement ou une prolongation sera possible lorsque la période en cours sera terminée.",
+          isCurrent: true,
+        };
+      }
+      return {
+        disabled: false,
+        label: "Renouveler",
+        title: "Souscrire à nouveau à ce plan",
+        isCurrent: true,
+      };
+    }
+    if (quotas?.period_not_ended && quotas.plan_tier != null && plan.tier <= quotas.plan_tier) {
+      return {
+        disabled: true,
+        label: "Indisponible",
+        title:
+          "Pendant la période en cours, seul un plan à palier strictement supérieur (upgrade) est disponible.",
+        isCurrent: false,
+      };
+    }
+    return { disabled: false, label: "Choisir ce plan", isCurrent: false };
+  }
 
   if (isLoading) {
     return (
@@ -201,6 +248,7 @@ export default function SubscriptionPage() {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {plans.map((plan) => {
               const isCurrent = subscription?.plan === plan.id;
+              const planAction = getPlanAction(plan);
               const monthlyPrice = parseFloat(plan.price_monthly);
               const yearlyPrice = parseFloat(plan.price_yearly);
 
@@ -276,20 +324,23 @@ export default function SubscriptionPage() {
                       </div>
                     </div>
 
-                    {isCurrent ? (
-                      <Button disabled className="w-full" variant="outline">
+                    <Button
+                      type="button"
+                      disabled={planAction.disabled}
+                      title={planAction.title}
+                      className={`w-full ${planAction.disabled ? "" : "bg-orange-600 hover:bg-orange-700"}`}
+                      variant={planAction.disabled ? "outline" : "default"}
+                      onClick={() => {
+                        if (!planAction.disabled) handleSelectPlan(plan);
+                      }}
+                    >
+                      {planAction.isCurrent && planAction.disabled ? (
                         <Check className="h-4 w-4 mr-2" />
-                        Plan actuel
-                      </Button>
-                    ) : (
-                      <Button
-                        className="w-full bg-orange-600 hover:bg-orange-700"
-                        onClick={() => handleSelectPlan(plan)}
-                      >
+                      ) : (
                         <CreditCard className="h-4 w-4 mr-2" />
-                        Choisir ce plan
-                      </Button>
-                    )}
+                      )}
+                      {planAction.label}
+                    </Button>
                   </CardContent>
                 </Card>
               );

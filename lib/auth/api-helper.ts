@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from "axios";
+import { formatApiErrorBody } from "@/lib/api/drf-error";
 import { getServerAccessToken } from "./server-token";
 
 /**
@@ -42,7 +43,7 @@ serverAxios.interceptors.response.use(
       const data = error.response.data as Record<string, unknown>;
       (error as any).isSubscriptionError = true;
       (error as any).subscriptionStatus = data?.subscription_status;
-      (error as any).subscriptionMessage = data?.detail;
+      (error as any).subscriptionMessage = formatApiErrorBody(data, "Abonnement requis");
     }
 
     return Promise.reject(error);
@@ -59,26 +60,31 @@ export function extractApiError(error: any): {
   status?: number;
 } {
   if (error?.response?.status === 402) {
+    const data = error.response.data as Record<string, unknown> | undefined;
     return {
-      message: error.response.data?.detail || "Abonnement requis",
+      message: data ? formatApiErrorBody(data, "Abonnement requis") : "Abonnement requis",
       isSubscriptionError: true,
       status: 402,
     };
   }
 
   if (error?.isSubscriptionError) {
+    const msg =
+      typeof error.subscriptionMessage === "string" && error.subscriptionMessage.trim()
+        ? error.subscriptionMessage
+        : "Abonnement requis";
     return {
-      message: error.subscriptionMessage || "Abonnement requis",
+      message: msg,
       isSubscriptionError: true,
       status: 402,
     };
   }
 
+  const data = error?.response?.data;
   const message =
-    error?.response?.data?.detail ||
-    error?.response?.data?.message ||
-    error?.message ||
-    "Une erreur est survenue";
+    data && typeof data === "object"
+      ? formatApiErrorBody(data as Record<string, unknown>, error?.message || "Une erreur est survenue")
+      : error?.message || "Une erreur est survenue";
 
   return {
     message,

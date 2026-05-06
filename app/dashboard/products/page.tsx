@@ -90,6 +90,7 @@ import {
     ProductFilters,
     ImportResult,
 } from "@/actions/products.actions";
+import { formatApiErrorBody } from "@/lib/api/drf-error";
 import { cn } from "@/lib/utils";
 import { DataPagination } from "@/components/shared/DataPagination";
 
@@ -305,14 +306,34 @@ export default function ProductsPage() {
                 fetchProducts();
             }
         } else {
-            setImportResult(result.data || {
-                success: false,
-                error: result.message,
-                created: 0,
-                updated: 0,
-                skipped: 0,
-                errors: []
-            });
+            const msg = result.message || "Erreur lors de l'importation";
+            toast.error(msg);
+            const data = result.data;
+            if (data) {
+                const errorDisplay =
+                    typeof data.error === "string"
+                        ? data.error
+                        : data.error != null
+                          ? formatApiErrorBody(
+                                { error: data.error, detail: data.error } as Record<string, unknown>,
+                                msg
+                            )
+                          : msg;
+                setImportResult({
+                    ...data,
+                    success: false,
+                    error: errorDisplay,
+                });
+            } else {
+                setImportResult({
+                    success: false,
+                    error: msg,
+                    created: 0,
+                    updated: 0,
+                    skipped: 0,
+                    errors: [],
+                });
+            }
         }
 
         setIsImporting(false);
@@ -947,7 +968,16 @@ function ImportDialog({
                                         <XCircle className="h-5 w-5" />
                                         Erreur d&apos;importation
                                     </div>
-                                    <p className="text-sm text-red-600">{importResult.error}</p>
+                                    <p className="text-sm text-red-600">
+                                        {typeof importResult.error === "string"
+                                            ? importResult.error
+                                            : importResult.error
+                                              ? formatApiErrorBody(
+                                                    importResult.error as Record<string, unknown>,
+                                                    "Erreur d'importation"
+                                                )
+                                              : "Erreur d'importation"}
+                                    </p>
                                 </div>
                             )}
 

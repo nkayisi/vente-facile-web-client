@@ -1,5 +1,6 @@
 "use server";
 
+import { formatApiErrorBody, formatAxiosErrorMessage } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -97,13 +98,10 @@ export async function getMembers(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error:
-        error?.response?.data?.detail ||
-        error?.message ||
-        "Erreur lors de la récupération des membres",
+      error: formatAxiosErrorMessage(error, "Erreur lors de la récupération des membres"),
     };
   }
 }
@@ -128,13 +126,10 @@ export async function getMember(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error:
-        error?.response?.data?.detail ||
-        error?.message ||
-        "Erreur lors de la récupération du membre",
+      error: formatAxiosErrorMessage(error, "Erreur lors de la récupération du membre"),
     };
   }
 }
@@ -160,16 +155,17 @@ export async function createUser(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    const errorData = error?.response?.data;
-    let errorMsg = "Erreur lors de la création de l'utilisateur";
+  } catch (error: unknown) {
+    const err = error as { response?: { data?: Record<string, unknown> } };
+    const errorData = err?.response?.data;
+    const fallback = "Erreur lors de la création de l'utilisateur";
+    let errorMsg = errorData
+      ? formatApiErrorBody(errorData, fallback)
+      : formatAxiosErrorMessage(error, fallback);
 
-    if (errorData?.detail) {
-      errorMsg = errorData.detail;
-    } else if (errorData?.email) {
-      errorMsg = Array.isArray(errorData.email)
-        ? errorData.email[0]
-        : errorData.email;
+    if (errorData?.email && errorData.detail == null) {
+      const em = errorData.email;
+      errorMsg = Array.isArray(em) ? String(em[0]) : String(em);
     }
 
     return {
@@ -201,13 +197,10 @@ export async function updateMember(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error:
-        error?.response?.data?.detail ||
-        error?.message ||
-        "Erreur lors de la mise à jour du membre",
+      error: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour du membre"),
     };
   }
 }
@@ -229,13 +222,10 @@ export async function removeMember(
     );
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error:
-        error?.response?.data?.detail ||
-        error?.message ||
-        "Erreur lors de la suppression du membre",
+      error: formatAxiosErrorMessage(error, "Erreur lors de la suppression du membre"),
     };
   }
 }

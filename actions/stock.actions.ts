@@ -1,5 +1,6 @@
 "use server";
 
+import { formatAxiosErrorMessage } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -382,12 +383,12 @@ export async function createWarehouse(
     );
 
     return { success: true, message: "Entrepôt créé avec succès", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Create warehouse error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Create warehouse error:", (error as any).response?.data || (error as Error).message);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la création de l'entrepôt",
-      errors: error.response?.data,
+      message: formatAxiosErrorMessage(error, "Erreur lors de la création de l'entrepôt"),
+      errors: (error as any).response?.data,
     };
   }
 }

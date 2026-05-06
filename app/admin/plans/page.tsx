@@ -48,10 +48,12 @@ import {
   Trash2,
   Users,
   Building2,
+  Warehouse,
   Package,
   Loader2,
   MoreHorizontal,
   Star,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -79,6 +81,7 @@ export default function AdminPlansPage() {
     currency: "",
     max_users: 1,
     max_branches: 1,
+    max_warehouses: 1,
     max_products: undefined,
     max_monthly_transactions: undefined,
     storage_limit_mb: 100,
@@ -87,6 +90,7 @@ export default function AdminPlansPage() {
     is_featured: false,
     trial_days: 0,
     sort_order: 0,
+    tier: 1,
   });
 
   async function fetchPlans() {
@@ -134,6 +138,7 @@ export default function AdminPlansPage() {
       currency: defaultCurrencyId(currencies),
       max_users: 1,
       max_branches: 1,
+      max_warehouses: 1,
       max_products: undefined,
       max_monthly_transactions: undefined,
       storage_limit_mb: 100,
@@ -142,6 +147,7 @@ export default function AdminPlansPage() {
       is_featured: false,
       trial_days: 0,
       sort_order: 0,
+      tier: 1,
     });
     setEditingPlan(null);
   }
@@ -161,6 +167,7 @@ export default function AdminPlansPage() {
       currency: plan.currency.id,
       max_users: plan.max_users,
       max_branches: plan.max_branches,
+      max_warehouses: plan.max_warehouses,
       max_products: plan.max_products,
       max_monthly_transactions: plan.max_monthly_transactions,
       storage_limit_mb: plan.storage_limit_mb,
@@ -169,6 +176,7 @@ export default function AdminPlansPage() {
       is_featured: plan.is_featured,
       trial_days: plan.trial_days,
       sort_order: plan.sort_order,
+      tier: plan.tier ?? 1,
     });
     setEditingPlan(plan);
     setIsDialogOpen(true);
@@ -407,6 +415,22 @@ export default function AdminPlansPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
+                      <Label htmlFor="max_warehouses" className="text-xs">
+                        Entrepôts *
+                      </Label>
+                      <Input
+                        id="max_warehouses"
+                        type="number"
+                        min={1}
+                        value={formData.max_warehouses}
+                        onChange={(e) =>
+                          handleInputChange("max_warehouses", parseInt(e.target.value, 10) || 1)
+                        }
+                        required
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
                       <Label htmlFor="max_products" className="text-xs">
                         Produits
                       </Label>
@@ -481,6 +505,23 @@ export default function AdminPlansPage() {
                         required
                         className="h-8 text-sm"
                         title="Plus petit = affiché en premier"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="tier" className="text-xs">
+                        Palier (tier) *
+                      </Label>
+                      <Input
+                        id="tier"
+                        type="number"
+                        min={1}
+                        value={formData.tier}
+                        onChange={(e) =>
+                          handleInputChange("tier", Math.max(1, parseInt(e.target.value, 10) || 1))
+                        }
+                        required
+                        className="h-8 text-sm"
+                        title="Plus le palier est élevé, plus l’offre est considérée comme supérieure (upgrade / anti-downgrade)."
                       />
                     </div>
                   </div>
@@ -604,12 +645,20 @@ export default function AdminPlansPage() {
 
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-muted-foreground" />
+                  <span>Palier {plan.tier ?? 1}</span>
+                </div>
+                <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-muted-foreground" />
                   <span>{plan.max_users} utilisateurs</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Building2 className="h-4 w-4 text-muted-foreground" />
                   <span>{plan.max_branches} succursales</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Warehouse className="h-4 w-4 text-muted-foreground" />
+                  <span>{plan.max_warehouses ?? plan.max_branches} entrepôts</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Package className="h-4 w-4 text-muted-foreground" />
