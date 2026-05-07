@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import { useOrganization } from "@/components/auth/organization-checker";
 import {
   getPlans,
+  getSubscriptionStatus,
   initiateMokoSubscriptionPayment,
   checkMokoPaymentStatus,
   type MokoOperator,
@@ -42,11 +43,14 @@ const OPERATORS: {
   ];
 
 type BillingKey = "monthly" | "yearly" | "quarterly";
+type CheckoutMode = "new" | "extend";
 
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const planId = searchParams.get("planId");
+  const modeParam = searchParams.get("mode");
+  const checkoutMode: CheckoutMode = modeParam === "extend" ? "extend" : "new";
   const cycleParam = searchParams.get("cycle");
   const initialCycle: BillingKey =
     cycleParam === "yearly" || cycleParam === "quarterly" ? cycleParam : "monthly";
@@ -56,6 +60,7 @@ function CheckoutContent() {
   const { organization } = useOrganization();
 
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [method, setMethod] = useState<MokoOperator | null>(null);
   const [customerNumber, setCustomerNumber] = useState("");
@@ -146,25 +151,34 @@ function CheckoutContent() {
 
   useEffect(() => {
     async function load() {
-      if (!session?.accessToken) return;
+      if (!session?.accessToken || !organization?.id) return;
       setLoadingPlans(true);
-      const res = await getPlans(session.accessToken);
-      if (res.success && res.data) {
-        setPlans(res.data.filter((p) => p.code !== "trial"));
+      const [plansRes, statusRes] = await Promise.all([
+        getPlans(session.accessToken),
+        getSubscriptionStatus(session.accessToken, organization.id),
+      ]);
+      if (plansRes.success && plansRes.data) {
+        setPlans(plansRes.data.filter((p) => p.code !== "trial"));
       } else {
-        toast.error(res.error || "Impossible de charger les plans");
+        toast.error(plansRes.error || "Impossible de charger les plans");
+      }
+      if (statusRes.success && statusRes.data?.subscription?.current_period_end) {
+        setCurrentPeriodEnd(statusRes.data.subscription.current_period_end);
+      } else {
+        setCurrentPeriodEnd(null);
       }
       setLoadingPlans(false);
     }
-    if (sessionStatus === "authenticated" && session?.accessToken) load();
-  }, [session?.accessToken, sessionStatus]);
+    if (sessionStatus === "authenticated" && session?.accessToken && organization?.id) load();
+  }, [organization?.id, session?.accessToken, sessionStatus]);
 
   const loginRedirectUrl = useMemo(() => {
     const q = new URLSearchParams();
     if (planId) q.set("planId", planId);
     q.set("cycle", billingCycle);
+    q.set("mode", checkoutMode);
     return `/payment/checkout?${q.toString()}`;
-  }, [planId, billingCycle]);
+  }, [planId, billingCycle, checkoutMode]);
 
   useEffect(() => {
     if (sessionStatus === "unauthenticated") {
@@ -194,6 +208,7 @@ function CheckoutContent() {
         {
           plan_id: plan.id,
           billing_cycle: billingCycle,
+          mode: checkoutMode,
           method,
           customer_number: customerNumber.trim(),
         }
@@ -276,6 +291,7 @@ function CheckoutContent() {
   const monthly = parseFloat(plan.price_monthly);
   const yearly = parseFloat(plan.price_yearly);
   const quarterly = monthly * 3;
+  const durationDays = billingCycle === "yearly" ? 360 : billingCycle === "quarterly" ? 90 : 30;
   const amount =
     billingCycle === "yearly" ? yearly : billingCycle === "quarterly" ? quarterly : monthly;
 
@@ -284,6 +300,9 @@ function CheckoutContent() {
       ? Math.round((1 - yearly / (monthly * 12)) * 100)
       : 0;
   const yearlyMonthlyEquiv = yearly > 0 ? yearly / 12 : 0;
+  const extensionPreviewEnd = currentPeriodEnd
+    ? new Date(new Date(currentPeriodEnd).getTime() + durationDays * 24 * 60 * 60 * 1000)
+    : null;
 
   const billingOptions: {
     key: BillingKey;
@@ -329,6 +348,11 @@ function CheckoutContent() {
         <p className="mt-2 text-slate-600">
           Plan <span className="font-semibold text-orange-600">{plan.name}</span>
         </p>
+        {checkoutMode === "extend" && (
+          <p className="mt-2 text-sm text-slate-500">
+            Prolongation du plan en cours après paiement confirmé.
+          </p>
+        )}
       </div>
 
       <form onSubmit={handlePay} className="space-y-6">
@@ -422,6 +446,22 @@ function CheckoutContent() {
 
         {/* Récapitulatif */}
         <div className="rounded-xl bg-slate-100 p-4">
+          {checkoutMode === "extend" && currentPeriodEnd && extensionPreviewEnd && (
+            <div className="mb-3 space-y-1 text-sm text-slate-600">
+              <p>
+                Fin actuelle:{" "}
+                <span className="font-semibold text-slate-900">
+                  {new Date(currentPeriodEnd).toLocaleDateString("fr-CD")}
+                </span>
+              </p>
+              <p>
+                Nouvelle fin estimée:{" "}
+                <span className="font-semibold text-emerald-700">
+                  {extensionPreviewEnd.toLocaleDateString("fr-CD")}
+                </span>
+              </p>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-slate-600">Total à payer</span>
             <span className="text-xl font-bold text-slate-900">
@@ -440,7 +480,7 @@ function CheckoutContent() {
           {processing ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
-            "Payer maintenant"
+            checkoutMode === "extend" ? "Payer et prolonger" : "Payer maintenant"
           )}
         </Button>
 

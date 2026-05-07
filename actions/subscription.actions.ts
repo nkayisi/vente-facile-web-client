@@ -271,6 +271,7 @@ export type MokoOperator = "airtel" | "orange" | "mpesa" | "africell";
 export interface MokoInitiatePayload {
   plan_id: string;
   billing_cycle: "monthly" | "quarterly" | "yearly";
+  mode?: "new" | "extend";
   method: MokoOperator;
   customer_number: string;
 }

@@ -98,8 +98,8 @@ export default function SubscriptionPage() {
     loadData();
   }, [session?.accessToken, organization]);
 
-  function handleSelectPlan(plan: Plan) {
-    const q = new URLSearchParams({ planId: plan.id, cycle: "monthly" });
+  function handleSelectPlan(plan: Plan, mode: "new" | "extend" = "new") {
+    const q = new URLSearchParams({ planId: plan.id, cycle: "monthly", mode });
     router.push(`/payment/checkout?${q.toString()}`);
   }
 
@@ -111,6 +111,7 @@ export default function SubscriptionPage() {
     label: string;
     title?: string;
     isCurrent: boolean;
+    mode: "new" | "extend";
   } {
     const isCurrent = subscription?.plan === plan.id;
     const floor = quotas?.subscription_floor_tier ?? 0;
@@ -121,16 +122,18 @@ export default function SubscriptionPage() {
         title:
           "Vous ne pouvez pas souscrire à une offre de palier inférieur à celui déjà utilisé sur ce compte.",
         isCurrent,
+        mode: "new",
       };
     }
     if (isCurrent) {
       if (quotas?.period_not_ended) {
         return {
-          disabled: true,
-          label: "Plan actuel",
+          disabled: false,
+          label: "Prolonger",
           title:
-            "Le renouvellement ou une prolongation sera possible lorsque la période en cours sera terminée.",
+            "Prolonger la période de ce plan en payant une période supplémentaire.",
           isCurrent: true,
+          mode: "extend",
         };
       }
       return {
@@ -138,6 +141,7 @@ export default function SubscriptionPage() {
         label: "Renouveler",
         title: "Souscrire à nouveau à ce plan",
         isCurrent: true,
+        mode: "new",
       };
     }
     if (quotas?.period_not_ended && quotas.plan_tier != null && plan.tier <= quotas.plan_tier) {
@@ -147,9 +151,10 @@ export default function SubscriptionPage() {
         title:
           "Pendant la période en cours, seul un plan à palier strictement supérieur (upgrade) est disponible.",
         isCurrent: false,
+        mode: "new",
       };
     }
-    return { disabled: false, label: "Choisir ce plan", isCurrent: false };
+    return { disabled: false, label: "Choisir ce plan", isCurrent: false, mode: "new" };
   }
 
   if (isLoading) {
@@ -331,7 +336,7 @@ export default function SubscriptionPage() {
                       className={`w-full ${planAction.disabled ? "" : "bg-orange-600 hover:bg-orange-700"}`}
                       variant={planAction.disabled ? "outline" : "default"}
                       onClick={() => {
-                        if (!planAction.disabled) handleSelectPlan(plan);
+                        if (!planAction.disabled) handleSelectPlan(plan, planAction.mode);
                       }}
                     >
                       {planAction.isCurrent && planAction.disabled ? (
