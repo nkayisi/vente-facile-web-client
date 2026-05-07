@@ -149,9 +149,12 @@ export interface ProductFilters {
   search?: string;
   category?: string;
   brand?: string;
+  warehouse?: string;
   is_active?: boolean;
   is_featured?: boolean;
   in_stock?: boolean;
+  /** Liste catalogue dashboard : tous les produits de l’org (POS inchangé sans ce flag). */
+  full_catalog?: boolean;
   ordering?: string;
   page?: number;
   page_size?: number;
@@ -200,9 +203,12 @@ export async function getProducts(
     if (filters?.search) params.append("search", filters.search);
     if (filters?.category) params.append("category", filters.category);
     if (filters?.brand) params.append("brand", filters.brand);
+    if (filters?.warehouse) params.append("warehouse", filters.warehouse);
     if (filters?.is_active !== undefined) params.append("is_active", String(filters.is_active));
     if (filters?.is_featured !== undefined) params.append("is_featured", String(filters.is_featured));
     if (filters?.in_stock !== undefined) params.append("in_stock", String(filters.in_stock));
+    if (filters?.full_catalog !== undefined)
+      params.append("full_catalog", String(filters.full_catalog));
     if (filters?.ordering) params.append("ordering", filters.ordering);
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.page_size) params.append("page_size", String(filters.page_size));
@@ -427,6 +433,8 @@ export interface CategoryFilters {
   search?: string;
   is_active?: boolean;
   parent?: string | null;
+  warehouse?: string;
+  with_stock?: boolean;
   page?: number;
   page_size?: number;
 }
@@ -447,6 +455,8 @@ export async function getCategories(
         params.append("parent", filters.parent);
       }
     }
+    if (filters?.warehouse) params.append("warehouse", filters.warehouse);
+    if (filters?.with_stock !== undefined) params.append("with_stock", String(filters.with_stock));
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
@@ -887,7 +897,12 @@ export async function importProducts(
       data: response.data,
     };
   } catch (error: unknown) {
-    console.error("[Products] Import error:", (error as any).response?.data || (error as Error).message);
+    const raw = (error as { response?: { data?: unknown } }).response?.data;
+    const logLine =
+      typeof raw === "string" && /^\s*</.test(raw)
+        ? "[Products] Import: le backend a renvoyé une page HTML (erreur 500 typique). Voir docker compose logs vente_facile_backend_dev."
+        : raw ?? (error as Error).message;
+    console.error("[Products] Import error:", logLine);
     const data = (error as any)?.response?.data;
     return {
       success: false,

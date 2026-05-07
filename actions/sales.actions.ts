@@ -22,8 +22,8 @@ export interface Register {
   code: string;
   branch: string;
   branch_name: string;
-  warehouse: string | null;
-  warehouse_name: string | null;
+  warehouse: string;
+  warehouse_name: string;
   is_active: boolean;
   receipt_header: string;
   receipt_footer: string;
@@ -234,7 +234,7 @@ export interface CreateRegisterData {
   name: string;
   code: string;
   branch: string;
-  warehouse?: string;
+  warehouse: string;
   is_active?: boolean;
   receipt_header?: string;
   receipt_footer?: string;

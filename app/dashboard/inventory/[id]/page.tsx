@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -84,7 +84,9 @@ import {
   InventoryCount,
   CountItemData,
   PrintData,
+  InventoryCountFilters,
 } from "@/actions/inventory.actions";
+import { DataPagination } from "@/components/shared/DataPagination";
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -104,11 +106,17 @@ export default function InventoryDetailPage() {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [inventorySession, setInventorySession] = useState<InventorySession | null>(null);
   const [counts, setCounts] = useState<InventoryCount[]>([]);
+  const [countsTotal, setCountsTotal] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasNextCountsPage, setHasNextCountsPage] = useState(false);
+  const [hasPreviousCountsPage, setHasPreviousCountsPage] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPageChanging, setIsPageChanging] = useState(false);
 
   // Local edits for counting
   const [editedCounts, setEditedCounts] = useState<Record<string, { quantity: string; notes: string }>>({});
+  const [countOriginals, setCountOriginals] = useState<Record<string, InventoryCount>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Filters
@@ -138,7 +146,48 @@ export default function InventoryDetailPage() {
     fetchOrg();
   }, [session?.accessToken]);
 
-  // Fetch session and counts
+  const getCountFilters = useCallback((): InventoryCountFilters => {
+    const filters: InventoryCountFilters = { page: currentPage };
+    if (search.trim()) filters.search = search.trim();
+    if (countFilter === "counted") filters.is_counted = true;
+    if (countFilter === "uncounted") filters.is_counted = false;
+    if (countFilter === "difference") filters.has_difference = true;
+    return filters;
+  }, [countFilter, currentPage, search]);
+
+  const fetchCounts = useCallback(async () => {
+    if (!session?.accessToken || !organization?.id || !inventorySession || inventorySession.status === "draft") {
+      return;
+    }
+    const countsResult = await getInventoryCounts(
+      session.accessToken,
+      organization.id,
+      sessionId,
+      getCountFilters()
+    );
+    if (countsResult.success && countsResult.data) {
+      const pageCounts = countsResult.data.results || [];
+      setCounts(pageCounts);
+      setCountsTotal(countsResult.data.count || 0);
+      setHasNextCountsPage(countsResult.data.next !== null);
+      setHasPreviousCountsPage(countsResult.data.previous !== null);
+      setCountOriginals((prev) => {
+        const next = { ...prev };
+        for (const c of pageCounts) next[c.id] = c;
+        return next;
+      });
+    } else {
+      toast.error(countsResult.message || "Erreur lors du chargement des lignes de comptage");
+    }
+  }, [
+    getCountFilters,
+    inventorySession,
+    organization?.id,
+    session?.accessToken,
+    sessionId,
+  ]);
+
+  // Fetch session and first page of counts
   const fetchData = useCallback(async () => {
     if (!session?.accessToken || !organization?.id) return;
     setIsLoading(true);
@@ -148,9 +197,23 @@ export default function InventoryDetailPage() {
       setInventorySession(sessionResult.data);
 
       if (sessionResult.data.status !== "draft") {
-        const countsResult = await getInventoryCounts(session.accessToken, organization.id, sessionId);
+        const countsResult = await getInventoryCounts(
+          session.accessToken,
+          organization.id,
+          sessionId,
+          getCountFilters()
+        );
         if (countsResult.success && countsResult.data) {
-          setCounts(countsResult.data);
+          const pageCounts = countsResult.data.results || [];
+          setCounts(pageCounts);
+          setCountsTotal(countsResult.data.count || 0);
+          setHasNextCountsPage(countsResult.data.next !== null);
+          setHasPreviousCountsPage(countsResult.data.previous !== null);
+          setCountOriginals((prev) => {
+            const next = { ...prev };
+            for (const c of pageCounts) next[c.id] = c;
+            return next;
+          });
         }
       }
     } else {
@@ -158,11 +221,19 @@ export default function InventoryDetailPage() {
       router.push("/dashboard/inventory");
     }
     setIsLoading(false);
-  }, [session?.accessToken, organization?.id, sessionId, router]);
+  }, [session?.accessToken, organization?.id, sessionId, router, getCountFilters]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, countFilter]);
+
+  useEffect(() => {
+    fetchCounts();
+  }, [fetchCounts]);
 
   // Handle count input change
   const handleCountChange = (countId: string, value: string) => {
@@ -182,17 +253,91 @@ export default function InventoryDetailPage() {
     setHasUnsavedChanges(true);
   };
 
+  const buildCountPayload = useCallback(
+    (countId: string, edited: { quantity: string; notes: string }): CountItemData | null => {
+      const original = countOriginals[countId];
+      if (!original) return null;
+
+      const quantityRaw = edited.quantity?.trim() ?? "";
+      const notesRaw = edited.notes ?? "";
+      const originalNotes = original.notes || "";
+      const quantityChanged = quantityRaw !== "";
+      const notesChanged = notesRaw !== originalNotes;
+
+      if (!quantityChanged && !notesChanged) return null;
+
+      const quantityCounted = quantityChanged
+        ? parseFloat(quantityRaw)
+        : parseFloat(original.quantity_counted || "0");
+      if (Number.isNaN(quantityCounted)) return null;
+
+      return {
+        id: countId,
+        quantity_counted: quantityCounted,
+        notes: notesRaw || undefined,
+      };
+    },
+    [countOriginals]
+  );
+
+  const saveCurrentPageEdits = useCallback(async (): Promise<boolean> => {
+    if (!session?.accessToken || !organization?.id || !inventorySession) return false;
+
+    const currentPageIds = new Set(counts.map((c) => c.id));
+    const countsToSave: CountItemData[] = Object.entries(editedCounts)
+      .filter(([id]) => currentPageIds.has(id))
+      .map(([id, val]) => buildCountPayload(id, val))
+      .filter((item): item is CountItemData => item !== null);
+
+    if (countsToSave.length === 0) return true;
+
+    setIsSaving(true);
+    const result = await submitInventoryCounts(
+      session.accessToken,
+      organization.id,
+      inventorySession.id,
+      countsToSave
+    );
+    setIsSaving(false);
+
+    if (!result.success) {
+      toast.error(result.message || "Erreur lors de la sauvegarde automatique");
+      return false;
+    }
+
+    setEditedCounts((prev) => {
+      const next = { ...prev };
+      for (const item of countsToSave) delete next[item.id];
+      setHasUnsavedChanges(Object.keys(next).length > 0);
+      return next;
+    });
+    return true;
+  }, [
+    buildCountPayload,
+    counts,
+    editedCounts,
+    inventorySession,
+    organization?.id,
+    session?.accessToken,
+  ]);
+
+  const handlePageChange = async (page: number) => {
+    if (page === currentPage || isPageChanging) return;
+    setIsPageChanging(true);
+    const ok = await saveCurrentPageEdits();
+    if (ok) {
+      setCurrentPage(page);
+    }
+    setIsPageChanging(false);
+  };
+
   // Save counts
   const handleSaveCounts = async () => {
     if (!session?.accessToken || !organization?.id || !inventorySession) return;
 
     const countsToSave: CountItemData[] = Object.entries(editedCounts)
-      .filter(([_, val]) => val.quantity !== "")
-      .map(([id, val]) => ({
-        id,
-        quantity_counted: parseFloat(val.quantity),
-        notes: val.notes || undefined,
-      }));
+      .map(([id, val]) => buildCountPayload(id, val))
+      .filter((item): item is CountItemData => item !== null);
 
     if (countsToSave.length === 0) {
       toast.error("Aucun comptage à enregistrer");
@@ -207,7 +352,11 @@ export default function InventoryDetailPage() {
       toast.success(`${result.data?.updated_count} comptage(s) enregistré(s)`);
       setEditedCounts({});
       setHasUnsavedChanges(false);
-      fetchData();
+      fetchCounts();
+      const sessionResult = await getInventorySession(session.accessToken, organization.id, sessionId);
+      if (sessionResult.success && sessionResult.data) {
+        setInventorySession(sessionResult.data);
+      }
     } else {
       toast.error(result.message);
     }
@@ -586,19 +735,7 @@ export default function InventoryDetailPage() {
     doc.save(`Rapport_Inventaire_${data.session.reference}.pdf`);
   };
 
-  // Filter counts
-  const filteredCounts = counts.filter((c) => {
-    if (search) {
-      const s = search.toLowerCase();
-      if (!c.product_name.toLowerCase().includes(s) && !(c.product_sku || "").toLowerCase().includes(s)) {
-        return false;
-      }
-    }
-    if (countFilter === "counted" && !c.is_counted) return false;
-    if (countFilter === "uncounted" && c.is_counted) return false;
-    if (countFilter === "difference" && (!c.is_counted || parseFloat(c.quantity_difference) === 0)) return false;
-    return true;
-  });
+  const totalPages = Math.max(1, Math.ceil(countsTotal / 20));
 
   if (isLoading) {
     return (
@@ -888,7 +1025,7 @@ export default function InventoryDetailPage() {
                   </SelectContent>
                 </Select>
                 {isEditable && hasUnsavedChanges && (
-                  <Button onClick={handleSaveCounts} disabled={isSaving} size="sm" className="bg-orange-500 hover:bg-orange-600 shrink-0">
+                  <Button onClick={handleSaveCounts} disabled={isSaving || isPageChanging} size="sm" className="bg-orange-500 hover:bg-orange-600 shrink-0">
                     {isSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
                     Enregistrer
                   </Button>
@@ -913,7 +1050,7 @@ export default function InventoryDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredCounts.map((count) => {
+                  {counts.map((count) => {
                     const edited = editedCounts[count.id];
                     const diff = count.is_counted ? parseFloat(count.quantity_difference) : 0;
                     const diffValue = count.is_counted ? parseFloat(count.difference_value) : 0;
@@ -985,7 +1122,7 @@ export default function InventoryDetailPage() {
                       </TableRow>
                     );
                   })}
-                  {filteredCounts.length === 0 && (
+                  {counts.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8 text-gray-500">
                         Aucun produit trouvé
@@ -994,6 +1131,15 @@ export default function InventoryDetailPage() {
                   )}
                 </TableBody>
               </Table>
+            </div>
+            <div className="px-4 py-3 border-t bg-gray-50/50">
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                hasNext={hasNextCountsPage}
+                hasPrevious={hasPreviousCountsPage}
+                onPageChange={handlePageChange}
+              />
             </div>
           </CardContent>
         </Card>

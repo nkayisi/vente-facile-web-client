@@ -6,7 +6,6 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -43,8 +42,6 @@ import {
   Trash2,
   Loader2,
   FolderTree,
-  Package,
-  ChevronRight,
 } from "lucide-react";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
@@ -56,7 +53,7 @@ import {
   CategoryFilters,
 } from "@/actions/products.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
-import { cn } from "@/lib/utils";
+import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
 
 export default function CategoriesPage() {
   const { data: session } = useSession();
@@ -232,6 +229,87 @@ export default function CategoriesPage() {
     return cat?.name || null;
   };
 
+  const categoryColumns: DataTableColumn<Category>[] = [
+    {
+      id: "name",
+      header: "Nom",
+      className: "min-w-[200px]",
+      cell: (category) => (
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="font-medium text-foreground">{category.name}</span>
+          {category.description ? (
+            <span className="truncate text-xs text-muted-foreground">{category.description}</span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "parent",
+      header: "Catégorie parente",
+      cell: (category) => (
+        <span className="text-muted-foreground">
+          {category.parent_name?.trim() ||
+            (category.parent ? getCategoryName(category.parent) : null) ||
+            "—"}
+        </span>
+      ),
+    },
+    {
+      id: "products",
+      header: "Produits",
+      className: "text-right tabular-nums",
+      cell: (category) => (
+        <span className="tabular-nums text-muted-foreground">{category.products_count ?? 0}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Statut",
+      cell: (category) => (
+        <Badge variant={category.is_active ? "default" : "secondary"}>
+          {category.is_active ? "Actif" : "Inactif"}
+        </Badge>
+      ),
+    },
+    {
+      id: "actions",
+      header: <span className="sr-only">Actions</span>,
+      className: "w-[52px] text-right",
+      cell: (category) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-10 shrink-0"
+              aria-label={`Actions pour ${category.name}`}
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem className="gap-2" onClick={() => openEditDialog(category)}>
+              <Edit className="h-4 w-4" />
+              Modifier
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="gap-2 text-destructive focus:text-destructive"
+              onClick={() => {
+                setCategoryToDelete(category);
+                setIsDeleteDialogOpen(true);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Supprimer
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-4 lg:space-y-6">
       {/* Header */}
@@ -243,9 +321,9 @@ export default function CategoriesPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold text-gray-900">Catégories</h1>
+            <h1 className="text-balance text-xl lg:text-2xl font-bold text-gray-900">Catégories</h1>
             <p className="text-sm text-gray-500">
-              {categories.length} catégorie{categories.length > 1 ? "s" : ""}
+              {totalCount} catégorie{totalCount > 1 ? "s" : ""}
             </p>
           </div>
         </div>
@@ -267,103 +345,31 @@ export default function CategoriesPage() {
         />
       </div>
 
-      {/* Categories List */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
-        </div>
-      ) : categories.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-              <FolderTree className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-1">Aucune catégorie</h3>
-            <p className="text-sm text-gray-500 text-center mb-4">
-              Créez des catégories pour organiser vos produits.
-            </p>
-            <Button onClick={openNewDialog} className="bg-orange-500 hover:bg-orange-600">
-              <Plus className="h-4 w-4 mr-2" />
-              Créer une catégorie
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <div className="divide-y">
-            {categories.map((category) => (
-              <div
-                key={category.id}
-                className="flex items-center justify-between p-4 hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <FolderTree className="h-5 w-5 text-orange-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-medium text-gray-900 truncate">{category.name}</h3>
-                      {!category.is_active && (
-                        <Badge variant="secondary" className="text-xs">Inactif</Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      {category.parent && (
-                        <>
-                          <span className="truncate">{getCategoryName(category.parent)}</span>
-                          <ChevronRight className="h-3 w-3 flex-shrink-0" />
-                        </>
-                      )}
-                      <span className="flex items-center gap-1">
-                        <Package className="h-3 w-3" />
-                        {category.products_count || 0} produit{(category.products_count || 0) > 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openEditDialog(category)}>
-                      <Edit className="h-4 w-4 mr-2" />
-                      Modifier
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setCategoryToDelete(category);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                      className="text-red-600"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Supprimer
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            ))}
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="p-4 border-t">
-              <DataPagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={setCurrentPage}
-                hasNext={hasNext}
-                hasPrevious={hasPrevious}
-              />
-            </div>
-          )}
-        </Card>
-      )}
+      <ProductsDataTable<Category>
+        columns={categoryColumns}
+        data={categories}
+        isLoading={isLoading}
+        emptyMessage="Aucune catégorie"
+        emptyDescription="Créez des catégories pour organiser vos produits."
+        emptyIcon={<FolderTree className="h-8 w-8" />}
+        emptyAction={
+          <Button onClick={openNewDialog} className="bg-orange-500 hover:bg-orange-600">
+            <Plus className="h-4 w-4" data-icon="inline-start" />
+            Créer une catégorie
+          </Button>
+        }
+        tableFooter={
+          !isLoading && categories.length > 0 && totalPages > 1 ? (
+            <DataPagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              hasNext={hasNext}
+              hasPrevious={hasPrevious}
+            />
+          ) : null
+        }
+      />
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

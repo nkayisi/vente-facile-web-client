@@ -6,7 +6,6 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -42,7 +41,6 @@ import {
   Trash2,
   Loader2,
   Tag,
-  Package,
 } from "lucide-react";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
@@ -54,6 +52,7 @@ import {
   BrandFilters,
 } from "@/actions/products.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
 
 export default function BrandsPage() {
   const { data: session } = useSession();
@@ -141,6 +140,74 @@ export default function BrandsPage() {
     setIsDialogOpen(true);
   };
 
+  const brandColumns: DataTableColumn<Brand>[] = [
+    {
+      id: "name",
+      header: "Marque",
+      className: "min-w-[200px]",
+      cell: (brand) => (
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="font-medium text-foreground">{brand.name}</span>
+          <span className="truncate text-xs text-muted-foreground">{brand.slug}</span>
+        </div>
+      ),
+    },
+    {
+      id: "products",
+      header: "Produits",
+      className: "text-right tabular-nums",
+      cell: (brand) => (
+        <span className="tabular-nums text-muted-foreground">{brand.products_count ?? 0}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Statut",
+      cell: (brand) => (
+        <Badge variant={brand.is_active ? "default" : "secondary"}>
+          {brand.is_active ? "Actif" : "Inactif"}
+        </Badge>
+      ),
+    },
+    {
+      id: "actions",
+      header: <span className="sr-only">Actions</span>,
+      className: "w-[52px] text-right",
+      cell: (brand) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-10 shrink-0"
+              aria-label={`Actions pour ${brand.name}`}
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem className="gap-2" onClick={() => openEditDialog(brand)}>
+              <Edit className="h-4 w-4" />
+              Modifier
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="gap-2 text-destructive focus:text-destructive"
+              onClick={() => {
+                setBrandToDelete(brand);
+                setIsDeleteDialogOpen(true);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Supprimer
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ];
+
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -215,9 +282,9 @@ export default function BrandsPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold text-gray-900">Marques</h1>
+            <h1 className="text-balance text-xl lg:text-2xl font-bold text-gray-900">Marques</h1>
             <p className="text-sm text-gray-500">
-              {brands.length} marque{brands.length > 1 ? "s" : ""}
+              {totalCount} marque{totalCount > 1 ? "s" : ""}
             </p>
           </div>
         </div>
@@ -239,95 +306,31 @@ export default function BrandsPage() {
         />
       </div>
 
-      {/* Brands List */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
-        </div>
-      ) : brands.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-              <Tag className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-1">Aucune marque</h3>
-            <p className="text-sm text-gray-500 text-center mb-4">
-              Créez des marques pour identifier vos produits.
-            </p>
-            <Button onClick={openNewDialog} className="bg-orange-500 hover:bg-orange-600">
-              <Plus className="h-4 w-4 mr-2" />
-              Créer une marque
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <div className="divide-y">
-            {brands.map((brand) => (
-              <div
-                key={brand.id}
-                className="flex items-center justify-between p-4 hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Tag className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-medium text-gray-900 truncate">{brand.name}</h3>
-                      {!brand.is_active && (
-                        <Badge variant="secondary" className="text-xs">Inactif</Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-500 flex items-center gap-1">
-                      <Package className="h-3 w-3" />
-                      {brand.products_count || 0} produit{(brand.products_count || 0) > 1 ? "s" : ""}
-                    </p>
-                  </div>
-                </div>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openEditDialog(brand)}>
-                      <Edit className="h-4 w-4 mr-2" />
-                      Modifier
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setBrandToDelete(brand);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                      className="text-red-600"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Supprimer
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            ))}
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="p-4 border-t">
-              <DataPagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={setCurrentPage}
-                hasNext={hasNext}
-                hasPrevious={hasPrevious}
-              />
-            </div>
-          )}
-        </Card>
-      )}
+      <ProductsDataTable<Brand>
+        columns={brandColumns}
+        data={brands}
+        isLoading={isLoading}
+        emptyMessage="Aucune marque"
+        emptyDescription="Créez des marques pour identifier vos produits."
+        emptyIcon={<Tag className="h-8 w-8" />}
+        emptyAction={
+          <Button onClick={openNewDialog} className="bg-orange-500 hover:bg-orange-600">
+            <Plus className="h-4 w-4" data-icon="inline-start" />
+            Créer une marque
+          </Button>
+        }
+        tableFooter={
+          !isLoading && brands.length > 0 && totalPages > 1 ? (
+            <DataPagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              hasNext={hasNext}
+              hasPrevious={hasPrevious}
+            />
+          ) : null
+        }
+      />
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

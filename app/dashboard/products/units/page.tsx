@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -52,6 +52,7 @@ import {
   UnitFilters,
 } from "@/actions/products.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
 
 export default function UnitsPage() {
   const { data: session } = useSession();
@@ -139,6 +140,76 @@ export default function UnitsPage() {
     setIsDialogOpen(true);
   };
 
+  const unitColumns: DataTableColumn<Unit>[] = [
+    {
+      id: "name",
+      header: "Nom",
+      className: "min-w-[160px]",
+      cell: (unit) => <span className="font-medium text-foreground">{unit.name}</span>,
+    },
+    {
+      id: "symbol",
+      header: "Symbole",
+      cell: (unit) => (
+        <Badge variant="outline" className="tabular-nums font-medium">
+          {unit.symbol}
+        </Badge>
+      ),
+    },
+    {
+      id: "base",
+      header: "Unité de base",
+      cell: (unit) => (
+        <span className="text-muted-foreground">{unit.base_unit_name?.trim() || "—"}</span>
+      ),
+    },
+    {
+      id: "factor",
+      header: "Facteur",
+      className: "text-right tabular-nums",
+      cell: (unit) => (
+        <span className="tabular-nums text-muted-foreground">{unit.conversion_factor}</span>
+      ),
+    },
+    {
+      id: "actions",
+      header: <span className="sr-only">Actions</span>,
+      className: "w-[52px] text-right",
+      cell: (unit) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-10 shrink-0"
+              aria-label={`Actions pour ${unit.name}`}
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem className="gap-2" onClick={() => openEditDialog(unit)}>
+              <Edit className="h-4 w-4" />
+              Modifier
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="gap-2 text-destructive focus:text-destructive"
+              onClick={() => {
+                setUnitToDelete(unit);
+                setIsDeleteDialogOpen(true);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Supprimer
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ];
+
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -219,9 +290,9 @@ export default function UnitsPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold text-gray-900">Unités de mesure</h1>
+            <h1 className="text-balance text-xl lg:text-2xl font-bold text-gray-900">Unités de mesure</h1>
             <p className="text-sm text-gray-500">
-              {units.length} unité{units.length > 1 ? "s" : ""}
+              {totalCount} unité{totalCount > 1 ? "s" : ""}
             </p>
           </div>
         </div>
@@ -243,87 +314,31 @@ export default function UnitsPage() {
         />
       </div>
 
-      {/* Units List */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
-        </div>
-      ) : units.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col sm:flex-row gap-3 justify-between items-center justify-center py-12">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-              <Ruler className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-1">Aucune unité</h3>
-            <p className="text-sm text-gray-500 text-center mb-4">
-              Créez des unités de mesure pour vos produits.
-            </p>
-            <Button onClick={openNewDialog} className="bg-orange-500 max-w-max hover:bg-orange-600">
-              <Plus className="h-4 w-4 mr-2" />
-              Créer une unité
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <div className="divide-y">
-            {units.map((unit) => (
-              <div
-                key={unit.id}
-                className="flex items-center justify-between p-4 hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <span className="text-purple-600 font-bold text-sm">{unit.symbol}</span>
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-medium text-gray-900 truncate">{unit.name}</h3>
-                    <p className="text-sm text-gray-500">Symbole: {unit.symbol}</p>
-                  </div>
-                </div>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openEditDialog(unit)}>
-                      <Edit className="h-4 w-4 mr-2" />
-                      Modifier
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setUnitToDelete(unit);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                      className="text-red-600"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Supprimer
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            ))}
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="p-4 border-t">
-              <DataPagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={setCurrentPage}
-                hasNext={hasNext}
-                hasPrevious={hasPrevious}
-              />
-            </div>
-          )}
-        </Card>
-      )}
+      <ProductsDataTable<Unit>
+        columns={unitColumns}
+        data={units}
+        isLoading={isLoading}
+        emptyMessage="Aucune unité"
+        emptyDescription="Créez des unités de mesure pour vos produits."
+        emptyIcon={<Ruler className="h-8 w-8" />}
+        emptyAction={
+          <Button onClick={openNewDialog} className="bg-orange-500 hover:bg-orange-600">
+            <Plus className="h-4 w-4" data-icon="inline-start" />
+            Créer une unité
+          </Button>
+        }
+        tableFooter={
+          !isLoading && units.length > 0 && totalPages > 1 ? (
+            <DataPagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              hasNext={hasNext}
+              hasPrevious={hasPrevious}
+            />
+          ) : null
+        }
+      />
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

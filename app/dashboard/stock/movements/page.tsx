@@ -146,6 +146,9 @@ export default function MovementsPage() {
     async (query: string) => {
       if (!session?.accessToken || !organization) return [];
       return createProductSearchHandler(session.accessToken, organization.id, {
+        extraFilters: {
+          full_catalog: true,
+        },
         onResults: results => {
           setProducts(prev => {
             const existingIds = new Set(prev.map(p => p.id));

@@ -57,8 +57,25 @@ export function formatApiErrorBody(
  * Message utilisateur depuis une erreur Axios (réponse JSON DRF).
  */
 export function formatAxiosErrorMessage(error: unknown, fallback: string): string {
-  const err = error as { response?: { data?: unknown }; message?: string };
+  const err = error as { response?: { data?: unknown; status?: number }; message?: string };
   const data = err?.response?.data;
+
+  // Django DEBUG=True renvoie souvent une page HTML sur 500 — pas du JSON DRF.
+  if (typeof data === "string") {
+    const s = data.trim();
+    if (s.startsWith("<!DOCTYPE") || s.startsWith("<html")) {
+      const m = s.match(/<title>([^<]*)<\/title>/i);
+      const title = m?.[1]?.trim();
+      const status = err?.response?.status;
+      const prefix =
+        typeof status === "number" ? `Erreur HTTP ${status}` : "Erreur serveur";
+      return title
+        ? `${prefix} (${title}). Consultez les logs du service backend.`
+        : `${prefix} (réponse HTML). Consultez les logs du service backend.`;
+    }
+    return s.length > 400 ? `${s.slice(0, 400)}…` : s;
+  }
+
   if (data && typeof data === "object") {
     return formatApiErrorBody(data as Record<string, unknown>, fallback);
   }

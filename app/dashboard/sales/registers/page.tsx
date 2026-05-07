@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -49,10 +49,13 @@ import {
   RegisterSession,
   CreateRegisterData,
 } from "@/actions/sales.actions";
+import { usePermissions } from "@/components/auth/permissions-provider";
 
 export default function RegistersPage() {
   const { data: session } = useSession();
   const router = useRouter();
+  const { hasPermission } = usePermissions();
+  const canManageRegisters = hasPermission("sales.manage_registers");
 
   // State
   const [isLoading, setIsLoading] = useState(true);
@@ -130,17 +133,28 @@ export default function RegistersPage() {
     fetchData();
   }, [session?.accessToken]);
 
+  const warehousesForBranch = useMemo(() => {
+    const bid = formData.branch;
+    if (!bid) return warehouses;
+    return warehouses.filter(w => !w.branch || w.branch === bid);
+  }, [warehouses, formData.branch]);
+
   // Handle create/update register
   const handleSubmitRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session?.accessToken || !organization?.id) return;
+
+    if (!selectedRegister && !formData.warehouse) {
+      toast.error("Veuillez sélectionner un entrepôt.");
+      return;
+    }
 
     setIsSubmitting(true);
 
     try {
       const dataToSend = {
         ...formData,
-        warehouse: formData.warehouse || undefined,
+        warehouse: formData.warehouse,
       };
 
       let result;
@@ -349,16 +363,18 @@ export default function RegistersPage() {
             <p className="text-sm text-gray-500 mt-1">Gérez vos caisses et sessions</p>
           </div>
         </div>
-        <Button
-          onClick={() => {
-            resetForm();
-            setShowRegisterDialog(true);
-          }}
-          className="bg-orange-500 hover:bg-orange-600"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Nouvelle caisse
-        </Button>
+        {canManageRegisters ? (
+          <Button
+            onClick={() => {
+              resetForm();
+              setShowRegisterDialog(true);
+            }}
+            className="bg-orange-500 hover:bg-orange-600"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Nouvelle caisse
+          </Button>
+        ) : null}
       </div>
 
       {/* Search */}
@@ -379,12 +395,16 @@ export default function RegistersPage() {
             <Calculator className="h-12 w-12 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune caisse</h3>
             <p className="text-sm text-gray-500 mb-4">
-              Créez votre première caisse pour commencer à vendre
+              {canManageRegisters
+                ? "Créez votre première caisse pour commencer à vendre."
+                : "Aucune caisse disponible pour votre périmètre. Contactez un responsable pour en créer une."}
             </p>
-            <Button onClick={() => setShowRegisterDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Créer une caisse
-            </Button>
+            {canManageRegisters ? (
+              <Button onClick={() => setShowRegisterDialog(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Créer une caisse
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       ) : (
@@ -406,27 +426,29 @@ export default function RegistersPage() {
                         <p className="text-xs text-gray-500">{register.code}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleEditRegister(register)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-red-600 hover:text-red-700"
-                        onClick={() => {
-                          setSelectedRegister(register);
-                          setShowDeleteDialog(true);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {canManageRegisters ? (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleEditRegister(register)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-red-600 hover:text-red-700"
+                          onClick={() => {
+                            setSelectedRegister(register);
+                            setShowDeleteDialog(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="space-y-2 mb-4">
@@ -434,12 +456,10 @@ export default function RegistersPage() {
                       <span className="text-gray-500">Succursale</span>
                       <span className="font-medium">{register.branch_name}</span>
                     </div>
-                    {register.warehouse_name && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">Entrepôt</span>
-                        <span className="font-medium">{register.warehouse_name}</span>
-                      </div>
-                    )}
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Entrepôt</span>
+                      <span className="font-medium">{register.warehouse_name ?? "—"}</span>
+                    </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Statut</span>
                       <Badge className={register.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}>
@@ -546,21 +566,29 @@ export default function RegistersPage() {
               <SearchableSelect
                 options={branches.map((branch: Branch) => ({ value: branch.id, label: branch.name }))}
                 value={formData.branch || undefined}
-                onValueChange={value => setFormData({ ...formData, branch: value })}
+                onValueChange={value => {
+                  const opts = warehouses.filter(w => !w.branch || w.branch === value);
+                  const keepWh = opts.some(w => w.id === formData.warehouse);
+                  setFormData({
+                    ...formData,
+                    branch: value,
+                    warehouse: keepWh ? formData.warehouse : opts[0]?.id ?? "",
+                  });
+                }}
                 placeholder="Sélectionner une succursale"
                 searchPlaceholder="Rechercher une succursale..."
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Entrepôt (optionnel)</Label>
+              <Label>Entrepôt *</Label>
               <SearchableSelect
-                options={[
-                  { value: "none", label: "Aucun" },
-                  ...warehouses.map(warehouse => ({ value: warehouse.id, label: warehouse.name })),
-                ]}
-                value={formData.warehouse || "none"}
-                onValueChange={value => setFormData({ ...formData, warehouse: value === "none" ? "" : value })}
+                options={warehousesForBranch.map(warehouse => ({
+                  value: warehouse.id,
+                  label: warehouse.name,
+                }))}
+                value={formData.warehouse || undefined}
+                onValueChange={value => setFormData({ ...formData, warehouse: value })}
                 placeholder="Sélectionner un entrepôt"
                 searchPlaceholder="Rechercher un entrepôt..."
               />

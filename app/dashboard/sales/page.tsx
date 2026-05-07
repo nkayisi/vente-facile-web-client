@@ -254,16 +254,18 @@ export default function SalesPage() {
 
       {/* Quick Links */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        <Link href="/dashboard/sales/pos">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer h-full p-0">
-            <CardContent className="p-4 flex flex-col items-center text-center">
-              <div className="p-3 bg-orange-100 rounded-lg mb-2">
-                <ShoppingCart className="h-6 w-6 text-orange-600" />
-              </div>
-              <span className="text-sm font-medium">Point de vente</span>
-            </CardContent>
-          </Card>
-        </Link>
+        {currentSession && (
+          <Link href="/dashboard/sales/pos">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full p-0">
+              <CardContent className="p-4 flex flex-col items-center text-center">
+                <div className="p-3 bg-orange-100 rounded-lg mb-2">
+                  <ShoppingCart className="h-6 w-6 text-orange-600" />
+                </div>
+                <span className="text-sm font-medium">Point de vente</span>
+              </CardContent>
+            </Card>
+          </Link>
+        )}
 
         <Link href="/dashboard/sales/pending-payments">
           <Card className="hover:shadow-md transition-shadow cursor-pointer h-full p-0">

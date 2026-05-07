@@ -69,7 +69,12 @@ export function DataPagination({
       <PaginationContent>
         <PaginationItem>
           <PaginationPrevious
-            onClick={() => hasPrevious && onPageChange(currentPage - 1)}
+            onClick={(e) => {
+              e.preventDefault();
+              if (hasPrevious) {
+                onPageChange(currentPage - 1);
+              }
+            }}
             className={!hasPrevious ? "pointer-events-none opacity-50" : ""}
           />
         </PaginationItem>
@@ -80,7 +85,10 @@ export function DataPagination({
               <PaginationEllipsis />
             ) : (
               <PaginationLink
-                onClick={() => onPageChange(page)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onPageChange(page);
+                }}
                 isActive={currentPage === page}
               >
                 {page}
@@ -91,7 +99,12 @@ export function DataPagination({
 
         <PaginationItem>
           <PaginationNext
-            onClick={() => hasNext && onPageChange(currentPage + 1)}
+            onClick={(e) => {
+              e.preventDefault();
+              if (hasNext) {
+                onPageChange(currentPage + 1);
+              }
+            }}
             className={!hasNext ? "pointer-events-none opacity-50" : ""}
           />
         </PaginationItem>

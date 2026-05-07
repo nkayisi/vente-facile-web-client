@@ -85,6 +85,14 @@ export interface InventorySessionFilters {
   page_size?: number;
 }
 
+export interface InventoryCountFilters {
+  is_counted?: boolean;
+  has_difference?: boolean;
+  search?: string;
+  category?: string;
+  page?: number;
+}
+
 export interface CountItemData {
   id: string;
   quantity_counted: number;
@@ -346,26 +354,22 @@ export async function getInventoryCounts(
   accessToken: string,
   organizationId: string,
   sessionId: string,
-  filters?: { is_counted?: boolean; has_difference?: boolean; search?: string; category?: string }
-): Promise<ApiResponse<InventoryCount[]>> {
+  filters?: InventoryCountFilters
+): Promise<ApiResponse<PaginatedResponse<InventoryCount>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.is_counted !== undefined) params.append("is_counted", String(filters.is_counted));
     if (filters?.has_difference) params.append("has_difference", "true");
     if (filters?.search) params.append("search", filters.search);
     if (filters?.category) params.append("category", filters.category);
-
-    // Désactiver la pagination pour cette action en demandant une grande page
-    params.append("page_size", "10000");
+    if (filters?.page) params.append("page", String(filters.page));
 
     const response = await axios.get(
       `${API_BASE_URL}/inventory-sessions/${sessionId}/counts/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 
-    // Si la réponse est paginée, extraire les résultats
-    const data = response.data.results ? response.data.results : response.data;
-    return { success: true, data };
+    return { success: true, data: response.data };
   } catch (error: any) {
     console.error("[inventory] Get counts error:", error.response?.data || error.message);
     return { success: false, message: "Erreur lors de la récupération des comptages" };

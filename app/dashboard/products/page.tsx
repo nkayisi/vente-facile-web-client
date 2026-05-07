@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
     DropdownMenu,
@@ -60,10 +60,6 @@ import {
     Eye,
     Loader2,
     AlertTriangle,
-    Grid3X3,
-    List,
-    ChevronLeft,
-    ChevronRight,
     Barcode,
     Tag,
     X,
@@ -93,6 +89,7 @@ import {
 import { formatApiErrorBody } from "@/lib/api/drf-error";
 import { cn } from "@/lib/utils";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
 
 export default function ProductsPage() {
     const { data: session } = useSession();
@@ -121,15 +118,7 @@ export default function ProductsPage() {
     const [totalCount, setTotalCount] = useState(0);
     const [hasNext, setHasNext] = useState(false);
     const [hasPrevious, setHasPrevious] = useState(false);
-    const [pageSize] = useState(12);
-
-    // View mode - list by default (mobile), grid on large screens
-    const [viewMode, setViewMode] = useState<"grid" | "list">("list");
-
-    useEffect(() => {
-        const mql = window.matchMedia("(min-width: 1024px)");
-        if (mql.matches) setViewMode("grid");
-    }, []);
+    const [pageSize] = useState(20);
 
     // Delete dialog
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -195,6 +184,7 @@ export default function ProductsPage() {
         const filters: ProductFilters = {
             page: currentPage,
             page_size: pageSize,
+            full_catalog: true,
         };
 
         if (searchQuery) filters.search = searchQuery;
@@ -282,9 +272,10 @@ export default function ProductsPage() {
             } else {
                 toast.error("Erreur lors du téléchargement du template. Vérifiez vos permissions.");
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Download template error:", error);
-            toast.error(error?.message || "Erreur lors du téléchargement du template");
+            const message = error instanceof Error ? error.message : "Erreur lors du téléchargement du template";
+            toast.error(message);
         } finally {
             setIsDownloadingTemplate(false);
         }
@@ -349,12 +340,151 @@ export default function ProductsPage() {
     // Calculate total pages
     const totalPages = Math.ceil(totalCount / pageSize);
 
+    const productColumns = useMemo<DataTableColumn<Product>[]>(
+        () => [
+            {
+                id: "product",
+                header: "Produit",
+                className: "min-w-[220px]",
+                cell: (product) => (
+                    <div className="flex items-center gap-3">
+                        <Avatar className="size-9 shrink-0 rounded-md">
+                            {product.image ? (
+                                <AvatarImage
+                                    src={product.image}
+                                    alt=""
+                                    className="rounded-md object-cover ring-1 ring-black/10 dark:ring-white/10"
+                                />
+                            ) : null}
+                            <AvatarFallback className="rounded-md">
+                                <Package />
+                            </AvatarFallback>
+                        </Avatar>
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <Link
+                                href={`/dashboard/products/${product.id}`}
+                                className="truncate font-medium text-foreground hover:underline"
+                            >
+                                {product.name}
+                            </Link>
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Barcode className="h-3 w-3 shrink-0 opacity-70" />
+                                <span className="truncate tabular-nums">{product.sku}</span>
+                            </div>
+                        </div>
+                    </div>
+                ),
+            },
+            {
+                id: "category",
+                header: "Catégorie",
+                className: "min-w-[120px]",
+                cell: (product) => (
+                    <span className="text-muted-foreground">{product.category_name?.trim() || "—"}</span>
+                ),
+            },
+            {
+                id: "brand",
+                header: "Marque",
+                className: "min-w-[100px]",
+                cell: (product) => (
+                    <span className="text-muted-foreground">{product.brand_name?.trim() || "—"}</span>
+                ),
+            },
+            {
+                id: "price",
+                header: "Prix",
+                className: "text-right tabular-nums",
+                cell: (product) => (
+                    <div className="flex flex-col items-end gap-0.5 tabular-nums">
+                        <span className="font-medium text-foreground">{formatPrice(product.selling_price)}</span>
+                        <span className="text-xs text-muted-foreground">{formatPrice(product.cost_price)}</span>
+                    </div>
+                ),
+            },
+            {
+                id: "stock",
+                header: "Stock",
+                className: "text-right tabular-nums",
+                cell: (product) => (
+                    <span className="tabular-nums text-muted-foreground">
+                        {product.track_inventory ? (
+                            <>
+                                {product.stock_quantity ?? 0}
+                                {product.unit_symbol ? ` ${product.unit_symbol}` : ""}
+                            </>
+                        ) : (
+                            "—"
+                        )}
+                    </span>
+                ),
+            },
+            {
+                id: "status",
+                header: "Statut",
+                cell: (product) => (
+                    <Badge variant={product.is_active ? "default" : "secondary"}>
+                        {product.is_active ? "Actif" : "Inactif"}
+                    </Badge>
+                ),
+            },
+            {
+                id: "actions",
+                header: <span className="sr-only">Actions</span>,
+                className: "w-[52px] text-right",
+                cell: (product) => (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-10 shrink-0"
+                                aria-label={`Actions pour ${product.name}`}
+                            >
+                                <MoreVertical className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                                className="gap-2"
+                                onClick={() => router.push(`/dashboard/products/${product.id}`)}
+                            >
+                                <Eye className="h-4 w-4" />
+                                Voir
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                className="gap-2"
+                                onClick={() => router.push(`/dashboard/products/${product.id}/edit`)}
+                            >
+                                <Edit className="h-4 w-4" />
+                                Modifier
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                className="gap-2 text-destructive focus:text-destructive"
+                                onClick={() => {
+                                    setProductToDelete(product);
+                                    setDeleteDialogOpen(true);
+                                }}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                                Supprimer
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                ),
+            },
+        ],
+        [router]
+    );
+
     return (
         <div className="space-y-4 lg:space-y-6">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-xl lg:text-2xl font-bold text-gray-900">Produits</h1>
+                    <h1 className="text-balance text-xl lg:text-2xl font-bold text-gray-900">Produits</h1>
                     <p className="text-sm text-gray-500 mt-1">
                         {totalCount} produit{totalCount > 1 ? "s" : ""} au total
                     </p>
@@ -429,8 +559,8 @@ export default function ProductsPage() {
 
             {/* Search and Filters */}
             <div className="space-y-3">
-                <div className="flex gap-2">
-                    <div className="relative flex-1">
+                <div className="flex justify-between gap-2">
+                    <div className="relative flex-1 max-w-sm">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                         <Input
                             type="search"
@@ -520,24 +650,6 @@ export default function ProductsPage() {
                         </PopoverContent>
                     </Popover>
 
-                    <div className="hidden sm:flex border rounded-lg">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setViewMode("grid")}
-                            className={cn("rounded-r-none", viewMode === "grid" && "bg-gray-100")}
-                        >
-                            <Grid3X3 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setViewMode("list")}
-                            className={cn("rounded-l-none", viewMode === "list" && "bg-gray-100")}
-                        >
-                            <List className="h-4 w-4" />
-                        </Button>
-                    </div>
                 </div>
 
                 {/* Active filter badges */}
@@ -574,98 +686,48 @@ export default function ProductsPage() {
             {/* Error message */}
             {error && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">
-                    <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0" />
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-red-500" />
                     <p className="text-sm text-red-700">{error}</p>
                 </div>
             )}
 
-            {/* Loading state */}
-            {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
-                </div>
-            ) : products.length === 0 ? (
-                /* Empty state */
-                <Card>
-                    <CardContent className="flex flex-col items-center justify-center py-12">
-                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                            <Package className="h-8 w-8 text-gray-400" />
-                        </div>
-                        <h3 className="text-lg font-medium text-gray-900 mb-1">Aucun produit trouvé</h3>
-                        <p className="text-sm text-gray-500 text-center mb-4">
-                            {hasActiveFilters
-                                ? "Aucun produit ne correspond à vos critères de recherche."
-                                : "Commencez par ajouter votre premier produit."}
-                        </p>
-                        {hasActiveFilters ? (
-                            <Button variant="outline" onClick={clearFilters}>
-                                Effacer les filtres
-                            </Button>
-                        ) : (
-                            <Link href="/dashboard/products/new">
-                                <Button className="bg-orange-500 hover:bg-orange-600">
-                                    <Plus className="h-4 w-4 mr-2" />
-                                    Ajouter un produit
-                                </Button>
-                            </Link>
-                        )}
-                    </CardContent>
-                </Card>
-            ) : (
-                <>
-                    {/* Products Grid/List */}
-                    {viewMode === "grid" ? (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                            {products.map((product) => (
-                                <ProductCard
-                                    key={product.id}
-                                    product={product}
-                                    formatPrice={formatPrice}
-                                    onEdit={() => router.push(`/dashboard/products/${product.id}/edit`)}
-                                    onView={() => router.push(`/dashboard/products/${product.id}`)}
-                                    href={`/dashboard/products/${product.id}`}
-                                    onDelete={() => {
-                                        setProductToDelete(product);
-                                        setDeleteDialogOpen(true);
-                                    }}
-                                />
-                            ))}
-                        </div>
+            <ProductsDataTable<Product>
+                columns={productColumns}
+                data={products}
+                isLoading={isLoading}
+                emptyMessage={hasActiveFilters ? "Aucun produit trouvé" : "Aucun produit"}
+                emptyDescription={
+                    hasActiveFilters
+                        ? "Aucun produit ne correspond à vos critères de recherche."
+                        : "Commencez par ajouter votre premier produit."
+                }
+                emptyIcon={<Package className="h-8 w-8" />}
+                emptyAction={
+                    hasActiveFilters ? (
+                        <Button variant="outline" onClick={clearFilters}>
+                            Effacer les filtres
+                        </Button>
                     ) : (
-                        <Card className="p-2">
-                            <div className="divide-y space-y-1">
-                                {products.map((product) => (
-                                    <ProductListItem
-                                        key={product.id}
-                                        product={product}
-                                        formatPrice={formatPrice}
-                                        onEdit={() => router.push(`/dashboard/products/${product.id}/edit`)}
-                                        onView={() => router.push(`/dashboard/products/${product.id}`)}
-                                        href={`/dashboard/products/${product.id}`}
-                                        onDelete={() => {
-                                            setProductToDelete(product);
-                                            setDeleteDialogOpen(true);
-                                        }}
-                                    />
-                                ))}
-                            </div>
-                        </Card>
-                    )}
-
-                    {/* Pagination */}
-                    {totalPages > 1 && (
-                        <div className="mt-6">
-                            <DataPagination
-                                currentPage={currentPage}
-                                totalPages={totalPages}
-                                onPageChange={setCurrentPage}
-                                hasNext={hasNext}
-                                hasPrevious={hasPrevious}
-                            />
-                        </div>
-                    )}
-                </>
-            )}
+                        <Link href="/dashboard/products/new">
+                            <Button className="bg-orange-500 hover:bg-orange-600">
+                                <Plus className="h-4 w-4" data-icon="inline-start" />
+                                Ajouter un produit
+                            </Button>
+                        </Link>
+                    )
+                }
+                tableFooter={
+                    !isLoading && products.length > 0 && totalPages > 1 ? (
+                        <DataPagination
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            onPageChange={setCurrentPage}
+                            hasNext={hasNext}
+                            hasPrevious={hasPrevious}
+                        />
+                    ) : null
+                }
+            />
 
             {/* Delete Dialog */}
             <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -711,126 +773,6 @@ export default function ProductsPage() {
                 isDownloadingTemplate={isDownloadingTemplate}
             />
         </div>
-    );
-}
-
-// Product Card Component
-function ProductCard({
-    product,
-    formatPrice,
-    onEdit,
-    onView,
-    href,
-    onDelete,
-}: {
-    product: Product;
-    formatPrice: (price: string | number) => string;
-    onEdit: () => void;
-    onView: () => void;
-    href: string;
-    onDelete: () => void;
-}) {
-    const stockQuantity = product.stock_quantity ?? 0;
-    const isLowStock = product.track_inventory && stockQuantity <= product.reorder_point;
-
-    return (
-        <Link href={href}>
-            <Card className="overflow-hidden hover:shadow-md transition-shadow gap-0 p-0">
-                {/* Product Image */}
-                <div className="aspect-square h-32 bg-gray-100 relative">
-                    {product.image ? (
-                        <img
-                            src={product.image}
-                            alt={product.name}
-                            className="w-full h-full object-cover"
-                        />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                            <Package className="h-12 w-12 text-gray-300" />
-                        </div>
-                    )}
-                    {/* Status badges */}
-                    <div className="absolute top-2 left-2 flex flex-col gap-1">
-                        {!product.is_active && (
-                            <Badge variant="secondary" className="text-xs">
-                                Inactif
-                            </Badge>
-                        )}
-                        {product.is_featured && (
-                            <Badge className="bg-orange-500 text-xs">
-                                Vedette
-                            </Badge>
-                        )}
-                        {isLowStock && (
-                            <Badge variant="destructive" className="text-xs">
-                                Stock bas
-                            </Badge>
-                        )}
-                    </div>
-                    {/* Actions menu */}
-                    <div className="absolute top-2 right-2">
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="secondary" size="icon" className="h-8 w-8">
-                                    <MoreVertical className="h-4 w-4" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={onView}>
-                                    <Eye className="h-4 w-4 mr-2" />
-                                    Voir
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={onEdit}>
-                                    <Edit className="h-4 w-4 mr-2" />
-                                    Modifier
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={onDelete} className="text-red-600">
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Supprimer
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </div>
-                </div>
-
-                {/* Product Info */}
-                <CardContent className="p-4">
-                    <div className="space-y-2">
-                        <div>
-                            <h3 className="font-medium text-gray-900 line-clamp-1">{product.name}</h3>
-                            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                                <Barcode className="h-3 w-3" />
-                                <span>{product.sku}</span>
-                            </div>
-                        </div>
-
-                        {product.category_name && (
-                            <div className="flex items-center gap-1">
-                                <Tag className="h-3 w-3 text-gray-400" />
-                                <span className="text-xs text-gray-500">{product.category_name}</span>
-                            </div>
-                        )}
-
-                        <div className="flex items-center justify-between pt-2">
-                            <div>
-                                <p className="text-lg font-bold text-orange-600">
-                                    {formatPrice(product.selling_price)}
-                                </p>
-                                {product.track_inventory && (
-                                    <p className={cn(
-                                        "text-xs",
-                                        isLowStock ? "text-red-500" : "text-gray-500"
-                                    )}>
-                                        Stock: {stockQuantity} {product.unit_symbol || ""}
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-        </Link>
     );
 }
 
@@ -1041,100 +983,5 @@ function ImportDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
-    );
-}
-
-// Product List Item Component
-function ProductListItem({
-    product,
-    formatPrice,
-    onEdit,
-    onView,
-    href,
-    onDelete,
-}: {
-    product: Product;
-    formatPrice: (price: string | number) => string;
-    onEdit: () => void;
-    onView: () => void;
-    href: string;
-    onDelete: () => void;
-}) {
-    const stockQuantity = product.stock_quantity ?? 0;
-    const isLowStock = product.track_inventory && stockQuantity <= product.reorder_point;
-
-    return (
-        <Link href={href} className="flex items-center rounded-xl gap-4 hover:bg-gray-50">
-            {/* Image */}
-            <div className="w-16 h-16 bg-gray-100 rounded-lg flex-shrink-0 overflow-hidden">
-                {product.image ? (
-                    <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-full h-full object-cover"
-                    />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                        <Package className="h-6 w-6 text-gray-300" />
-                    </div>
-                )}
-            </div>
-
-            {/* Info */}
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                    <h3 className="font-medium text-gray-900 truncate">{product.name}</h3>
-                    {!product.is_active && (
-                        <Badge variant="secondary" className="text-xs">Inactif</Badge>
-                    )}
-                    {isLowStock && (
-                        <Badge variant="destructive" className="text-xs">Stock bas</Badge>
-                    )}
-                </div>
-                <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
-                    <span>{product.sku}</span>
-                    {product.category_name && <span>{product.category_name}</span>}
-                    <span>{product.brand_name}</span>
-                    <span>
-                        {product.stock_quantity}  <span>{product.unit_symbol}</span>
-                    </span>
-                    <span>{product.reorder_point}</span>
-                </div>
-            </div>
-
-            {/* Price & Stock */}
-            <div className="text-right hidden sm:block">
-                <p className="font-bold text-orange-600">{formatPrice(product.selling_price)}</p>
-                {product.track_inventory && (
-                    <p className={cn("text-sm", isLowStock ? "text-red-500" : "text-gray-500")}>
-                        Stock: {stockQuantity}
-                    </p>
-                )}
-            </div>
-
-            {/* Actions */}
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                        <MoreVertical className="h-4 w-4" />
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={onView}>
-                        <Eye className="h-4 w-4 mr-2" />
-                        Voir
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={onEdit}>
-                        <Edit className="h-4 w-4 mr-2" />
-                        Modifier
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={onDelete} className="text-red-600">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Supprimer
-                    </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
-        </Link>
     );
 }

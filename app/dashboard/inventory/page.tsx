@@ -152,6 +152,8 @@ export default function InventoryPage() {
   // Cancel dialog
   const [sessionToCancel, setSessionToCancel] = useState<InventorySession | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const hasEligibleCategoriesForSelectedWarehouse =
+    newSession.scope_type !== "category" || categories.length > 0;
 
   // Fetch organization
   useEffect(() => {
@@ -166,14 +168,11 @@ export default function InventoryPage() {
     fetchOrg();
   }, [session?.accessToken]);
 
-  // Fetch warehouses and categories
+  // Fetch warehouses
   useEffect(() => {
     async function fetchData() {
       if (!session?.accessToken || !organization?.id) return;
-      const [whResult, catResult] = await Promise.all([
-        getWarehouses(session.accessToken, organization.id),
-        getCategories(session.accessToken, organization.id),
-      ]);
+      const whResult = await getWarehouses(session.accessToken, organization.id);
       if (whResult.success && whResult.data) {
         setWarehouses(whResult.data);
         // Fetch stock summary for each warehouse to know which have products
@@ -190,10 +189,38 @@ export default function InventoryPage() {
         );
         setWarehouseStockCounts(stockCounts);
       }
-      if (catResult.success && catResult.data) setCategories(catResult.data.results || []);
     }
     fetchData();
   }, [session?.accessToken, organization?.id]);
+
+  // Fetch categories with available stock for selected warehouse
+  useEffect(() => {
+    async function fetchCategoriesForWarehouse() {
+      if (!session?.accessToken || !organization?.id || !newSession.warehouse) {
+        setCategories([]);
+        return;
+      }
+      const catResult = await getCategories(session.accessToken, organization.id, {
+        warehouse: newSession.warehouse,
+        with_stock: true,
+      });
+      if (catResult.success && catResult.data) {
+        setCategories(catResult.data.results || []);
+      } else {
+        setCategories([]);
+      }
+    }
+    fetchCategoriesForWarehouse();
+  }, [session?.accessToken, organization?.id, newSession.warehouse]);
+
+  useEffect(() => {
+    if (!newSession.category_ids?.length) return;
+    const validIds = new Set(categories.map((cat) => cat.id));
+    const nextSelected = newSession.category_ids.filter((id) => validIds.has(id));
+    if (nextSelected.length !== newSession.category_ids.length) {
+      setNewSession((prev) => ({ ...prev, category_ids: nextSelected }));
+    }
+  }, [categories, newSession.category_ids]);
 
   // Fetch sessions
   const fetchSessions = useCallback(async () => {
@@ -242,6 +269,14 @@ export default function InventoryPage() {
       toast.error("Sélectionnez au moins une catégorie");
       return;
     }
+    if (newSession.scope_type === "category" && newSession.category_ids?.length) {
+      const validCategoryIds = new Set(categories.map((cat) => cat.id));
+      const hasInvalidSelection = newSession.category_ids.some((id) => !validCategoryIds.has(id));
+      if (hasInvalidSelection) {
+        toast.error("Certaines catégories ne sont plus disponibles pour cet entrepôt. Veuillez vérifier la sélection.");
+        return;
+      }
+    }
     if (newSession.scope_type === "product" && (!newSession.product_ids || newSession.product_ids.length === 0)) {
       toast.error("Sélectionnez au moins un produit");
       return;
@@ -275,6 +310,8 @@ export default function InventoryPage() {
           search: q,
           page_size: 50,
           is_active: true,
+          in_stock: true,
+          warehouse: newSession.warehouse || undefined,
         });
         if (result.success && result.data) {
           const list = result.data.results || [];
@@ -292,7 +329,7 @@ export default function InventoryPage() {
       }
     }, 350);
     return () => clearTimeout(handle);
-  }, [productSearch, newSession.scope_type, session?.accessToken, organization?.id]);
+  }, [productSearch, newSession.scope_type, newSession.warehouse, session?.accessToken, organization?.id]);
 
   const productScopeRows = useMemo(() => {
     const selectedExtras = (newSession.product_ids || [])
@@ -646,7 +683,7 @@ export default function InventoryPage() {
                   label: `${wh.name}${(warehouseStockCounts[wh.id] || 0) === 0 ? " (vide)" : ` (${warehouseStockCounts[wh.id]} produits)`}`,
                 }))}
                 value={newSession.warehouse}
-                onValueChange={(val) => setNewSession({ ...newSession, warehouse: val })}
+                onValueChange={(val) => setNewSession((prev) => ({ ...prev, warehouse: val, category_ids: [] }))}
                 placeholder="Sélectionner un entrepôt"
               />
               {newSession.warehouse && (warehouseStockCounts[newSession.warehouse] || 0) === 0 && (
@@ -660,12 +697,13 @@ export default function InventoryPage() {
               <Label>Type d&apos;inventaire</Label>
               <Select
                 value={newSession.scope_type}
-                onValueChange={(val) => setNewSession({
-                  ...newSession,
+                onValueChange={(val) => setNewSession((prev) => ({
+                  ...prev,
                   scope_type: val as InventoryScopeType,
                   category_ids: [],
                   product_ids: [],
-                })}
+                }))}
+                disabled={!newSession.warehouse}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -676,12 +714,22 @@ export default function InventoryPage() {
                   <SelectItem value="product">Par produit</SelectItem>
                 </SelectContent>
               </Select>
+              {!newSession.warehouse && (
+                <p className="text-xs text-gray-500">
+                  Sélectionnez d&apos;abord un entrepôt pour choisir le type d&apos;inventaire.
+                </p>
+              )}
             </div>
             {newSession.scope_type === "category" && (
               <div className="space-y-2">
                 <Label>Catégories *</Label>
                 {(newSession.category_ids?.length || 0) > 0 && (
                   <p className="text-xs text-orange-600">{newSession.category_ids?.length} catégorie(s) sélectionnée(s)</p>
+                )}
+                {newSession.warehouse && categories.length === 0 && (
+                  <p className="text-xs text-orange-600">
+                    Aucune catégorie avec stock dans cet entrepôt.
+                  </p>
                 )}
                 <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-1">
                   {categories.map((cat) => (
@@ -709,7 +757,9 @@ export default function InventoryPage() {
                     </label>
                   ))}
                   {categories.length === 0 && (
-                    <p className="text-sm text-gray-500 text-center py-2">Aucune catégorie disponible</p>
+                    <p className="text-sm text-gray-500 text-center py-2">
+                      Aucune catégorie disponible pour cet entrepôt
+                    </p>
                   )}
                 </div>
               </div>
@@ -798,7 +848,11 @@ export default function InventoryPage() {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={isCreating || (newSession.warehouse && (warehouseStockCounts[newSession.warehouse] || 0) === 0) as boolean}
+              disabled={
+                isCreating ||
+                (newSession.warehouse && (warehouseStockCounts[newSession.warehouse] || 0) === 0) as boolean ||
+                !hasEligibleCategoriesForSelectedWarehouse
+              }
               className="bg-orange-500 hover:bg-orange-600"
             >
               {isCreating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
