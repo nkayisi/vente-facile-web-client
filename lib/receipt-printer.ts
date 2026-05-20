@@ -34,7 +34,10 @@ export interface ReceiptData {
   subtotal: number;
   taxAmount: number;
   discountAmount: number;
-  globalDiscountPercent: number;
+  /** Remise globale en montant fixe (POS) */
+  globalDiscountAmount?: number;
+  /** Legacy : remise globale en % */
+  globalDiscountPercent?: number;
   total: number;
   payments: ReceiptPayment[];
   amountPaid: number;
@@ -425,8 +428,14 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
   drawLeftRightText("Sous-total", formatAmount(data.subtotal, 2), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
 
   if (data.discountAmount > 0) {
-    const discLabel =
-      data.globalDiscountPercent > 0 ? `Remise (${data.globalDiscountPercent}%)` : "Remises";
+    const globalAmt = data.globalDiscountAmount ?? 0;
+    const globalPct = data.globalDiscountPercent ?? 0;
+    let discLabel = "Remises";
+    if (globalAmt > 0) {
+      discLabel = "Remise";
+    } else if (globalPct > 0) {
+      discLabel = `Remise (${globalPct}%)`;
+    }
     drawLeftRightText(discLabel, `-${formatAmount(data.discountAmount, 2)}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
   }
 

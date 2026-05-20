@@ -107,6 +107,10 @@ export interface Product {
   attributes?: Record<string, string>;
   variants?: ProductVariant[];
   stock_quantity?: number | null;
+  /** Emplacement (rayon, allée) dans l'entrepôt filtré (?warehouse=) */
+  stock_location?: string | null;
+  /** Nom de l'entrepôt du stock affiché */
+  warehouse_name?: string | null;
   stock_by_warehouse?: Array<{
     warehouse_id: string;
     warehouse_name: string;

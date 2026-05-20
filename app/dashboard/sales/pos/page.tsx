@@ -39,8 +39,9 @@ import {
   LogOut,
   Minus,
   Package,
-  Percent,
+  MapPin,
   Phone,
+  Tag,
   Plus,
   Search,
   ShoppingCart,
@@ -92,6 +93,7 @@ export default function POSPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const qtyInputRef = useRef<HTMLInputElement>(null);
   const { currency: defaultCurrency } = useCurrency();
 
   // State
@@ -105,7 +107,7 @@ export default function POSPage() {
   // Cart state
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [globalDiscount, setGlobalDiscount] = useState(0);
+  const [globalDiscountAmount, setGlobalDiscountAmount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -176,8 +178,13 @@ export default function POSPage() {
           setCurrentSession(sessionResult.data!);
 
           // Fetch products, customers, payment methods, currencies, locked products
+          const posWarehouseId = sessionResult.data?.warehouse || undefined;
           const [productsResult, customersResult, paymentMethodsResult, currenciesResult, lockedResult] = await Promise.all([
-            getProducts(session.accessToken, org.id, { is_active: true, in_stock: true }),
+            getProducts(session.accessToken, org.id, {
+              is_active: true,
+              in_stock: true,
+              ...(posWarehouseId ? { warehouse: posWarehouseId } : {}),
+            }),
             getCustomers(session.accessToken, org.id),
             getPaymentMethods(session.accessToken, org.id, { is_active: true }),
             getOrganizationCurrencies(session.accessToken, org.id),
@@ -457,9 +464,20 @@ export default function POSPage() {
     }, 0);
   };
 
+  const getMaxGlobalDiscountAmount = () => {
+    return r2(calculateSubtotal() - calculateItemDiscount());
+  };
+
   const calculateGlobalDiscountAmount = () => {
-    const subtotalAfterItemDiscount = r2(calculateSubtotal() - calculateItemDiscount());
-    return r2(subtotalAfterItemDiscount * globalDiscount / 100);
+    const maxAllowed = getMaxGlobalDiscountAmount();
+    return r2(Math.min(globalDiscountAmount, maxAllowed));
+  };
+
+  const getProductLocationLabel = (product: Product) => {
+    const parts: string[] = [];
+    if (product.stock_location?.trim()) parts.push(product.stock_location.trim());
+    if (product.warehouse_name?.trim()) parts.push(product.warehouse_name.trim());
+    return parts.length > 0 ? parts.join(" · ") : "—";
   };
 
   const calculateTax = () => {
@@ -616,7 +634,8 @@ export default function POSPage() {
         warehouse: currentSession.warehouse || undefined,
         customer: selectedCustomer?.id,
         sale_type: saleType,
-        discount_percentage: globalDiscount,
+        global_discount_amount: calculateGlobalDiscountAmount(),
+        discount_percentage: 0,
         is_pos: true,
         items,
         payments,
@@ -647,7 +666,7 @@ export default function POSPage() {
             subtotal: calculateSubtotal(),
             taxAmount: calculateTax(),
             discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount() + pointsDiscount),
-            globalDiscountPercent: globalDiscount,
+            globalDiscountAmount: calculateGlobalDiscountAmount(),
             total: total - pointsDiscount,
             payments: (() => {
               const receiptPayments: { method: string; amount: number; currency: string }[] = [];
@@ -722,7 +741,7 @@ export default function POSPage() {
         // Reset cart
         setCart([]);
         setSelectedCustomer(null);
-        setGlobalDiscount(0);
+        setGlobalDiscountAmount(0);
         setPaymentAmount("");
         setPaymentReference("");
         setIsCreditSale(false);
@@ -733,7 +752,11 @@ export default function POSPage() {
 
         // Refresh products to get updated stock
         if (organization) {
-          const productsResult = await getProducts(session.accessToken, organization.id, { is_active: true, in_stock: true });
+          const productsResult = await getProducts(session.accessToken, organization.id, {
+            is_active: true,
+            in_stock: true,
+            ...(currentSession?.warehouse ? { warehouse: currentSession.warehouse } : {}),
+          });
           if (productsResult.success && productsResult.data) {
             setProducts(productsResult.data.results || []);
           }
@@ -820,7 +843,7 @@ export default function POSPage() {
         subtotal: calculateSubtotal(),
         taxAmount: calculateTax(),
         discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount()),
-        globalDiscountPercent: globalDiscount,
+        globalDiscountAmount: calculateGlobalDiscountAmount(),
         total,
         payments: [],
         amountPaid: 0,
@@ -846,7 +869,7 @@ export default function POSPage() {
 
       setCart([]);
       setSelectedCustomer(null);
-      setGlobalDiscount(0);
+      setGlobalDiscountAmount(0);
       setPaymentAmount("");
       setPaymentReference("");
       setIsCreditSale(false);
@@ -941,13 +964,14 @@ export default function POSPage() {
         is_active: true,
         in_stock: true,
         page_size: 50,
+        ...(currentSession?.warehouse ? { warehouse: currentSession.warehouse } : {}),
       });
       if (result.success && result.data) {
         setSearchResults(result.data.results || []);
       }
       setIsSearching(false);
     }, 300);
-  }, [session?.accessToken, organization]);
+  }, [session?.accessToken, organization, currentSession?.warehouse]);
 
   // Cleanup debounce on unmount
   useEffect(() => {
@@ -956,14 +980,21 @@ export default function POSPage() {
     };
   }, []);
 
-  // Fermer la saisie quantité (superposition carte) avec Échap
+  // Fermer la saisie quantité (superposition carte) avec Échap + focus champ quantité
   useEffect(() => {
     if (!qtyPopoverProductId) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setQtyPopoverProductId(null);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const t = window.setTimeout(() => {
+      qtyInputRef.current?.focus();
+      qtyInputRef.current?.select();
+    }, 50);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.clearTimeout(t);
+    };
   }, [qtyPopoverProductId]);
 
   // Produits affichés : résultats de recherche backend ou produits initiaux
@@ -1042,7 +1073,7 @@ export default function POSPage() {
               <p className="text-gray-500">Aucun produit trouvé</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {(searchQuery.trim() ? displayedProducts : products.slice(0, 20)).map(product => {
                 const isLocked = lockedProductIds.has(product.id);
                 const canAdd = canAddProductToCart(product);
@@ -1051,66 +1082,131 @@ export default function POSPage() {
                   product.track_inventory &&
                   !product.allow_negative_stock &&
                   getRemainingStock(product) <= 0;
+                const stockQty = getAvailableStock(product);
+                const stockLow =
+                  product.track_inventory &&
+                  getRemainingStock(product) <= (product.reorder_point || 5);
+                const stockEmpty =
+                  product.track_inventory &&
+                  !product.allow_negative_stock &&
+                  getRemainingStock(product) <= 0;
+                const locationLabel = getProductLocationLabel(product);
+
+                const stockOverlayLabel = product.track_inventory
+                  ? `${formatNumber(stockQty)}${product.unit_symbol ? ` ${product.unit_symbol}` : ""}`
+                  : "—";
+
                 const cardVisual = (
-                  <CardContent className="p-3">
-                    <div className="relative mb-2 flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+                  <CardContent className="flex h-full min-h-[88px] gap-2.5 p-2.5">
+                    {/* Vignette + stock toujours superposé sur l'image */}
+                    <div className="relative h-[76px] w-[76px] shrink-0 overflow-hidden rounded-lg bg-slate-100 ring-1 ring-black/[0.06]">
                       {product.image ? (
                         <img
                           src={product.image}
-                          alt={product.name}
-                          className={`h-full w-full object-cover ${isLocked ? "grayscale" : ""}`}
+                          alt=""
+                          className={cn(
+                            "h-full w-full object-cover",
+                            isLocked && "grayscale"
+                          )}
                         />
                       ) : (
-                        <Package className="h-8 w-8 text-gray-300" />
-                      )}
-                      {isLocked ? (
-                        <div className="absolute inset-0 flex items-center justify-center bg-red-500/20">
-                          <div className="flex items-center gap-1 rounded bg-red-600 px-2 py-1 text-xs font-bold text-white">
-                            <AlertTriangle className="h-3 w-3" />
-                            INVENTAIRE
-                          </div>
+                        <div className="flex h-full w-full items-center justify-center">
+                          <Package className="h-8 w-8 text-slate-300" />
                         </div>
-                      ) : (
-                        product.track_inventory && (
-                          <div
-                            className={`absolute top-1 right-1 rounded px-2 py-0.5 text-xs font-semibold ${getRemainingStock(product) <= 0
-                              ? "bg-red-500 text-white"
-                              : getRemainingStock(product) <= (product.reorder_point || 5)
-                                ? "bg-amber-500 text-white"
-                                : "bg-green-600 text-white"
-                              }`}
-                          >
-                            Stock: {formatNumber(getAvailableStock(product))}
-                          </div>
-                        )
                       )}
+
+                      {/* Badge stock — superposé sur l'image */}
+                      <div
+                        className={cn(
+                          "absolute inset-x-0 bottom-0 flex items-center justify-center gap-0.5 px-1 py-0.5 text-[10px] font-bold leading-none tabular-nums shadow-sm backdrop-blur-[2px]",
+                          isLocked
+                            ? "bg-red-700/90 text-white"
+                            : !product.track_inventory
+                              ? "bg-slate-800/75 text-white"
+                              : stockEmpty
+                                ? "bg-red-600/95 text-white"
+                                : stockLow
+                                  ? "bg-amber-500/95 text-white"
+                                  : "bg-emerald-600/95 text-white"
+                        )}
+                        title={
+                          product.track_inventory
+                            ? `Stock disponible : ${stockQty}`
+                            : "Sans suivi de stock"
+                        }
+                      >
+                        <Package className="h-2.5 w-2.5 shrink-0 opacity-90" />
+                        <span>{stockOverlayLabel}</span>
+                      </div>
+
+                      {isLocked ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-red-500/30">
+                          <AlertTriangle className="h-5 w-5 text-red-700 drop-shadow-sm" />
+                        </div>
+                      ) : null}
                     </div>
-                    <h3
-                      className={`truncate text-sm font-medium ${isLocked ? "text-red-700" : "text-gray-900"}`}
-                    >
-                      {product.name}
-                    </h3>
-                    <p className="truncate text-xs text-gray-500">{product.sku}</p>
-                    <p
-                      className={`mt-1 text-sm font-bold ${isLocked ? "text-red-600" : "text-orange-600"}`}
-                    >
-                      {formatPrice(parseFloat(product.selling_price))}
-                    </p>
+
+                    {/* Infos — disposition horizontale optimisée */}
+                    <div className="flex min-w-0 flex-1 flex-col justify-between gap-0.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3
+                          className={cn(
+                            "line-clamp-2 min-w-0 flex-1 text-[12px] font-semibold leading-tight",
+                            isLocked ? "text-red-800" : "text-slate-900"
+                          )}
+                          title={product.name}
+                        >
+                          {product.name}
+                        </h3>
+                        <p
+                          className={cn(
+                            "shrink-0 text-right text-[12px] font-bold leading-tight tabular-nums",
+                            isLocked ? "text-red-600" : "text-orange-600"
+                          )}
+                        >
+                          {formatPrice(parseFloat(product.selling_price))}
+                        </p>
+                      </div>
+
+                      <div className="min-w-0 space-y-0.5">
+                        <p
+                          className="truncate text-[10px] text-slate-600"
+                          title={product.category_name || undefined}
+                        >
+                          <Tag className="mr-0.5 inline h-3 w-3 -translate-y-px text-orange-500" />
+                          {product.category_name?.trim() || "Sans catégorie"}
+                        </p>
+                        <p
+                          className="truncate text-[10px] text-slate-500"
+                          title={product.brand_name || undefined}
+                        >
+                          {product.brand_name?.trim() || "Sans marque"}
+                        </p>
+                        <p
+                          className="truncate text-[10px] text-slate-400"
+                          title={locationLabel}
+                        >
+                          <MapPin className="mr-0.5 inline h-2.5 w-2.5 -translate-y-px" />
+                          {locationLabel}
+                        </p>
+                      </div>
+                    </div>
                   </CardContent>
                 );
+
+                const isQtyOpen = qtyPopoverProductId === product.id;
 
                 return (
                   <Card
                     key={product.id}
                     className={cn(
-                      "relative overflow-hidden py-0 transition-shadow",
+                      "relative flex h-full flex-col py-0 transition-[box-shadow,transform] duration-150",
+                      isQtyOpen ? "z-10 overflow-hidden" : "overflow-hidden",
                       isLocked
                         ? "border-red-300 bg-red-50 opacity-60"
                         : stockDepleted
                           ? "opacity-50"
-                          : canAdd
-                            ? "hover:shadow-md"
-                            : ""
+                          : ""
                     )}
                   >
                     {canAdd ? (
@@ -1125,76 +1221,74 @@ export default function POSPage() {
                         >
                           {cardVisual}
                         </button>
-                        {qtyPopoverProductId === product.id ? (
+                        {isQtyOpen ? (
                           <div
-                            className="absolute inset-0 z-20 flex flex-col rounded-xl border border-orange-200/90 bg-white/93 p-3 shadow-lg ring-1 ring-orange-500/15 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-150"
+                            className="absolute inset-0 z-20 flex h-full max-h-full w-full max-w-full flex-col overflow-hidden rounded-lg bg-white p-3 animate-in fade-in zoom-in-95 duration-150"
                             role="dialog"
                             aria-modal="true"
                             aria-labelledby={`qty-overlay-title-${product.id}`}
                             onPointerDown={(e) => e.stopPropagation()}
                           >
-                            <div className="flex min-h-0 flex-1 flex-col gap-2">
-                              <div className="flex items-start gap-2">
-                                <div className="min-w-0 flex-1">
-                                  <p
-                                    id={`qty-overlay-title-${product.id}`}
-                                    className="line-clamp-2 text-sm font-semibold leading-snug text-gray-900"
-                                  >
-                                    {product.name}
-                                  </p>
-                                  <p className="mt-1 text-base font-bold text-orange-600">
-                                    {formatPrice(parseFloat(product.selling_price))}
-                                  </p>
-                                  {product.track_inventory && !isLocked ? (
-                                    <p className="mt-1 text-[11px] leading-tight text-gray-600">
-                                      Stock :{" "}
-                                      <span className="font-semibold text-gray-800">
-                                        {formatNumber(getAvailableStock(product))}
-                                      </span>
-                                    </p>
-                                  ) : null}
-                                </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <p
+                                id={`qty-overlay-title-${product.id}`}
+                                className="min-w-0 flex-1 truncate text-[11px] font-semibold leading-tight text-slate-900"
+                                title={product.name}
+                              >
+                                {product.name}
+                              </p>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 shrink-0 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                                onClick={() => setQtyPopoverProductId(null)}
+                                aria-label="Fermer"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+
+                            <div className="flex min-h-0 flex-1 flex-col justify-center gap-1 pt-0.5">
+                              <Label
+                                htmlFor={`qty-${product.id}`}
+                                className="shrink-0 text-[10px] font-medium leading-none text-slate-600"
+                              >
+                                Quantité
+                                {product.track_inventory && !isLocked ? (
+                                  <span className="text-slate-400">
+                                    {" "}
+                                    · max {formatNumber(maxAdd >= 9999 ? stockQty : maxAdd)}
+                                  </span>
+                                ) : null}
+                              </Label>
+                              <div className="flex shrink-0 items-stretch gap-1.5">
+                                <Input
+                                  ref={qtyInputRef}
+                                  id={`qty-${product.id}`}
+                                  type="number"
+                                  inputMode="numeric"
+                                  min={1}
+                                  max={maxAdd >= 9999 ? undefined : maxAdd}
+                                  value={qtyDraft}
+                                  onChange={(e) => setQtyDraft(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      commitCustomQuantity(product);
+                                    }
+                                  }}
+                                  className="h-9 min-h-0 min-w-0 flex-1 border border-orange-300 bg-orange-50/60 px-1 text-center text-base font-bold tabular-nums text-slate-900 focus-visible:border-orange-500 focus-visible:ring-1 focus-visible:ring-orange-500/40"
+                                  autoComplete="off"
+                                  title={
+                                    product.track_inventory && !product.allow_negative_stock
+                                      ? `Maximum ${maxAdd}`
+                                      : undefined
+                                  }
+                                />
                                 <Button
                                   type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 shrink-0 text-gray-500 hover:text-gray-900"
-                                  onClick={() => setQtyPopoverProductId(null)}
-                                  aria-label="Fermer"
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                              <div className="mt-auto flex flex-col gap-2 border-t border-gray-100 pt-2">
-                                <div className="min-w-0 flex-1">
-                                  <Label htmlFor={`qty-${product.id}`} className="sr-only">
-                                    Quantité
-                                  </Label>
-                                  <Input
-                                    id={`qty-${product.id}`}
-                                    type="number"
-                                    min={1}
-                                    max={maxAdd >= 9999 ? undefined : maxAdd}
-                                    value={qtyDraft}
-                                    onChange={(e) => setQtyDraft(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        commitCustomQuantity(product);
-                                      }
-                                    }}
-                                    className="h-8 border-gray-200 text-center text-sm font-semibold tabular-nums"
-                                    autoComplete="off"
-                                    title={
-                                      product.track_inventory && !product.allow_negative_stock
-                                        ? `Maximum ${maxAdd}`
-                                        : undefined
-                                    }
-                                  />
-                                </div>
-                                <Button
-                                  type="button" size='sm'
-                                  className="h-6 shrink-0 bg-orange-500 px-4 font-medium hover:bg-orange-600"
+                                  className="h-9 min-h-0 shrink-0 rounded-md bg-orange-500 px-3 text-sm font-bold text-white hover:bg-orange-600"
                                   onClick={() => commitCustomQuantity(product)}
                                 >
                                   OK
@@ -1358,15 +1452,18 @@ export default function POSPage() {
             {/* Mobile Cart Footer — compact pour laisser max. de place aux lignes */}
             <div className="shrink-0 border-t px-3 py-2.5 space-y-2">
               <div className="flex items-center gap-2">
-                <Percent className="h-4 w-4 shrink-0 text-gray-400" />
+                <Banknote className="h-4 w-4 shrink-0 text-gray-400" />
                 <Input
                   type="number"
-                  placeholder="Remise %"
-                  value={globalDiscount || ""}
-                  onChange={e => setGlobalDiscount(clampSaleDiscountPercent(parseFloat(e.target.value) || 0))}
-                  className="h-8"
+                  step="any"
                   min="0"
-                  max={MAX_SALE_DISCOUNT_PERCENT}
+                  placeholder="Remise (montant)"
+                  value={globalDiscountAmount || ""}
+                  onChange={e => {
+                    const raw = parseFloat(e.target.value) || 0;
+                    setGlobalDiscountAmount(r2(Math.min(Math.max(0, raw), getMaxGlobalDiscountAmount())));
+                  }}
+                  className="h-8 tabular-nums"
                 />
               </div>
               <div className="flex justify-between text-base font-bold">
@@ -1528,15 +1625,18 @@ export default function POSPage() {
         <div className="shrink-0 space-y-2 border-t px-3 py-2.5">
           {/* Global Discount */}
           <div className="flex items-center gap-2">
-            <Percent className="h-4 w-4 shrink-0 text-gray-400" />
+            <Banknote className="h-4 w-4 shrink-0 text-gray-400" />
             <Input
               type="number"
-              placeholder="Remise %"
-              value={globalDiscount || ""}
-              onChange={e => setGlobalDiscount(clampSaleDiscountPercent(parseFloat(e.target.value) || 0))}
-              className="h-8"
+              step="any"
               min="0"
-              max={MAX_SALE_DISCOUNT_PERCENT}
+              placeholder="Remise (montant)"
+              value={globalDiscountAmount || ""}
+              onChange={e => {
+                const raw = parseFloat(e.target.value) || 0;
+                setGlobalDiscountAmount(r2(Math.min(Math.max(0, raw), getMaxGlobalDiscountAmount())));
+              }}
+              className="h-8 tabular-nums"
             />
           </div>
 
@@ -1552,9 +1652,9 @@ export default function POSPage() {
                 <span className="tabular-nums">-{formatPrice(calculateItemDiscount())}</span>
               </div>
             )}
-            {globalDiscount > 0 && (
+            {calculateGlobalDiscountAmount() > 0 && (
               <div className="flex justify-between text-orange-600">
-                <span>Rem. globale ({globalDiscount}%)</span>
+                <span>Remise</span>
                 <span className="tabular-nums">-{formatPrice(calculateGlobalDiscountAmount())}</span>
               </div>
             )}
@@ -1825,9 +1925,9 @@ export default function POSPage() {
                     <span>-{formatPrice(calculateItemDiscount())}</span>
                   </div>
                 )}
-                {globalDiscount > 0 && (
+                {calculateGlobalDiscountAmount() > 0 && (
                   <div className="flex justify-between text-orange-600">
-                    <span>Remise globale ({globalDiscount}%)</span>
+                    <span>Remise</span>
                     <span>-{formatPrice(calculateGlobalDiscountAmount())}</span>
                   </div>
                 )}

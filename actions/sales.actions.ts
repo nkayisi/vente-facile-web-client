@@ -1,5 +1,6 @@
 "use server";
 
+import { formatApiErrorBody, formatAxiosErrorMessage } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -284,6 +285,8 @@ export interface CreateSaleData {
   sale_type?: SaleType;
   price_list?: string;
   discount_percentage?: number;
+  /** Remise globale en montant fixe (prioritaire sur discount_percentage) */
+  global_discount_amount?: number;
   currency?: string;
   exchange_rate?: number;
   notes?: string;
@@ -374,6 +377,47 @@ function getHeaders(accessToken: string, organizationId: string) {
   };
 }
 
+type AxiosLikeError = {
+  response?: { data?: unknown; status?: number };
+  message?: string;
+};
+
+function asAxiosError(error: unknown): AxiosLikeError {
+  if (error && typeof error === "object") {
+    return error as AxiosLikeError;
+  }
+  return {};
+}
+
+function salesResponseData(error: unknown): unknown {
+  return asAxiosError(error).response?.data;
+}
+
+function salesValidationErrors(error: unknown): Record<string, string[]> | undefined {
+  const data = salesResponseData(error);
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    return data as Record<string, string[]>;
+  }
+  return undefined;
+}
+
+function logSalesError(context: string, error: unknown) {
+  const err = asAxiosError(error);
+  console.error(`[Sales] ${context}:`, err.response?.data ?? err.message ?? error);
+}
+
+function salesErrorMessage(error: unknown, fallback: string, field?: string): string {
+  const data = salesResponseData(error);
+  if (field && data && typeof data === "object" && !Array.isArray(data)) {
+    const value = (data as Record<string, unknown>)[field];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    return formatApiErrorBody(data as Record<string, unknown>, fallback);
+  }
+  return formatAxiosErrorMessage(error, fallback);
+}
+
 // =============================================================================
 // REGISTER ACTIONS
 // =============================================================================
@@ -399,8 +443,8 @@ export async function getRegisters(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Sales] Get registers error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Sales] Get registers error:", error);
     return { success: false, message: "Erreur lors de la récupération des caisses" };
   }
 }
@@ -417,8 +461,8 @@ export async function getRegister(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Get register error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get register error", error);
     return { success: false, message: "Erreur lors de la récupération de la caisse" };
   }
 }
@@ -436,12 +480,12 @@ export async function createRegister(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Create register error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Create register error", error);
     return {
       success: false,
       message: "Erreur lors de la création de la caisse",
-      errors: error.response?.data,
+      errors: salesValidationErrors(error),
     };
   }
 }
@@ -460,12 +504,12 @@ export async function updateRegister(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Update register error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Update register error", error);
     return {
       success: false,
       message: "Erreur lors de la mise à jour de la caisse",
-      errors: error.response?.data,
+      errors: salesValidationErrors(error),
     };
   }
 }
@@ -482,8 +526,8 @@ export async function deleteRegister(
     );
 
     return { success: true };
-  } catch (error: any) {
-    console.error("[Sales] Delete register error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Delete register error", error);
     return { success: false, message: "Erreur lors de la suppression de la caisse" };
   }
 }
@@ -513,8 +557,8 @@ export async function getRegisterSessions(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Sales] Get sessions error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get sessions error", error);
     return { success: false, message: "Erreur lors de la récupération des sessions" };
   }
 }
@@ -531,8 +575,8 @@ export async function getRegisterSession(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Get session error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get session error", error);
     return { success: false, message: "Erreur lors de la récupération de la session" };
   }
 }
@@ -548,11 +592,11 @@ export async function getCurrentSession(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    if (error.response?.status === 404) {
+  } catch (error: unknown) {
+    if (asAxiosError(error).response?.status === 404) {
       return { success: false, message: "Aucune session ouverte" };
     }
-    console.error("[Sales] Get current session error:", error.response?.data || error.message);
+    logSalesError("Get current session error", error);
     return { success: false, message: "Erreur lors de la récupération de la session" };
   }
 }
@@ -570,11 +614,11 @@ export async function openSession(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Open session error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Open session error", error);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'ouverture de la session",
+      message: salesErrorMessage(error, "Erreur lors de l'ouverture de la session", "error"),
     };
   }
 }
@@ -593,11 +637,11 @@ export async function closeSession(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Close session error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Close session error", error);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de la fermeture de la session",
+      message: salesErrorMessage(error, "Erreur lors de la fermeture de la session", "error"),
     };
   }
 }
@@ -626,8 +670,8 @@ export async function getPaymentMethods(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Sales] Get payment methods error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get payment methods error", error);
     return { success: false, message: "Erreur lors de la récupération des méthodes de paiement" };
   }
 }
@@ -645,12 +689,12 @@ export async function createPaymentMethod(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Create payment method error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Create payment method error", error);
     return {
       success: false,
       message: "Erreur lors de la création de la méthode de paiement",
-      errors: error.response?.data,
+      errors: salesValidationErrors(error),
     };
   }
 }
@@ -669,12 +713,12 @@ export async function updatePaymentMethod(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Update payment method error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Update payment method error", error);
     return {
       success: false,
       message: "Erreur lors de la mise à jour de la méthode de paiement",
-      errors: error.response?.data,
+      errors: salesValidationErrors(error),
     };
   }
 }
@@ -691,8 +735,8 @@ export async function deletePaymentMethod(
     );
 
     return { success: true };
-  } catch (error: any) {
-    console.error("[Sales] Delete payment method error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Delete payment method error", error);
     return { success: false, message: "Erreur lors de la suppression de la méthode de paiement" };
   }
 }
@@ -729,8 +773,8 @@ export async function getSales(
       : response.data;
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Sales] Get sales error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get sales error", error);
     return { success: false, message: "Erreur lors de la récupération des ventes" };
   }
 }
@@ -747,8 +791,8 @@ export async function getSale(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Get sale error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get sale error", error);
     return { success: false, message: "Erreur lors de la récupération de la vente" };
   }
 }
@@ -768,8 +812,8 @@ export async function getTodaySales(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Sales] Get today sales error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get today sales error", error);
     return { success: false, message: "Erreur lors de la récupération des ventes du jour" };
   }
 }
@@ -786,8 +830,8 @@ export async function getSalesStats(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Get sales stats error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get sales stats error", error);
     return { success: false, message: "Erreur lors de la récupération des statistiques" };
   }
 }
@@ -805,12 +849,12 @@ export async function createSale(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Create sale error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Create sale error", error);
     return {
       success: false,
-      message: error.response?.data?.items || "Erreur lors de la création de la vente",
-      errors: error.response?.data,
+      message: salesErrorMessage(error, "Erreur lors de la création de la vente", "items"),
+      errors: salesValidationErrors(error),
     };
   }
 }
@@ -829,11 +873,11 @@ export async function addPaymentToSale(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Add payment error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Add payment error", error);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'ajout du paiement",
+      message: salesErrorMessage(error, "Erreur lors de l'ajout du paiement", "error"),
     };
   }
 }
@@ -851,11 +895,11 @@ export async function cancelSale(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Cancel sale error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Cancel sale error", error);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'annulation de la vente",
+      message: salesErrorMessage(error, "Erreur lors de l'annulation de la vente", "error"),
     };
   }
 }
@@ -873,11 +917,11 @@ export async function markReceiptPrinted(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Mark receipt printed error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Mark receipt printed error", error);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de la mise à jour du reçu",
+      message: salesErrorMessage(error, "Erreur lors de la mise à jour du reçu", "error"),
     };
   }
 }
@@ -907,8 +951,8 @@ export async function getSaleReturns(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Sales] Get sale returns error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get sale returns error", error);
     return { success: false, message: "Erreur lors de la récupération des retours" };
   }
 }
@@ -925,8 +969,8 @@ export async function getSaleReturn(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Get sale return error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get sale return error", error);
     return { success: false, message: "Erreur lors de la récupération du retour" };
   }
 }
@@ -944,12 +988,12 @@ export async function createSaleReturn(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Create sale return error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Create sale return error", error);
     return {
       success: false,
       message: "Erreur lors de la création du retour",
-      errors: error.response?.data,
+      errors: salesValidationErrors(error),
     };
   }
 }
@@ -967,11 +1011,11 @@ export async function approveSaleReturn(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Approve return error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Approve return error", error);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'approbation du retour",
+      message: salesErrorMessage(error, "Erreur lors de l'approbation du retour", "error"),
     };
   }
 }
@@ -989,11 +1033,11 @@ export async function rejectSaleReturn(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Reject return error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Reject return error", error);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors du rejet du retour",
+      message: salesErrorMessage(error, "Erreur lors du rejet du retour", "error"),
     };
   }
 }
@@ -1023,8 +1067,8 @@ export async function getQuotations(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Sales] Get quotations error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get quotations error", error);
     return { success: false, message: "Erreur lors de la récupération des devis" };
   }
 }
@@ -1041,8 +1085,8 @@ export async function getQuotation(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Get quotation error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Get quotation error", error);
     return { success: false, message: "Erreur lors de la récupération du devis" };
   }
 }
@@ -1060,12 +1104,12 @@ export async function createQuotation(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Create quotation error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Create quotation error", error);
     return {
       success: false,
       message: "Erreur lors de la création du devis",
-      errors: error.response?.data,
+      errors: salesValidationErrors(error),
     };
   }
 }
@@ -1084,12 +1128,12 @@ export async function updateQuotation(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Update quotation error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Update quotation error", error);
     return {
       success: false,
       message: "Erreur lors de la mise à jour du devis",
-      errors: error.response?.data,
+      errors: salesValidationErrors(error),
     };
   }
 }
@@ -1106,8 +1150,8 @@ export async function deleteQuotation(
     );
 
     return { success: true };
-  } catch (error: any) {
-    console.error("[Sales] Delete quotation error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Delete quotation error", error);
     return { success: false, message: "Erreur lors de la suppression du devis" };
   }
 }
@@ -1125,11 +1169,11 @@ export async function convertQuotation(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Convert quotation error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Convert quotation error", error);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de la conversion du devis",
+      message: salesErrorMessage(error, "Erreur lors de la conversion du devis", "error"),
     };
   }
 }
@@ -1147,11 +1191,11 @@ export async function sendQuotation(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Sales] Send quotation error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    logSalesError("Send quotation error", error);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'envoi du devis",
+      message: salesErrorMessage(error, "Erreur lors de l'envoi du devis", "error"),
     };
   }
 }
