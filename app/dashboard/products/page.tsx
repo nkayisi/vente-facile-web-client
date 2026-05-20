@@ -68,6 +68,7 @@ import {
     Download,
     Upload,
     FileSpreadsheet,
+    FileText,
     CheckCircle2,
     XCircle,
 } from "lucide-react";
@@ -80,6 +81,8 @@ import {
     deleteProduct,
     downloadImportTemplate,
     importProducts,
+    exportProductsExcel,
+    exportProductsPdf,
     Product,
     Category,
     Brand,
@@ -131,6 +134,10 @@ export default function ProductsPage() {
     const [isImporting, setIsImporting] = useState(false);
     const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
     const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
+    // Export
+    const [exportFormat, setExportFormat] = useState<"excel" | "pdf" | null>(null);
+    const isExporting = exportFormat !== null;
 
     // Fetch organization
     useEffect(() => {
@@ -278,6 +285,51 @@ export default function ProductsPage() {
             toast.error(message);
         } finally {
             setIsDownloadingTemplate(false);
+        }
+    };
+
+    // Handle export (excel | pdf)
+    const handleExport = async (format: "excel" | "pdf") => {
+        if (!session?.accessToken || !organization?.id) return;
+        if (totalCount === 0) {
+            toast.info("Aucun produit à exporter");
+            return;
+        }
+
+        setExportFormat(format);
+        try {
+            const result =
+                format === "excel"
+                    ? await exportProductsExcel(session.accessToken, organization.id)
+                    : await exportProductsPdf(session.accessToken, organization.id);
+
+            if (!result) {
+                toast.error("Erreur lors de l'export. Vérifiez vos permissions.");
+                return;
+            }
+
+            const uint8Array = new Uint8Array(result.data);
+            const blob = new Blob([uint8Array], { type: result.contentType });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = result.filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            toast.success(
+                format === "excel"
+                    ? "Export Excel généré avec succès"
+                    : "Export PDF généré avec succès"
+            );
+        } catch (error: unknown) {
+            console.error("Export error:", error);
+            const message =
+                error instanceof Error ? error.message : "Erreur lors de l'export";
+            toast.error(message);
+        } finally {
+            setExportFormat(null);
         }
     };
 
@@ -571,84 +623,130 @@ export default function ProductsPage() {
                         />
                     </div>
 
-                    <Popover open={showFilters} onOpenChange={setShowFilters}>
-                        <PopoverTrigger asChild>
-                            <Button
-                                variant="outline"
-                                className={cn(
-                                    "gap-2 shrink-0",
-                                    (showFilters || activeFilterCount > 0) && "bg-orange-50 border-orange-200 text-orange-700"
-                                )}
-                            >
-                                <Filter className="h-4 w-4" />
-                                <span className="hidden sm:inline">Filtres</span>
-                                {activeFilterCount > 0 && (
-                                    <span className="bg-orange-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
-                                        {activeFilterCount}
-                                    </span>
-                                )}
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-80 p-4" align="end">
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <h4 className="font-medium text-sm text-gray-900">Filtrer les produits</h4>
-                                    {hasActiveFilters && (
-                                        <button
-                                            onClick={clearFilters}
-                                            className="text-xs text-orange-600 hover:text-orange-700 font-medium"
-                                        >
-                                            Réinitialiser
-                                        </button>
+                    <div className="flex gap-2 shrink-0">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    className="gap-2"
+                                    disabled={isExporting}
+                                    title="Exporter tous les produits"
+                                >
+                                    {isExporting ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Download className="h-4 w-4" />
                                     )}
+                                    <span className="hidden sm:inline">Exporter</span>
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuItem
+                                    className="gap-2"
+                                    disabled={isExporting}
+                                    onClick={() => handleExport("excel")}
+                                >
+                                    {exportFormat === "excel" ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                                    )}
+                                    Format Excel
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    className="gap-2"
+                                    disabled={isExporting}
+                                    onClick={() => handleExport("pdf")}
+                                >
+                                    {exportFormat === "pdf" ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <FileText className="h-4 w-4 text-red-600" />
+                                    )}
+                                    Format PDF
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        <Popover open={showFilters} onOpenChange={setShowFilters}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    className={cn(
+                                        "gap-2",
+                                        (showFilters || activeFilterCount > 0) && "bg-orange-50 border-orange-200 text-orange-700"
+                                    )}
+                                >
+                                    <Filter className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Filtres</span>
+                                    {activeFilterCount > 0 && (
+                                        <span className="bg-orange-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                                            {activeFilterCount}
+                                        </span>
+                                    )}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80 p-4" align="end">
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="font-medium text-sm text-gray-900">Filtrer les produits</h4>
+                                        {hasActiveFilters && (
+                                            <button
+                                                onClick={clearFilters}
+                                                className="text-xs text-orange-600 hover:text-orange-700 font-medium"
+                                            >
+                                                Réinitialiser
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-gray-500">Catégorie</label>
+                                            <SearchableSelect
+                                                options={[
+                                                    { value: "all", label: "Toutes les catégories" },
+                                                    ...categories.map((cat) => ({ value: cat.id, label: cat.name })),
+                                                ]}
+                                                value={selectedCategory}
+                                                onValueChange={setSelectedCategory}
+                                                placeholder="Catégorie"
+                                                searchPlaceholder="Rechercher une catégorie..."
+                                            />
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-gray-500">Marque</label>
+                                            <SearchableSelect
+                                                options={[
+                                                    { value: "all", label: "Toutes les marques" },
+                                                    ...brands.map((brand) => ({ value: brand.id, label: brand.name })),
+                                                ]}
+                                                value={selectedBrand}
+                                                onValueChange={setSelectedBrand}
+                                                placeholder="Marque"
+                                                searchPlaceholder="Rechercher une marque..."
+                                            />
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-gray-500">Statut</label>
+                                            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue placeholder="Statut" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">Tous les statuts</SelectItem>
+                                                    <SelectItem value="active">Actif</SelectItem>
+                                                    <SelectItem value="inactive">Inactif</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
                                 </div>
-
-                                <div className="space-y-3">
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-gray-500">Catégorie</label>
-                                        <SearchableSelect
-                                            options={[
-                                                { value: "all", label: "Toutes les catégories" },
-                                                ...categories.map((cat) => ({ value: cat.id, label: cat.name })),
-                                            ]}
-                                            value={selectedCategory}
-                                            onValueChange={setSelectedCategory}
-                                            placeholder="Catégorie"
-                                            searchPlaceholder="Rechercher une catégorie..."
-                                        />
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-gray-500">Marque</label>
-                                        <SearchableSelect
-                                            options={[
-                                                { value: "all", label: "Toutes les marques" },
-                                                ...brands.map((brand) => ({ value: brand.id, label: brand.name })),
-                                            ]}
-                                            value={selectedBrand}
-                                            onValueChange={setSelectedBrand}
-                                            placeholder="Marque"
-                                            searchPlaceholder="Rechercher une marque..."
-                                        />
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-gray-500">Statut</label>
-                                        <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                                            <SelectTrigger className="w-full">
-                                                <SelectValue placeholder="Statut" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">Tous les statuts</SelectItem>
-                                                <SelectItem value="active">Actif</SelectItem>
-                                                <SelectItem value="inactive">Inactif</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-                            </div>
-                        </PopoverContent>
-                    </Popover>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
 
                 </div>
 

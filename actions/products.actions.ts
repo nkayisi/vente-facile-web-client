@@ -912,6 +912,79 @@ export async function importProducts(
   }
 }
 
+export async function exportProductsExcel(
+  accessToken: string,
+  organizationId: string
+): Promise<{ data: number[]; contentType: string; filename: string } | null> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/products/export/excel/`, {
+      headers: getHeaders(accessToken, organizationId),
+      responseType: "arraybuffer",
+    });
+
+    const contentType = response.headers["content-type"] || "";
+    if (contentType.includes("application/json")) {
+      const text = new TextDecoder().decode(response.data);
+      const errorData = JSON.parse(text);
+      console.error("[Products] Export Excel error:", errorData);
+      throw new Error(
+        formatApiErrorBody(errorData as Record<string, unknown>, "Erreur lors de l'export")
+      );
+    }
+
+    const uint8Array = new Uint8Array(response.data);
+    const disposition = (response.headers["content-disposition"] as string) || "";
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = match?.[1] || `produits_export.xlsx`;
+
+    return {
+      data: Array.from(uint8Array),
+      contentType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      filename,
+    };
+  } catch (error: any) {
+    console.error("[Products] Export Excel error:", error.response?.data || error.message);
+    throw error;
+  }
+}
+
+export async function exportProductsPdf(
+  accessToken: string,
+  organizationId: string
+): Promise<{ data: number[]; contentType: string; filename: string } | null> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/products/export/pdf/`, {
+      headers: getHeaders(accessToken, organizationId),
+      responseType: "arraybuffer",
+    });
+
+    const contentType = response.headers["content-type"] || "";
+    if (contentType.includes("application/json")) {
+      const text = new TextDecoder().decode(response.data);
+      const errorData = JSON.parse(text);
+      console.error("[Products] Export PDF error:", errorData);
+      throw new Error(
+        formatApiErrorBody(errorData as Record<string, unknown>, "Erreur lors de l'export")
+      );
+    }
+
+    const uint8Array = new Uint8Array(response.data);
+    const disposition = (response.headers["content-disposition"] as string) || "";
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = match?.[1] || `produits_export.pdf`;
+
+    return {
+      data: Array.from(uint8Array),
+      contentType: "application/pdf",
+      filename,
+    };
+  } catch (error: any) {
+    console.error("[Products] Export PDF error:", error.response?.data || error.message);
+    throw error;
+  }
+}
+
 export async function checkProductDuplicate(
   accessToken: string,
   organizationId: string,
