@@ -1,0 +1,127 @@
+/**
+ * Utilitaires de formatage pour l'affichage des nombres et prix.
+ * Tous les chiffres sont affichés en entier (pas d'abréviation k/M).
+ */
+
+// Module-level default currency (set by CurrencyProvider at mount)
+let _defaultSymbol = "FC";
+let _defaultDecimals = 0;
+let _defaultCode = "CDF";
+
+export function setDefaultCurrency(symbol: string, decimalPlaces: number, code?: string) {
+  _defaultSymbol = symbol;
+  _defaultDecimals = decimalPlaces;
+  if (code) _defaultCode = code;
+}
+
+export function getDefaultCurrency() {
+  return { symbol: _defaultSymbol, decimal_places: _defaultDecimals, code: _defaultCode };
+}
+
+/**
+ * Formate un prix avec séparateur de milliers et symbole de devise.
+ * Utilise la devise par défaut de l'organisation si aucun paramètre n'est fourni.
+ * Affiche les décimales exactes de la valeur stockée (ex: 2.3 → "2,3").
+ * Ex: formatPrice(20000) → "20 000 FC"
+ * Ex: formatPrice(2.3) → "2,3 FC"
+ * Ex: formatPrice(10.50) → "10,5 FC"
+ */
+export function formatPrice(
+  price: string | number,
+  symbol?: string
+): string {
+  const num = typeof price === "string" ? parseFloat(price) : price;
+  const sym = symbol || _defaultSymbol;
+  if (isNaN(num)) return `0 ${sym}`;
+  const formatted = new Intl.NumberFormat("fr-CD", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  }).format(num);
+  return `${formatted} ${sym}`;
+}
+
+/**
+ * Formate un nombre entier avec séparateur de milliers.
+ * Ex: 20000 → "20 000", 1500 → "1 500"
+ */
+export function formatNumber(num: number | string): string {
+  const n = typeof num === "string" ? parseFloat(num) : num;
+  if (isNaN(n)) return "0";
+  return new Intl.NumberFormat("fr-CD", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+/**
+ * Formate un nombre décimal (ex: quantités) avec séparateur de milliers.
+ * Ex: 20000.500 → "20 000,500"
+ */
+export function formatDecimal(num: number | string, decimals: number = 3): string {
+  const n = typeof num === "string" ? parseFloat(num) : num;
+  if (isNaN(n)) return "0";
+  return new Intl.NumberFormat("fr-CD", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimals,
+  }).format(n);
+}
+
+/**
+ * Formate un prix sans le symbole de devise (pour les exports CSV).
+ * Affiche les décimales telles quelles sans forcer un nombre fixe.
+ * Ex: formatPriceValue(20000.50) → "20000.5"
+ * Ex: formatPriceValue(2.3) → "2.3"
+ */
+export function formatPriceValue(price: string | number): string {
+  const num = typeof price === "string" ? parseFloat(price) : price;
+  if (isNaN(num)) return "0";
+  // Utilise toString() pour garder les décimales telles quelles
+  return num.toString();
+}
+
+/**
+ * Formate un pourcentage.
+ * Ex: 15.5 → "15,5%"
+ */
+export function formatPercent(num: number | string): string {
+  const n = typeof num === "string" ? parseFloat(num) : num;
+  if (isNaN(n)) return "0%";
+  return new Intl.NumberFormat("fr-CD", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(n) + "%";
+}
+
+/**
+ * Formate une date en format court français.
+ */
+export function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("fr-CD", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * Formate une date avec heure.
+ */
+export function formatDateTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("fr-CD", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Résout une URL media relative du backend Django en URL absolue.
+ * Ex: "/media/users/avatars/photo.jpg" → "http://localhost:8005/media/users/avatars/photo.jpg"
+ */
+export function getMediaUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8005/api/v1").replace("/api/v1", "");
+  return `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
+}

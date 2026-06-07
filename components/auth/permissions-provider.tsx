@@ -1,0 +1,145 @@
+"use client";
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
+import { useSession, signOut } from "next-auth/react";
+import { getUserOrganizations } from "@/actions/organization.actions";
+import { getUserPermissions } from "@/actions/permissions.actions";
+import type {
+  UserPermissions,
+  Role,
+} from "@/lib/permissions";
+import {
+  hasPermission as _hasPermission,
+  hasAnyPermission as _hasAnyPermission,
+  hasAllPermissions as _hasAllPermissions,
+  isRole as _isRole,
+  isAtLeastRole as _isAtLeastRole,
+  canManageRole as _canManageRole,
+} from "@/lib/permissions";
+
+interface PermissionsContextType {
+  permissions: UserPermissions | null;
+  isLoading: boolean;
+  error: string | null;
+  organizationId: string | null;
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (permissions: string[]) => boolean;
+  hasAllPermissions: (permissions: string[]) => boolean;
+  isRole: (role: Role) => boolean;
+  isAtLeastRole: (role: Role) => boolean;
+  canManageRole: (targetRole: string) => boolean;
+  refreshPermissions: () => Promise<void>;
+}
+
+const PermissionsContext = createContext<PermissionsContextType>({
+  permissions: null,
+  isLoading: true,
+  error: null,
+  organizationId: null,
+  hasPermission: () => false,
+  hasAnyPermission: () => false,
+  hasAllPermissions: () => false,
+  isRole: () => false,
+  isAtLeastRole: () => false,
+  canManageRole: () => false,
+  refreshPermissions: async () => { },
+});
+
+export function PermissionsProvider({ children }: { children: ReactNode }) {
+  const { data: session, status } = useSession();
+  const [permissions, setPermissions] = useState<UserPermissions | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const hasFetched = useRef(false);
+
+  const accessToken = session?.accessToken;
+
+  const fetchPermissions = useCallback(async () => {
+    if (status !== "authenticated" || !accessToken) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setError(null);
+
+      // Récupérer l'organisation active
+      const orgsResult = await getUserOrganizations(accessToken);
+
+      // Si l'utilisateur n'existe pas, déconnecter automatiquement
+      if (!orgsResult.success && orgsResult.errorCode === 'user_not_found') {
+        console.warn("User not found, signing out...");
+        await signOut({ callbackUrl: '/auth/login' });
+        return;
+      }
+
+      if (!orgsResult.success || !orgsResult.data || orgsResult.data.length === 0) {
+        setIsLoading(false);
+        return;
+      }
+
+      const orgId = orgsResult.data[0].id;
+      setOrganizationId(orgId);
+
+      // Récupérer les permissions
+      const permResult = await getUserPermissions(accessToken, orgId);
+      if (permResult.success && permResult.data) {
+        setPermissions(permResult.data);
+      } else {
+        setError(permResult.error || "Erreur lors du chargement des permissions");
+      }
+    } catch (err: any) {
+      setError(err.message || "Erreur inattendue");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken, status]);
+
+  useEffect(() => {
+    if (hasFetched.current) return;
+    if (status === "authenticated" && accessToken) {
+      hasFetched.current = true;
+      fetchPermissions();
+    } else if (status === "unauthenticated") {
+      setIsLoading(false);
+    }
+  }, [fetchPermissions, status, accessToken]);
+
+  const value = useMemo<PermissionsContextType>(() => ({
+    permissions,
+    isLoading,
+    error,
+    organizationId,
+    hasPermission: (permission: string) => _hasPermission(permissions, permission),
+    hasAnyPermission: (perms: string[]) => _hasAnyPermission(permissions, perms),
+    hasAllPermissions: (perms: string[]) => _hasAllPermissions(permissions, perms),
+    isRole: (role: Role) => _isRole(permissions, role),
+    isAtLeastRole: (role: Role) => _isAtLeastRole(permissions, role),
+    canManageRole: (targetRole: string) => _canManageRole(permissions, targetRole),
+    refreshPermissions: fetchPermissions,
+  }), [permissions, isLoading, error, organizationId, fetchPermissions]);
+
+  return (
+    <PermissionsContext.Provider value={value}>
+      {children}
+    </PermissionsContext.Provider>
+  );
+}
+
+export function usePermissions() {
+  const context = useContext(PermissionsContext);
+  if (!context) {
+    throw new Error("usePermissions must be used within a PermissionsProvider");
+  }
+  return context;
+}

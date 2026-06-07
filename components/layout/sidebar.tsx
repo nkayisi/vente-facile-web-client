@@ -1,0 +1,232 @@
+"use client";
+
+import Link from "next/link";
+import Image from "next/image";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { useOrganization } from "@/components/auth/organization-checker";
+import { usePermissions } from "@/components/auth/permissions-provider";
+import {
+  LayoutDashboard,
+  Users,
+  Package,
+  ShoppingCart,
+  ShoppingBag,
+  Boxes,
+  ClipboardList,
+  FileText,
+  Bell,
+  BarChart3,
+  UserCog,
+  Wallet,
+  ChevronRight,
+  X,
+  Store,
+  Settings,
+  Crown,
+} from "lucide-react";
+
+const menuItems = [
+  {
+    label: "Tableau de bord",
+    icon: LayoutDashboard,
+    href: "/dashboard",
+    badge: null,
+    permission: null,
+  },
+  {
+    label: "Ventes",
+    icon: ShoppingCart,
+    href: "/dashboard/sales",
+    badge: null,
+    permission: "sales.view",
+  },
+  {
+    label: "Produits",
+    icon: Package,
+    href: "/dashboard/products",
+    badge: null,
+    permission: "products.view",
+  },
+  {
+    label: "Stock",
+    icon: Boxes,
+    href: "/dashboard/stock",
+    badge: null,
+    permission: "stock.view",
+  },
+  {
+    label: "Inventaire",
+    icon: ClipboardList,
+    href: "/dashboard/inventory",
+    badge: null,
+    permission: "inventory.view",
+  },
+  {
+    label: "Livre de caisse",
+    icon: Wallet,
+    href: "/dashboard/cashbook",
+    badge: null,
+    permission: "cashbook.view",
+  },
+  {
+    label: "Rapports & statistiques",
+    icon: BarChart3,
+    href: "/dashboard/reports",
+    badge: null,
+    permission: "reports.view",
+  },
+  {
+    label: "Clients & fournisseurs",
+    icon: Users,
+    href: "/dashboard/contacts",
+    badge: null,
+    permission: "customers.view",
+  },
+  {
+    label: "Utilisateurs",
+    icon: UserCog,
+    href: "/dashboard/users",
+    badge: null,
+    permission: "users.view",
+  },
+  {
+    label: "Abonnement",
+    icon: Crown,
+    href: "/dashboard/subscription",
+    badge: null,
+    permission: "settings.view",
+  },
+  {
+    label: "Paramètres",
+    icon: Settings,
+    href: "/dashboard/settings",
+    badge: null,
+    permission: "settings.view",
+  }
+];
+
+interface SidebarProps {
+  isMobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export function Sidebar({ isMobileOpen = false, onMobileClose }: SidebarProps) {
+  const pathname = usePathname();
+  const { organization } = useOrganization();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+
+  return (
+    <>
+      {/* Mobile Overlay */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 min-h-screen flex flex-col transition-transform duration-300 ease-in-out",
+          isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        )}
+      >
+        {/* Logo */}
+        <div className="flex items-center justify-between border-b border-gray-200">
+          <Link href="/dashboard" onClick={onMobileClose} className="flex items-center">
+            <Image src="/logo.png" alt="Vente Facile" width={68} height={68} className="object-contain" />
+            <span className="text-xl font-bold">
+              Vente<span className="text-orange-500">Facile</span>
+            </span>
+          </Link>
+          {/* Close button for mobile */}
+          <button
+            onClick={onMobileClose}
+            className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+          >
+            <X className="h-5 w-5 text-gray-600" />
+          </button>
+        </div>
+
+        {/* Organization Info */}
+        {organization && (
+          <div className="px-4 py-4 border-b border-gray-200">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Store className="h-5 w-5 text-orange-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {organization.name}
+                </p>
+                <p className="text-xs text-gray-500 truncate">
+                  {organization.business_type_display}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Navigation */}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {menuItems.map((item) => {
+            if (item.permission && !permissionsLoading && !hasPermission(item.permission)) {
+              return null;
+            }
+            const Icon = item.icon;
+            // Un menu est actif uniquement s'il correspond au chemin le plus long
+            // Exemple: /dashboard/products active "Produits", pas "Dashboard"
+            const matchingItems = menuItems.filter(m =>
+              pathname === m.href || pathname?.startsWith(`${m.href}/`)
+            );
+            const longestMatch = matchingItems.reduce((longest, current) =>
+              current.href.length > longest.href.length ? current : longest
+              , matchingItems[0] || { href: '' });
+            const isActive = longestMatch?.href === item.href;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onMobileClose}
+                className={cn(
+                  "flex items-center justify-between px-4 py-2 rounded-lg text-sm font-medium transition-colors group",
+                  isActive
+                    ? "bg-orange-500 text-white"
+                    : "text-gray-700 hover:bg-gray-100"
+                )}
+              >
+                <div className="flex items-center space-x-3">
+                  <Icon className="h-4 w-4" />
+                  <span className="text-sm">{item.label}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  {item.badge && (
+                    <span
+                      className={cn(
+                        "text-xs px-1.5 py-0.5 rounded",
+                        isActive
+                          ? "bg-orange-600 text-white"
+                          : "bg-gray-200 text-gray-600"
+                      )}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                  <ChevronRight
+                    className={cn(
+                      "h-4 w-4 transition-opacity",
+                      isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    )}
+                  />
+                </div>
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+    </>
+  );
+}
