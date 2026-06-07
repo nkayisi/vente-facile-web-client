@@ -1,9 +1,10 @@
 "use server";
 
-import { formatApiErrorBody, formatAxiosErrorMessage } from "@/lib/api/drf-error";
+import { revalidatePath } from "next/cache";
+import { formatApiErrorBody, formatAxiosErrorMessage, getErrorBody } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 // =============================================================================
 // TYPES
@@ -171,7 +172,7 @@ interface ApiResponse<T> {
   errors?: Record<string, string[]>;
 }
 
-interface PaginatedResponse<T> {
+export interface PaginatedResponse<T> {
   count: number;
   next: string | null;
   previous: string | null;
@@ -225,8 +226,8 @@ export async function getProducts(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Get products error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Get products error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des produits"),
@@ -248,11 +249,70 @@ export async function getProduct(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Get product error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Get product error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Produit non trouvé"),
+    };
+  }
+}
+
+/**
+ * Fetchers par ID pour les référentiels (utilisés par ``useInitialOption``
+ * lors de l'édition d'une entité qui référence une catégorie / marque /
+ * unité hors de la première page de résultats de la recherche async).
+ */
+export async function getCategory(
+  accessToken: string,
+  organizationId: string,
+  categoryId: string
+): Promise<ApiResponse<Category>> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/categories/${categoryId}/`, {
+      headers: getHeaders(accessToken, organizationId),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: formatAxiosErrorMessage(error, "Catégorie introuvable"),
+    };
+  }
+}
+
+export async function getBrand(
+  accessToken: string,
+  organizationId: string,
+  brandId: string
+): Promise<ApiResponse<Brand>> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/brands/${brandId}/`, {
+      headers: getHeaders(accessToken, organizationId),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: formatAxiosErrorMessage(error, "Marque introuvable"),
+    };
+  }
+}
+
+export async function getUnit(
+  accessToken: string,
+  organizationId: string,
+  unitId: string
+): Promise<ApiResponse<Unit>> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/units/${unitId}/`, {
+      headers: getHeaders(accessToken, organizationId),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: formatAxiosErrorMessage(error, "Unité introuvable"),
     };
   }
 }
@@ -267,17 +327,20 @@ export async function createProduct(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products");
+
     return {
       success: true,
       message: "Produit créé avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Create product error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    const body = getErrorBody(error);
+    console.error("[Products] Create product error:", body || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la création du produit"),
-      errors: error.response?.data,
+      errors: body as ApiResponse<Product>["errors"],
     };
   }
 }
@@ -293,17 +356,21 @@ export async function updateProduct(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products");
+    revalidatePath(`/dashboard/products/${productId}`);
+
     return {
       success: true,
       message: "Produit mis à jour avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Update product error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    const body = getErrorBody(error);
+    console.error("[Products] Update product error:", body || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour du produit"),
-      errors: error.response?.data,
+      errors: body as ApiResponse<Product>["errors"],
     };
   }
 }
@@ -318,12 +385,14 @@ export async function deleteProduct(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products");
+
     return {
       success: true,
       message: "Produit supprimé avec succès",
     };
-  } catch (error: any) {
-    console.error("[Products] Delete product error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Delete product error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la suppression du produit"),
@@ -345,11 +414,11 @@ export async function searchProductByBarcode(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Search barcode error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Search barcode error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Produit non trouvé",
+      message: getErrorBody(error)?.error || "Produit non trouvé",
     };
   }
 }
@@ -367,8 +436,8 @@ export async function getLowStockProducts(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Get low stock error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Get low stock error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des produits en stock bas"),
@@ -394,8 +463,8 @@ export async function bulkUpdateProducts(
       message: `${response.data.updated} produit(s) mis à jour`,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Bulk update error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Bulk update error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour en masse"),
@@ -420,8 +489,8 @@ export async function bulkDeleteProducts(
       message: `${response.data.deleted} produit(s) supprimé(s)`,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Bulk delete error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Bulk delete error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la suppression en masse"),
@@ -439,6 +508,8 @@ export interface CategoryFilters {
   parent?: string | null;
   warehouse?: string;
   with_stock?: boolean;
+  /** Exclut la catégorie {id} et tous ses descendants (édition d'un parent). */
+  exclude_descendants_of?: string;
   page?: number;
   page_size?: number;
 }
@@ -461,6 +532,8 @@ export async function getCategories(
     }
     if (filters?.warehouse) params.append("warehouse", filters.warehouse);
     if (filters?.with_stock !== undefined) params.append("with_stock", String(filters.with_stock));
+    if (filters?.exclude_descendants_of)
+      params.append("exclude_descendants_of", filters.exclude_descendants_of);
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
@@ -472,8 +545,8 @@ export async function getCategories(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Get categories error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Get categories error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des catégories"),
@@ -494,8 +567,8 @@ export async function getCategoryTree(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Get category tree error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Get category tree error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la récupération de l'arborescence"),
@@ -516,17 +589,19 @@ export async function createCategory(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/products");
+
     return {
       success: true,
       message: "Catégorie créée avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Create category error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Create category error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la création de la catégorie"),
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -542,17 +617,19 @@ export async function updateCategory(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products");
+
     return {
       success: true,
       message: "Catégorie mise à jour avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Update category error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Update category error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour de la catégorie"),
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -567,12 +644,14 @@ export async function deleteCategory(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products");
+
     return {
       success: true,
       message: "Catégorie supprimée avec succès",
     };
-  } catch (error: any) {
-    console.error("[Products] Delete category error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Delete category error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la suppression de la catégorie"),
@@ -611,8 +690,8 @@ export async function getBrands(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Get brands error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Get brands error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des marques"),
@@ -633,17 +712,20 @@ export async function createBrand(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/products/brands");
+
     return {
       success: true,
       message: "Marque créée avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Create brand error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Create brand error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la création de la marque"),
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -659,17 +741,20 @@ export async function updateBrand(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/products/brands");
+
     return {
       success: true,
       message: "Marque mise à jour avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Update brand error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Update brand error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour de la marque"),
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -684,12 +769,15 @@ export async function deleteBrand(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/products/brands");
+
     return {
       success: true,
       message: "Marque supprimée avec succès",
     };
-  } catch (error: any) {
-    console.error("[Products] Delete brand error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Delete brand error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la suppression de la marque"),
@@ -726,8 +814,8 @@ export async function getUnits(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Get units error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Get units error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des unités"),
@@ -745,17 +833,19 @@ export async function createUnit(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products/units");
+
     return {
       success: true,
       message: "Unité créée avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Create unit error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Create unit error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la création de l'unité"),
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -771,17 +861,19 @@ export async function updateUnit(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products/units");
+
     return {
       success: true,
       message: "Unité mise à jour avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Update unit error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Update unit error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour de l'unité"),
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -796,12 +888,14 @@ export async function deleteUnit(
       headers: getHeaders(accessToken, organizationId),
     });
 
+    revalidatePath("/dashboard/products/units");
+
     return {
       success: true,
       message: "Unité supprimée avec succès",
     };
-  } catch (error: any) {
-    console.error("[Products] Delete unit error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Delete unit error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la suppression de l'unité"),
@@ -864,8 +958,8 @@ export async function downloadImportTemplate(
       data: Array.from(uint8Array),
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     };
-  } catch (error: any) {
-    console.error("[Products] Download template error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Download template error:", getErrorBody(error) || (error as Error)?.message);
     throw error;
   }
 }
@@ -947,8 +1041,8 @@ export async function exportProductsExcel(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       filename,
     };
-  } catch (error: any) {
-    console.error("[Products] Export Excel error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Export Excel error:", getErrorBody(error) || (error as Error)?.message);
     throw error;
   }
 }
@@ -983,8 +1077,8 @@ export async function exportProductsPdf(
       contentType: "application/pdf",
       filename,
     };
-  } catch (error: any) {
-    console.error("[Products] Export PDF error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Export PDF error:", getErrorBody(error) || (error as Error)?.message);
     throw error;
   }
 }
@@ -1009,8 +1103,8 @@ export async function checkProductDuplicate(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Products] Check duplicate error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Products] Check duplicate error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la vérification des doublons"),

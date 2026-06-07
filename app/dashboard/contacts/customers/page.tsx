@@ -59,6 +59,7 @@ import {
   PaginatedResponse,
 } from "@/actions/contacts.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { PermissionGate } from "@/components/auth/permission-gate";
 
 export default function CustomersPage() {
   const { data: session } = useSession();
@@ -461,16 +462,18 @@ export default function CustomersPage() {
                         <Pencil className="h-4 w-4 mr-2" />
                         Modifier
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setSelectedCustomer(customer);
-                          setShowDeleteDialog(true);
-                        }}
-                        className="text-red-600"
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Supprimer
-                      </DropdownMenuItem>
+                      <PermissionGate permission="customers.delete">
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedCustomer(customer);
+                            setShowDeleteDialog(true);
+                          }}
+                          className="text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Supprimer
+                        </DropdownMenuItem>
+                      </PermissionGate>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

@@ -1,9 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { formatApiErrorBody, formatAxiosErrorMessage } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 // =============================================================================
 // TYPES
@@ -51,6 +52,7 @@ export interface RegisterSession {
   opening_balance: string;
   closing_balance: string | null;
   expected_balance: string | null;
+  counted_balance: string | null;
   difference: string | null;
   opened_at: string;
   closed_at: string | null;
@@ -128,6 +130,8 @@ export interface Sale {
   tax_amount: string;
   discount_amount: string;
   discount_percentage: string;
+  /** Montant déduit via points de fidélité (déjà inclus dans discount_amount). */
+  loyalty_redemption_amount: string;
   total: string;
   amount_paid: string;
   amount_due: string;
@@ -246,7 +250,12 @@ export interface OpenSessionData {
 }
 
 /** Corps vide : le backend calcule solde de fermeture et ignore les notes. */
-export type CloseSessionData = Record<string, never>;
+export interface CloseSessionData {
+  /** Montant réel compté en caisse. Si omis, la différence est traitée comme nulle. */
+  counted_balance?: string | number;
+  /** Note explicative — obligatoire côté backend si la différence est non nulle. */
+  notes?: string;
+}
 
 export interface CreatePaymentMethodData {
   name: string;
@@ -301,6 +310,10 @@ export interface CreateSaleData {
 export interface AddPaymentData {
   payment_method: string;
   amount: number;
+  /** Devise du paiement (par défaut = devise de la vente). */
+  currency?: string;
+  /** Taux de change si payment_currency ≠ sale.currency. */
+  exchange_rate?: number;
   reference?: string;
   notes?: string;
 }
@@ -653,12 +666,14 @@ export async function closeSession(
 export async function getPaymentMethods(
   accessToken: string,
   organizationId: string,
-  filters?: { is_active?: boolean; method_type?: PaymentMethodType }
+  filters?: { is_active?: boolean; method_type?: PaymentMethodType; search?: string; page_size?: number }
 ): Promise<ApiResponse<PaymentMethod[]>> {
   try {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append("is_active", String(filters.is_active));
     if (filters?.method_type) params.append("method_type", filters.method_type);
+    if (filters?.search) params.append("search", filters.search);
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/payment-methods/?${params.toString()}`,
@@ -848,6 +863,12 @@ export async function createSale(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    // Une vente complétée modifie aussi stock & cashbook ; on invalide les
+    // routes qui les affichent pour éviter l'affichage de valeurs stale.
+    revalidatePath("/dashboard/sales");
+    revalidatePath("/dashboard/stock");
+    revalidatePath("/dashboard/cashbook");
+
     return { success: true, data: response.data };
   } catch (error: unknown) {
     logSalesError("Create sale error", error);
@@ -872,6 +893,11 @@ export async function addPaymentToSale(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/sales");
+    revalidatePath(`/dashboard/sales/${saleId}`);
+    revalidatePath("/dashboard/cashbook");
+    revalidatePath("/dashboard/stock");
+
     return { success: true, data: response.data };
   } catch (error: unknown) {
     logSalesError("Add payment error", error);
@@ -893,6 +919,11 @@ export async function cancelSale(
       {},
       { headers: getHeaders(accessToken, organizationId) }
     );
+
+    revalidatePath("/dashboard/sales");
+    revalidatePath(`/dashboard/sales/${saleId}`);
+    revalidatePath("/dashboard/cashbook");
+    revalidatePath("/dashboard/stock");
 
     return { success: true, data: response.data };
   } catch (error: unknown) {

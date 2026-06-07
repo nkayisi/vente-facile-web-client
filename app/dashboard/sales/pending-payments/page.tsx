@@ -111,7 +111,10 @@ export default function PendingPaymentsPage() {
           const org = orgResult.data[0];
           setOrganization(org);
 
-          // Récupérer les ventes partiellement payées ET en attente
+          // Récupérer les ventes partiellement payées ET en attente.
+          // Chaque fetch est indépendant : si l'un échoue, on prévient
+          // explicitement l'utilisateur et on affiche l'autre — pas de
+          // données incomplètes en silence.
           const [partiallyPaidResult, pendingResult, methodsResult, currenciesResult] = await Promise.all([
             getSales(session.accessToken, org.id, { status: "partially_paid" }),
             getSales(session.accessToken, org.id, { status: "pending" }),
@@ -119,17 +122,22 @@ export default function PendingPaymentsPage() {
             getOrganizationCurrencies(session.accessToken, org.id),
           ]);
 
-          const salesResult = {
-            success: partiallyPaidResult.success && pendingResult.success,
-            data: [
-              ...(Array.isArray(partiallyPaidResult.data) ? partiallyPaidResult.data : (partiallyPaidResult.data as any)?.results || []),
-              ...(Array.isArray(pendingResult.data) ? pendingResult.data : (pendingResult.data as any)?.results || [])
-            ]
-          };
-
-          if (salesResult.success && salesResult.data) {
-            setPendingSales(Array.isArray(salesResult.data) ? salesResult.data : (salesResult.data as any).results || []);
+          if (!partiallyPaidResult.success) {
+            toast.warning(
+              "Ventes partiellement payées non chargées — la liste est incomplète."
+            );
           }
+          if (!pendingResult.success) {
+            toast.warning(
+              "Ventes en attente non chargées — la liste est incomplète."
+            );
+          }
+
+          const merged = [
+            ...(Array.isArray(partiallyPaidResult.data) ? partiallyPaidResult.data : (partiallyPaidResult.data as any)?.results || []),
+            ...(Array.isArray(pendingResult.data) ? pendingResult.data : (pendingResult.data as any)?.results || []),
+          ];
+          setPendingSales(merged);
           if (methodsResult.success && methodsResult.data) {
             setPaymentMethods(Array.isArray(methodsResult.data) ? methodsResult.data : (methodsResult.data as any).results || []);
           }

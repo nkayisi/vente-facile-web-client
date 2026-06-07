@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
+import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
 import {
   Package,
   Search,
@@ -28,11 +29,9 @@ import { getUserOrganizations, Organization } from "@/actions/organization.actio
 import { DataPagination } from "@/components/shared/DataPagination";
 import {
   getStocks,
-  getWarehouses,
   getLowStock,
   Stock,
   StockFilters,
-  Warehouse,
 } from "@/actions/stock.actions";
 
 export default function StocksPage() {
@@ -44,9 +43,9 @@ export default function StocksPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [stocks, setStocks] = useState<Stock[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
+  const [selectedWarehouseLabel, setSelectedWarehouseLabel] = useState<string>("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [showLowStock, setShowLowStock] = useState(searchParams.get("filter") === "low");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -71,10 +70,7 @@ export default function StocksPage() {
           const org = orgResult.data[0];
           setOrganization(org);
 
-          const warehousesResult = await getWarehouses(session.accessToken, org.id);
-          if (warehousesResult.success && warehousesResult.data) {
-            setWarehouses(warehousesResult.data);
-          }
+          // Liste des entrepôts chargée à la volée via le SearchableSelectAsync
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -198,16 +194,22 @@ export default function StocksPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <SearchableSelect
-            options={[
-              { value: "all", label: "Tous les entrepôts" },
-              ...warehouses.map(warehouse => ({ value: warehouse.id, label: warehouse.name })),
-            ]}
-            value={selectedWarehouse}
-            onValueChange={setSelectedWarehouse}
+          <SearchableSelectAsyncWithEmpty
+            value={selectedWarehouse === "all" ? null : selectedWarehouse}
+            onValueChange={(value, label) => {
+              setSelectedWarehouse(value ?? "all");
+              setSelectedWarehouseLabel(label ?? "");
+            }}
+            onSearch={
+              session?.accessToken && organization?.id
+                ? createWarehouseSearchHandler(session.accessToken, organization.id)
+                : async () => []
+            }
+            emptyLabel="Tous les entrepôts"
             placeholder="Entrepôt"
             searchPlaceholder="Rechercher un entrepôt..."
             className="max-w-max"
+            disabled={!session?.accessToken || !organization?.id}
           />
 
           <div className="flex items-center gap-2">

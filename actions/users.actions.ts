@@ -1,12 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import {
   formatApiErrorBody,
   formatAxiosErrorMessage,
 } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 // Types
 export interface AssignedWarehouse {
@@ -182,6 +183,8 @@ export async function createUser(
       }
     );
 
+    revalidatePath("/dashboard/users");
+
     return {
       success: true,
       data: response.data,
@@ -224,6 +227,9 @@ export async function updateMember(
       }
     );
 
+    revalidatePath("/dashboard/users");
+    revalidatePath(`/dashboard/users/${memberId}`);
+
     return {
       success: true,
       data: response.data,
@@ -243,6 +249,35 @@ export async function updateMember(
 }
 
 /**
+ * Réinitialise le mot de passe d'un membre (admin / gérant selon hiérarchie).
+ */
+export async function resetUserPassword(
+  accessToken: string,
+  organizationId: string,
+  memberId: string,
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await axios.post(
+      `${API_BASE_URL}/memberships/${memberId}/reset-password/`,
+      { new_password: newPassword },
+      {
+        headers: getHeaders(accessToken, organizationId),
+      }
+    );
+    return { success: true };
+  } catch (error: unknown) {
+    const err = error as { response?: { data?: Record<string, unknown> } };
+    const errorData = err?.response?.data;
+    const fallback = "Erreur lors de la réinitialisation du mot de passe";
+    const errorMsg = errorData
+      ? formatApiErrorBody(errorData, fallback)
+      : formatAxiosErrorMessage(error, fallback);
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
  * Retire un membre de l'organisation
  */
 export async function removeMember(
@@ -257,6 +292,8 @@ export async function removeMember(
         headers: getHeaders(accessToken, organizationId),
       }
     );
+
+    revalidatePath("/dashboard/users");
 
     return { success: true };
   } catch (error: unknown) {
@@ -312,6 +349,9 @@ export async function updateMemberPermissions(
         headers: getHeaders(accessToken, organizationId),
       }
     );
+
+    revalidatePath("/dashboard/users");
+    revalidatePath(`/dashboard/users/${memberId}`);
 
     return {
       success: true,

@@ -91,7 +91,11 @@ import {
   StockMovementSummary,
   ProductSupplies,
   PaginatedResponse,
+  getUserActivityReport,
+  UserActivityReport,
+  UserActivityFilters,
 } from "@/actions/reports.actions";
+import { getMembers, type OrganizationMember } from "@/actions/users.actions";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -162,6 +166,13 @@ export default function ReportsPage() {
   const [productSupplies, setProductSupplies] = useState<ProductSupplies>({});
   const [selectedReportDate, setSelectedReportDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [activeTab, setActiveTab] = useState("overview");
+
+  // Rapport par utilisateur (admin/gérant)
+  const [members, setMembers] = useState<OrganizationMember[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [userActivityGroupBy, setUserActivityGroupBy] = useState<"day" | "hour">("day");
+  const [userActivity, setUserActivity] = useState<UserActivityReport | null>(null);
+  const [isLoadingUserActivity, setIsLoadingUserActivity] = useState(false);
   const [productsPage, setProductsPage] = useState(1);
   const [salesByArticlePage, setSalesByArticlePage] = useState(1);
   const [salesByCategoryPage, setSalesByCategoryPage] = useState(1);
@@ -279,6 +290,51 @@ export default function ReportsPage() {
       fetchDailyCashReport(selectedReportDate, dailyReportMovementsPage);
     }
   }, [organization, activeTab, selectedReportDate, dailyReportMovementsPage, fetchDailyCashReport]);
+
+  // Charge la liste des membres pour le rapport par utilisateur
+  useEffect(() => {
+    async function loadMembers() {
+      if (!session?.accessToken || !organization?.id || activeTab !== "user-activity") return;
+      if (members.length > 0) return;
+      const result = await getMembers(session.accessToken, organization.id, { page_size: 100 });
+      if (result.success && result.data) {
+        setMembers(result.data.results || []);
+      }
+    }
+    loadMembers();
+  }, [session?.accessToken, organization?.id, activeTab, members.length]);
+
+  const fetchUserActivity = useCallback(async () => {
+    if (!session?.accessToken || !organization?.id || !selectedUserId) {
+      toast.error("Sélectionnez un utilisateur.");
+      return;
+    }
+    setIsLoadingUserActivity(true);
+    try {
+      const filters: UserActivityFilters = {
+        group_by: userActivityGroupBy,
+      };
+      if (dateFrom && dateTo) {
+        filters.date_from = dateFrom;
+        filters.date_to = dateTo;
+      } else {
+        filters.period = period as ReportFilters["period"];
+      }
+      const result = await getUserActivityReport(
+        session.accessToken,
+        organization.id,
+        selectedUserId,
+        filters
+      );
+      if (result.success && result.data) {
+        setUserActivity(result.data);
+      } else {
+        toast.error(result.message || "Erreur lors du chargement du rapport utilisateur");
+      }
+    } finally {
+      setIsLoadingUserActivity(false);
+    }
+  }, [session?.accessToken, organization?.id, selectedUserId, userActivityGroupBy, dateFrom, dateTo, period]);
 
   // Fetch organization
   useEffect(() => {
@@ -968,6 +1024,7 @@ export default function ReportsPage() {
           <TabsTrigger value="customers">Clients</TabsTrigger>
           <TabsTrigger value="stock">Stock</TabsTrigger>
           <TabsTrigger value="profits">Bénéfices</TabsTrigger>
+          <TabsTrigger value="user-activity">Par utilisateur</TabsTrigger>
         </TabsList>
 
         {/* Sales Tab */}
@@ -1881,6 +1938,158 @@ export default function ReportsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ============ RAPPORT PAR UTILISATEUR ============ */}
+        <TabsContent value="user-activity" className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-4 mb-4">
+            <div className="space-y-1">
+              <Label className="text-xs text-gray-500">Utilisateur</Label>
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <SelectTrigger className="w-[240px]">
+                  <SelectValue placeholder="Choisir un utilisateur" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.map((m) => (
+                    <SelectItem key={m.user_id} value={m.user_id}>
+                      {m.user_name} — {m.role_display}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-gray-500">Granularité</Label>
+              <Select
+                value={userActivityGroupBy}
+                onValueChange={(v) => setUserActivityGroupBy(v as "day" | "hour")}
+              >
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Par jour</SelectItem>
+                  <SelectItem value="hour">Par heure</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchUserActivity}
+              disabled={isLoadingUserActivity || !selectedUserId}
+            >
+              {isLoadingUserActivity ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Générer
+            </Button>
+          </div>
+          <p className="text-xs text-gray-500 -mt-2 mb-2">
+            Période : utilise les filtres de date/période en haut de page.
+          </p>
+
+          {isLoadingUserActivity ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Loader2 className="h-8 w-8 mx-auto mb-4 animate-spin text-orange-500" />
+                <p className="text-gray-500">Chargement du rapport...</p>
+              </CardContent>
+            </Card>
+          ) : userActivity ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <Card className="p-0">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-gray-500">Ventes</p>
+                    <p className="text-xl mt-1 font-bold text-green-600">
+                      {formatPrice(parseFloat(String(userActivity.sales.total)))}
+                    </p>
+                    <p className="text-xs float-right text-gray-500">
+                      {userActivity.sales.count} ventes
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="p-0">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-gray-500">Dépenses créées</p>
+                    <p className="text-xl mt-1 font-bold text-red-600">
+                      {formatPrice(parseFloat(String(userActivity.expenses.total)))}
+                    </p>
+                    <p className="text-xs float-right text-gray-500">
+                      {userActivity.expenses.count} dépenses
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="p-0">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-gray-500">Entrées / Sorties caisse</p>
+                    <p className="text-sm mt-1 font-semibold">
+                      <span className="text-green-600">
+                        +{formatPrice(parseFloat(String(userActivity.cash.cash_in)))}
+                      </span>{" "}
+                      /{" "}
+                      <span className="text-red-600">
+                        -{formatPrice(parseFloat(String(userActivity.cash.cash_out)))}
+                      </span>
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="p-0">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-gray-500">Caisse nette</p>
+                    <p className="text-xl mt-1 font-bold">
+                      {formatPrice(parseFloat(String(userActivity.cash.net)))}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Détail des ventes ({userActivity.period.group_by === "hour" ? "par heure" : "par jour"})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {userActivity.breakdown.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-4 text-center">
+                      Aucune vente sur la période.
+                    </p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{userActivity.period.group_by === "hour" ? "Heure" : "Jour"}</TableHead>
+                          <TableHead className="text-right">Ventes</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {userActivity.breakdown.map((row) => (
+                          <TableRow key={row.bucket}>
+                            <TableCell>{row.bucket}</TableCell>
+                            <TableCell className="text-right">{row.count}</TableCell>
+                            <TableCell className="text-right font-semibold">
+                              {formatPrice(parseFloat(String(row.total)))}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="py-12 text-center text-gray-500">
+                Sélectionnez un utilisateur puis cliquez sur « Générer ».
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

@@ -62,6 +62,7 @@ import {
   Loader2,
   ShieldAlert,
   Key,
+  Lock,
   Check,
   X,
 } from "lucide-react";
@@ -75,6 +76,7 @@ import {
   createUser,
   updateMember,
   removeMember,
+  resetUserPassword,
   getMemberPermissions,
   updateMemberPermissions,
   type OrganizationMember,
@@ -174,6 +176,11 @@ export default function UsersPage() {
   const [isLoadingPerms, setIsLoadingPerms] = useState(false);
   const [isSavingPerms, setIsSavingPerms] = useState(false);
   const [permSearchQuery, setPermSearchQuery] = useState("");
+
+  // Reset password dialog
+  const [resetPasswordMember, setResetPasswordMember] = useState<OrganizationMember | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Fetch members
   const fetchMembers = useCallback(async () => {
@@ -353,6 +360,35 @@ export default function UsersPage() {
       member.assigned_warehouses?.map((w) => w.id) ?? []
     );
     setShowEditDialog(true);
+  };
+
+  // Reset password dialog
+  const openResetPasswordDialog = (member: OrganizationMember) => {
+    setResetPasswordMember(member);
+    setNewPassword("");
+  };
+
+  const handleResetPassword = async () => {
+    if (!session?.accessToken || !organizationId || !resetPasswordMember) return;
+    if (newPassword.trim().length < 6) {
+      toast.error("Le mot de passe doit contenir au moins 6 caractères.");
+      return;
+    }
+    setIsResettingPassword(true);
+    const result = await resetUserPassword(
+      session.accessToken,
+      organizationId,
+      resetPasswordMember.id,
+      newPassword
+    );
+    setIsResettingPassword(false);
+    if (result.success) {
+      toast.success("Mot de passe réinitialisé avec succès.");
+      setResetPasswordMember(null);
+      setNewPassword("");
+    } else {
+      toast.error(result.error || "Erreur lors de la réinitialisation du mot de passe");
+    }
   };
 
   // Open permissions dialog
@@ -674,6 +710,10 @@ export default function UsersPage() {
                               <DropdownMenuItem onClick={() => openPermissionsDialog(member)}>
                                 <Key className="h-4 w-4 mr-2" />
                                 Gérer les permissions
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => openResetPasswordDialog(member)}>
+                                <Lock className="h-4 w-4 mr-2" />
+                                Réinitialiser le mot de passe
                               </DropdownMenuItem>
                             </PermissionGate>
                             <PermissionGate permission="users.deactivate">
@@ -1036,6 +1076,58 @@ export default function UsersPage() {
             >
               {isUpdating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog
+        open={!!resetPasswordMember}
+        onOpenChange={(open) => {
+          if (!open) {
+            setResetPasswordMember(null);
+            setNewPassword("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Réinitialiser le mot de passe</DialogTitle>
+            <DialogDescription>
+              Définir un nouveau mot de passe pour{" "}
+              <span className="font-medium">{resetPasswordMember?.user_name}</span>. L&apos;utilisateur
+              devra se reconnecter avec ce nouveau mot de passe.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="reset-new-password">Nouveau mot de passe</Label>
+            <Input
+              id="reset-new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Au moins 6 caractères"
+              autoComplete="new-password"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setResetPasswordMember(null);
+                setNewPassword("");
+              }}
+            >
+              Annuler
+            </Button>
+            <Button onClick={handleResetPassword} disabled={isResettingPassword}>
+              {isResettingPassword ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Lock className="h-4 w-4 mr-2" />
+              )}
+              Réinitialiser
             </Button>
           </DialogFooter>
         </DialogContent>

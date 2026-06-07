@@ -1,8 +1,9 @@
 "use server";
 
 import axios from "@/lib/auth/api-helper";
+import { getErrorBody } from "@/lib/api/drf-error";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 interface ApiResponse<T> {
   success: boolean;
@@ -133,8 +134,8 @@ export async function getCurrencies(
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Get currencies error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Get currencies error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des devises" };
   }
 }
@@ -149,8 +150,8 @@ export async function getOrganizationCurrencies(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Get org currencies error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Get org currencies error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des devises" };
   }
 }
@@ -171,11 +172,11 @@ export async function addOrganizationCurrency(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Add org currency error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Add org currency error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.currency?.[0] || "Erreur lors de l'ajout de la devise",
+      message: getErrorBody(error)?.currency?.[0] || "Erreur lors de l'ajout de la devise",
     };
   }
 }
@@ -197,8 +198,8 @@ export async function updateOrganizationCurrency(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Update org currency error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Update org currency error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la mise à jour de la devise" };
   }
 }
@@ -214,11 +215,11 @@ export async function deleteOrganizationCurrency(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true };
-  } catch (error: any) {
-    console.error("[Settings] Delete org currency error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Delete org currency error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de la suppression de la devise",
+      message: getErrorBody(error)?.error || "Erreur lors de la suppression de la devise",
     };
   }
 }
@@ -235,8 +236,8 @@ export async function setPrimaryCurrency(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Set primary currency error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Set primary currency error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors du changement de devise principale" };
   }
 }
@@ -254,8 +255,8 @@ export async function updateExchangeRate(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Update exchange rate error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Update exchange rate error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la mise à jour du taux de change" };
   }
 }
@@ -274,8 +275,8 @@ export async function convertCurrency(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Convert currency error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Convert currency error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la conversion" };
   }
 }
@@ -295,12 +296,13 @@ export async function getLoyaltyProgram(
     );
     console.log("[Settings] Loyalty program response:", response.data);
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const axiosLike = error as { response?: { status?: number; statusText?: string } };
     console.error("[Settings] Get loyalty program error:", {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message,
+      status: axiosLike.response?.status,
+      statusText: axiosLike.response?.statusText,
+      data: getErrorBody(error),
+      message: (error as Error)?.message,
       url: `${API_BASE_URL}/settings/loyalty-program/`,
       organizationId
     });
@@ -320,8 +322,8 @@ export async function createLoyaltyProgram(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Create loyalty program error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Create loyalty program error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la création du programme de fidélité" };
   }
 }
@@ -339,8 +341,8 @@ export async function updateLoyaltyProgram(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Update loyalty program error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Update loyalty program error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la mise à jour du programme de fidélité" };
   }
 }
@@ -357,8 +359,8 @@ export async function toggleLoyaltyProgram(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Toggle loyalty program error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Toggle loyalty program error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de l'activation/désactivation" };
   }
 }
@@ -377,8 +379,8 @@ export async function getLoyaltyRewards(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Get loyalty rewards error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Get loyalty rewards error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des récompenses" };
   }
 }
@@ -395,8 +397,8 @@ export async function createLoyaltyReward(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Create loyalty reward error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Create loyalty reward error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la création de la récompense" };
   }
 }
@@ -414,8 +416,8 @@ export async function updateLoyaltyReward(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Update loyalty reward error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Update loyalty reward error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la mise à jour de la récompense" };
   }
 }
@@ -431,8 +433,8 @@ export async function deleteLoyaltyReward(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true };
-  } catch (error: any) {
-    console.error("[Settings] Delete loyalty reward error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Delete loyalty reward error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la suppression de la récompense" };
   }
 }
@@ -453,8 +455,8 @@ export async function getCustomerLoyalty(
     );
     const data = response.data;
     return { success: true, data: Array.isArray(data) && data.length > 0 ? data[0] : null };
-  } catch (error: any) {
-    console.error("[Settings] Get customer loyalty error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Get customer loyalty error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des points de fidélité" };
   }
 }
@@ -473,11 +475,11 @@ export async function adjustCustomerPoints(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Adjust customer points error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Adjust customer points error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'ajustement des points",
+      message: getErrorBody(error)?.error || "Erreur lors de l'ajustement des points",
     };
   }
 }
@@ -495,11 +497,11 @@ export async function redeemCustomerPoints(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Redeem customer points error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Redeem customer points error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'utilisation des points",
+      message: getErrorBody(error)?.error || "Erreur lors de l'utilisation des points",
     };
   }
 }
@@ -515,8 +517,8 @@ export async function getCustomerLoyaltyTransactions(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Get loyalty transactions error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Get loyalty transactions error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération de l'historique" };
   }
 }
@@ -535,8 +537,8 @@ export async function getOrganizationSettings(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Get org settings error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Get org settings error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des paramètres" };
   }
 }
@@ -553,8 +555,8 @@ export async function updateOrganizationSettings(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Settings] Update org settings error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Settings] Update org settings error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la mise à jour des paramètres" };
   }
 }

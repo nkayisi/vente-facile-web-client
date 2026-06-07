@@ -14,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
@@ -69,6 +68,8 @@ import {
   CreateStockAdjustmentData,
 } from "@/actions/stock.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import  { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
+import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
 
 const STATUS_CONFIG: Record<AdjustmentStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -555,12 +556,20 @@ export default function AdjustmentsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Entrepôt *</Label>
-                <SearchableSelect
-                  options={warehouses.map(warehouse => ({ value: warehouse.id, label: warehouse.name }))}
-                  value={formData.warehouse || undefined}
-                  onValueChange={value => setFormData({ ...formData, warehouse: value, items: [] })}
+                <SearchableSelectAsyncWithEmpty
+                  value={formData.warehouse || null}
+                  onValueChange={value =>
+                    setFormData({ ...formData, warehouse: value || "", items: [] })
+                  }
+                  onSearch={
+                    session?.accessToken && organization?.id
+                      ? createWarehouseSearchHandler(session.accessToken, organization.id)
+                      : async () => []
+                  }
+                  emptyLabel="—"
                   placeholder="Sélectionner un entrepôt"
                   searchPlaceholder="Rechercher un entrepôt..."
+                  disabled={!session?.accessToken || !organization?.id}
                 />
               </div>
 

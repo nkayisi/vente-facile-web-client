@@ -1,9 +1,10 @@
 "use server";
 
-import { formatAxiosErrorMessage } from "@/lib/api/drf-error";
+import { revalidatePath } from "next/cache";
+import { formatAxiosErrorMessage, getErrorBody } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 // =============================================================================
 // TYPES
@@ -346,8 +347,8 @@ export async function getWarehouses(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[stock] Get warehouses error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get warehouses error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des entrepôts" };
   }
 }
@@ -364,8 +365,8 @@ export async function getWarehouse(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Get warehouse error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get warehouse error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération de l'entrepôt" };
   }
 }
@@ -381,6 +382,8 @@ export async function createWarehouse(
       data,
       { headers: getHeaders(accessToken, organizationId) }
     );
+
+    revalidatePath("/dashboard/stock");
 
     return { success: true, message: "Entrepôt créé avec succès", data: response.data };
   } catch (error: unknown) {
@@ -406,13 +409,16 @@ export async function updateWarehouse(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/stock");
+    revalidatePath(`/dashboard/stock/${warehouseId}`);
+
     return { success: true, message: "Entrepôt mis à jour avec succès", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Update warehouse error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Update warehouse error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la mise à jour de l'entrepôt",
-      errors: error.response?.data,
+      message: getErrorBody(error)?.detail || "Erreur lors de la mise à jour de l'entrepôt",
+      errors: getErrorBody(error),
     };
   }
 }
@@ -428,12 +434,14 @@ export async function deleteWarehouse(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/stock");
+
     return { success: true, message: "Entrepôt supprimé avec succès" };
-  } catch (error: any) {
-    console.error("[stock] Delete warehouse error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Delete warehouse error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la suppression de l'entrepôt",
+      message: getErrorBody(error)?.detail || "Erreur lors de la suppression de l'entrepôt",
     };
   }
 }
@@ -450,8 +458,8 @@ export async function getWarehouseStockSummary(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Get stock summary error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock summary error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du résumé de stock" };
   }
 }
@@ -479,8 +487,8 @@ export async function getStockLocations(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[stock] Get stock locations error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock locations error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des emplacements" };
   }
 }
@@ -497,8 +505,8 @@ export async function getLocationsByWarehouse(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Get locations by warehouse error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get locations by warehouse error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des emplacements" };
   }
 }
@@ -516,12 +524,12 @@ export async function createStockLocation(
     );
 
     return { success: true, message: "Emplacement créé avec succès", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Create stock location error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Create stock location error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la création de l'emplacement",
-      errors: error.response?.data,
+      message: getErrorBody(error)?.detail || "Erreur lors de la création de l'emplacement",
+      errors: getErrorBody(error),
     };
   }
 }
@@ -552,8 +560,8 @@ export async function getStocks(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[stock] Get stocks error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stocks error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du stock" };
   }
 }
@@ -574,8 +582,8 @@ export async function getStockByProduct(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[stock] Get stock by product error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock by product error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du stock" };
   }
 }
@@ -596,8 +604,8 @@ export async function getStockByWarehouse(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[stock] Get stock by warehouse error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock by warehouse error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du stock" };
   }
 }
@@ -617,8 +625,8 @@ export async function getLowStock(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[stock] Get low stock error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get low stock error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du stock bas" };
   }
 }
@@ -639,8 +647,8 @@ export async function getExpiringBatches(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[stock] Get expiring batches error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get expiring batches error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des lots expirants" };
   }
 }
@@ -669,8 +677,8 @@ export async function getStockBatches(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[stock] Get stock batches error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock batches error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des lots" };
   }
 }
@@ -699,8 +707,8 @@ export async function getStockMovements(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Get stock movements error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock movements error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des mouvements" };
   }
 }
@@ -726,13 +734,15 @@ export async function createStockMovement(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/stock");
+
     return { success: true, message: "Mouvement créé avec succès", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Create stock movement error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Create stock movement error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la création du mouvement",
-      errors: error.response?.data,
+      message: getErrorBody(error)?.detail || "Erreur lors de la création du mouvement",
+      errors: getErrorBody(error),
     };
   }
 }
@@ -761,8 +771,8 @@ export async function getStockTransfers(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Get stock transfers error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock transfers error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des transferts" };
   }
 }
@@ -779,8 +789,8 @@ export async function getStockTransfer(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Get stock transfer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock transfer error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du transfert" };
   }
 }
@@ -797,13 +807,15 @@ export async function createStockTransfer(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/stock");
+
     return { success: true, message: "Transfert créé avec succès", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Create stock transfer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Create stock transfer error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la création du transfert",
-      errors: error.response?.data,
+      message: getErrorBody(error)?.detail || "Erreur lors de la création du transfert",
+      errors: getErrorBody(error),
     };
   }
 }
@@ -821,11 +833,11 @@ export async function approveStockTransfer(
     );
 
     return { success: true, message: "Transfert approuvé", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Approve transfer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Approve transfer error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'approbation du transfert",
+      message: getErrorBody(error)?.error || "Erreur lors de l'approbation du transfert",
     };
   }
 }
@@ -843,11 +855,11 @@ export async function shipStockTransfer(
     );
 
     return { success: true, message: "Transfert expédié", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Ship transfer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Ship transfer error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'expédition du transfert",
+      message: getErrorBody(error)?.error || "Erreur lors de l'expédition du transfert",
     };
   }
 }
@@ -866,11 +878,11 @@ export async function receiveStockTransfer(
     );
 
     return { success: true, message: "Transfert reçu", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Receive transfer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Receive transfer error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de la réception du transfert",
+      message: getErrorBody(error)?.error || "Erreur lors de la réception du transfert",
     };
   }
 }
@@ -888,11 +900,11 @@ export async function cancelStockTransfer(
     );
 
     return { success: true, message: "Transfert annulé", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Cancel transfer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Cancel transfer error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'annulation du transfert",
+      message: getErrorBody(error)?.error || "Erreur lors de l'annulation du transfert",
     };
   }
 }
@@ -921,8 +933,8 @@ export async function getStockAdjustments(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Get stock adjustments error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock adjustments error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des ajustements" };
   }
 }
@@ -939,8 +951,8 @@ export async function getStockAdjustment(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Get stock adjustment error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Get stock adjustment error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération de l'ajustement" };
   }
 }
@@ -957,13 +969,16 @@ export async function createStockAdjustment(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/stock");
+    revalidatePath("/dashboard/inventory");
+
     return { success: true, message: "Ajustement créé avec succès", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Create stock adjustment error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Create stock adjustment error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la création de l'ajustement",
-      errors: error.response?.data,
+      message: getErrorBody(error)?.detail || "Erreur lors de la création de l'ajustement",
+      errors: getErrorBody(error),
     };
   }
 }
@@ -981,11 +996,11 @@ export async function approveStockAdjustment(
     );
 
     return { success: true, message: "Ajustement approuvé et appliqué", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Approve adjustment error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Approve adjustment error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'approbation de l'ajustement",
+      message: getErrorBody(error)?.error || "Erreur lors de l'approbation de l'ajustement",
     };
   }
 }
@@ -1003,11 +1018,11 @@ export async function rejectStockAdjustment(
     );
 
     return { success: true, message: "Ajustement rejeté", data: response.data };
-  } catch (error: any) {
-    console.error("[stock] Reject adjustment error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[stock] Reject adjustment error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors du rejet de l'ajustement",
+      message: getErrorBody(error)?.error || "Erreur lors du rejet de l'ajustement",
     };
   }
 }

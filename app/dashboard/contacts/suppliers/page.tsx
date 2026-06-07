@@ -60,6 +60,7 @@ import {
   PaginatedResponse,
 } from "@/actions/contacts.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { PermissionGate } from "@/components/auth/permission-gate";
 
 export default function SuppliersPage() {
   const { data: session } = useSession();
@@ -456,16 +457,18 @@ export default function SuppliersPage() {
                         <Pencil className="h-4 w-4 mr-2" />
                         Modifier
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setSelectedSupplier(supplier);
-                          setShowDeleteDialog(true);
-                        }}
-                        className="text-red-600"
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Supprimer
-                      </DropdownMenuItem>
+                      <PermissionGate permission="suppliers.delete">
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedSupplier(supplier);
+                            setShowDeleteDialog(true);
+                          }}
+                          className="text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Supprimer
+                        </DropdownMenuItem>
+                      </PermissionGate>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

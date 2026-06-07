@@ -1,3 +1,8 @@
+# Workspace racine (pas de packages enfants — projet mono-package).
+# Le champ `packages` est exigé par pnpm >= 9 même pour un seul package.
+packages:
+  - "."
+
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver

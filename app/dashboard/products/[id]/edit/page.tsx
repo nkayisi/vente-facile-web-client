@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
 import {
   ArrowLeft,
   Loader2,
@@ -31,15 +31,14 @@ import { getUserOrganizations, Organization } from "@/actions/organization.actio
 import {
   getProduct,
   updateProduct,
-  getCategories,
-  getBrands,
-  getUnits,
-  Category,
-  Brand,
-  Unit,
   Product,
   UpdateProductData,
 } from "@/actions/products.actions";
+import {
+  createCategorySearchHandler,
+  createBrandSearchHandler,
+  createUnitSearchHandler,
+} from "@/lib/select-search-handlers";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/format";
 import { useCurrency } from "@/components/providers/currency-provider";
@@ -59,11 +58,6 @@ export default function EditProductPage() {
 
   // Form data
   const [formData, setFormData] = useState<UpdateProductData>({});
-
-  // Reference data
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -94,12 +88,11 @@ export default function EditProductPage() {
 
       setIsFetchingData(true);
 
-      const [productResult, categoriesResult, brandsResult, unitsResult] = await Promise.all([
-        getProduct(session.accessToken, organization.id, productId),
-        getCategories(session.accessToken, organization.id),
-        getBrands(session.accessToken, organization.id),
-        getUnits(session.accessToken, organization.id),
-      ]);
+      // Pas besoin de pré-charger les catégories/marques/unités : les selects
+      // async les recherchent à la volée. ``product.category_name`` etc. sont
+      // dénormalisés dans la réponse, ce qui suffit pour afficher la valeur
+      // pré-sélectionnée immédiatement.
+      const productResult = await getProduct(session.accessToken, organization.id, productId);
 
       if (productResult.success && productResult.data) {
         const product = productResult.data;
@@ -128,16 +121,6 @@ export default function EditProductPage() {
         });
       } else {
         setErrors({ general: productResult.message || "Produit non trouvé" });
-      }
-
-      if (categoriesResult.success && categoriesResult.data) {
-        setCategories(categoriesResult.data.results || []);
-      }
-      if (brandsResult.success && brandsResult.data) {
-        setBrands(brandsResult.data.results || []);
-      }
-      if (unitsResult.success && unitsResult.data) {
-        setUnits(unitsResult.data.results || []);
       }
 
       setIsFetchingData(false);
@@ -338,28 +321,44 @@ export default function EditProductPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Catégorie</Label>
-                  <SearchableSelect
-                    options={[
-                      { value: "none", label: "Aucune catégorie" },
-                      ...categories.map((cat) => ({ value: cat.id, label: cat.name })),
-                    ]}
-                    value={formData.category || "none"}
-                    onValueChange={(value) => handleChange("category", value === "none" ? null : value)}
+                  <SearchableSelectAsyncWithEmpty
+                    value={formData.category}
+                    onValueChange={(value) => handleChange("category", value)}
+                    onSearch={
+                      session?.accessToken && organization?.id
+                        ? createCategorySearchHandler(session.accessToken, organization.id)
+                        : async () => []
+                    }
+                    initialOption={
+                      originalProduct?.category && originalProduct?.category_name
+                        ? { value: originalProduct.category, label: originalProduct.category_name }
+                        : null
+                    }
+                    emptyLabel="Aucune catégorie"
                     placeholder="Sélectionner une catégorie"
                     searchPlaceholder="Rechercher une catégorie..."
+                    disabled={!session?.accessToken || !organization?.id}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Marque</Label>
-                  <SearchableSelect
-                    options={[
-                      { value: "none", label: "Aucune marque" },
-                      ...brands.map((brand) => ({ value: brand.id, label: brand.name })),
-                    ]}
-                    value={formData.brand || "none"}
-                    onValueChange={(value) => handleChange("brand", value === "none" ? null : value)}
+                  <SearchableSelectAsyncWithEmpty
+                    value={formData.brand}
+                    onValueChange={(value) => handleChange("brand", value)}
+                    onSearch={
+                      session?.accessToken && organization?.id
+                        ? createBrandSearchHandler(session.accessToken, organization.id)
+                        : async () => []
+                    }
+                    initialOption={
+                      originalProduct?.brand && originalProduct?.brand_name
+                        ? { value: originalProduct.brand, label: originalProduct.brand_name }
+                        : null
+                    }
+                    emptyLabel="Aucune marque"
                     placeholder="Sélectionner une marque"
                     searchPlaceholder="Rechercher une marque..."
+                    disabled={!session?.accessToken || !organization?.id}
                   />
                 </div>
               </div>
@@ -368,15 +367,28 @@ export default function EditProductPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Unité de mesure</Label>
-                  <SearchableSelect
-                    options={[
-                      { value: "none", label: "Aucune unité" },
-                      ...units.map((unit) => ({ value: unit.id, label: `${unit.name} (${unit.symbol})` })),
-                    ]}
-                    value={formData.unit || "none"}
-                    onValueChange={(value) => handleChange("unit", value === "none" ? null : value)}
+                  <SearchableSelectAsyncWithEmpty
+                    value={formData.unit}
+                    onValueChange={(value) => handleChange("unit", value)}
+                    onSearch={
+                      session?.accessToken && organization?.id
+                        ? createUnitSearchHandler(session.accessToken, organization.id)
+                        : async () => []
+                    }
+                    initialOption={
+                      originalProduct?.unit && originalProduct?.unit_name
+                        ? {
+                            value: originalProduct.unit,
+                            label: originalProduct.unit_symbol
+                              ? `${originalProduct.unit_name} (${originalProduct.unit_symbol})`
+                              : originalProduct.unit_name,
+                          }
+                        : null
+                    }
+                    emptyLabel="Aucune unité"
                     placeholder="Sélectionner une unité"
                     searchPlaceholder="Rechercher une unité..."
+                    disabled={!session?.accessToken || !organization?.id}
                   />
                 </div>
               </div>

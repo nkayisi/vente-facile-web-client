@@ -10,6 +10,8 @@
 !.yarn/releases
 !.yarn/versions
 
+.pnpm-store/
+
 # testing
 /coverage
 
@@ -29,7 +31,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-pnpm-lock.yaml
+# Note : pnpm-lock.yaml est le lockfile officiel du projet (pnpm),
+# il doit rester versionné — ne pas l'ajouter ici.
+
 # env files (can opt-in for committing if needed)
 .env*
 

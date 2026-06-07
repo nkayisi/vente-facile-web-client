@@ -3,7 +3,18 @@ import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "next-auth/jwt";
 import { refreshWithMutex } from "./refresh-mutex";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+function resolveApiBaseUrl(): string {
+  const url = process.env.NEXT_PUBLIC_API_URL;
+  if (url && url.length > 0) return url;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXT_PUBLIC_API_URL is required in production (frontend/lib/auth/config.ts)",
+    );
+  }
+  return "http://127.0.0.1:8005/api/v1";
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 const isDev = process.env.NODE_ENV === "development";
 
 // Durées de validité des tokens (en millisecondes)
@@ -263,6 +274,25 @@ export const authConfig: NextAuthConfig = {
     // C'est essentiel pour que le nouveau accessToken soit immédiatement persisté dans le cookie
     // après un rafraîchissement, et disponible pour les requêtes suivantes.
     updateAge: 0,
+  },
+  // Verrouillage explicite du cookie de session : sameSite=lax suffit pour
+  // tolérer les redirections OAuth/checkout entrantes (Moko revient sur le
+  // domaine via GET), mais bloque la fuite via formulaire cross-site
+  // (POST CSRF). secure=true en prod uniquement (les cookies HTTPS-only
+  // bloqueraient un dev local sur http://localhost).
+  cookies: {
+    sessionToken: {
+      name:
+        process.env.NODE_ENV === "production"
+          ? "__Secure-authjs.session-token"
+          : "authjs.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
   },
   trustHost: true,
 };

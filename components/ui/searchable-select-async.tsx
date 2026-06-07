@@ -27,6 +27,12 @@ export interface AsyncSelectOption {
 interface SearchableSelectAsyncProps {
   value: string | null | undefined
   onValueChange: (value: string) => void
+  /**
+   * Variante optionnelle de ``onValueChange`` qui fournit l'option complète
+   * (value + label). Utile pour afficher un badge "Filtre actif" sans
+   * devoir maintenir un cache parallèle d'options côté caller.
+   */
+  onSelectOption?: (option: AsyncSelectOption) => void
   onSearch: (query: string) => Promise<AsyncSelectOption[]>
   initialOptions?: AsyncSelectOption[]
   placeholder?: string
@@ -40,6 +46,7 @@ interface SearchableSelectAsyncProps {
 export function SearchableSelectAsync({
   value,
   onValueChange,
+  onSelectOption,
   onSearch,
   initialOptions = [],
   placeholder = "Sélectionner...",
@@ -163,6 +170,7 @@ export function SearchableSelectAsync({
                       value={option.value}
                       onSelect={() => {
                         onValueChange(option.value)
+                        onSelectOption?.(option)
                         setOpen(false)
                       }}
                     >

@@ -117,11 +117,11 @@ export function formatDateTime(dateStr: string): string {
 
 /**
  * Résout une URL media relative du backend Django en URL absolue.
- * Ex: "/media/users/avatars/photo.jpg" → "http://localhost:8000/media/users/avatars/photo.jpg"
+ * Ex: "/media/users/avatars/photo.jpg" → "http://localhost:8005/media/users/avatars/photo.jpg"
  */
 export function getMediaUrl(path: string | null | undefined): string | undefined {
   if (!path) return undefined;
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace("/api/v1", "");
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8005/api/v1").replace("/api/v1", "");
   return `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
 }

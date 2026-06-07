@@ -1,8 +1,9 @@
 "use server";
 
 import axios from "axios";
+import { getErrorBody } from "@/lib/api/drf-error";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8005/api/v1";
 
 // =============================================================================
 // TYPES
@@ -156,7 +157,7 @@ export interface CreatePlanData {
   tier: number;
 }
 
-export interface UpdatePlanData extends Partial<CreatePlanData> {}
+export interface UpdatePlanData extends Partial<CreatePlanData> { }
 
 // =============================================================================
 // HELPERS
@@ -185,11 +186,11 @@ export async function getAdminDashboardStats(
       return { success: true, data: response.data };
     }
     return { success: false, message: "Données non disponibles" };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching admin dashboard stats:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement des statistiques",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement des statistiques",
     };
   }
 }
@@ -225,11 +226,11 @@ export async function getAdminOrganizations(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching admin organizations:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement des organisations",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement des organisations",
     };
   }
 }
@@ -245,11 +246,11 @@ export async function getAdminOrganization(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching admin organization:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement de l'organisation",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement de l'organisation",
     };
   }
 }
@@ -266,11 +267,11 @@ export async function toggleOrganizationActive(
     );
 
     return { success: true, message: response.data.message };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error toggling organization:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la modification de l'organisation",
+      message: getErrorBody(error)?.detail || "Erreur lors de la modification de l'organisation",
     };
   }
 }
@@ -292,11 +293,11 @@ export async function activateOrganizationSubscription(
     );
 
     return { success: true, message: response.data.message };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error activating subscription:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de l'activation de l'abonnement",
+      message: getErrorBody(error)?.detail || "Erreur lors de l'activation de l'abonnement",
     };
   }
 }
@@ -331,11 +332,11 @@ export async function getAdminUsers(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching admin users:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement des utilisateurs",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement des utilisateurs",
     };
   }
 }
@@ -350,11 +351,11 @@ export async function getAdminUser(
       { headers: getHeaders(accessToken) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching admin user:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement de l'utilisateur",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement de l'utilisateur",
     };
   }
 }
@@ -369,11 +370,11 @@ export async function getAdminSubscription(
       { headers: getHeaders(accessToken) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching admin subscription:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement de l'abonnement",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement de l'abonnement",
     };
   }
 }
@@ -390,11 +391,11 @@ export async function toggleUserActive(
     );
 
     return { success: true, message: response.data.message };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error toggling user:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la modification de l'utilisateur",
+      message: getErrorBody(error)?.detail || "Erreur lors de la modification de l'utilisateur",
     };
   }
 }
@@ -411,11 +412,11 @@ export async function toggleUserStaff(
     );
 
     return { success: true, message: response.data.message };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error toggling user staff:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la modification du statut admin",
+      message: getErrorBody(error)?.detail || "Erreur lors de la modification du statut admin",
     };
   }
 }
@@ -442,11 +443,11 @@ export async function getSettingsCurrencies(
     });
     const list = Array.isArray(response.data) ? response.data : response.data?.results ?? [];
     return { success: true, data: list };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching currencies:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement des devises",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement des devises",
     };
   }
 }
@@ -460,11 +461,11 @@ export async function getAdminPlans(
     });
 
     return { success: true, data: response.data.results || response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching admin plans:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement des plans",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement des plans",
     };
   }
 }
@@ -480,11 +481,11 @@ export async function getAdminPlan(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching admin plan:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement du plan",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement du plan",
     };
   }
 }
@@ -505,11 +506,11 @@ export async function createAdminPlan(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error creating plan:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la création du plan",
+      message: getErrorBody(error)?.detail || "Erreur lors de la création du plan",
     };
   }
 }
@@ -531,11 +532,11 @@ export async function updateAdminPlan(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error updating plan:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la mise à jour du plan",
+      message: getErrorBody(error)?.detail || "Erreur lors de la mise à jour du plan",
     };
   }
 }
@@ -550,11 +551,11 @@ export async function deleteAdminPlan(
     });
 
     return { success: true, message: "Plan supprimé avec succès" };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error deleting plan:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la suppression du plan",
+      message: getErrorBody(error)?.detail || "Erreur lors de la suppression du plan",
     };
   }
 }
@@ -590,11 +591,11 @@ export async function getAdminSubscriptions(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching admin subscriptions:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors du chargement des abonnements",
+      message: getErrorBody(error)?.detail || "Erreur lors du chargement des abonnements",
     };
   }
 }
@@ -612,11 +613,11 @@ export async function extendSubscription(
     );
 
     return { success: true, message: response.data.message };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error extending subscription:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de la prolongation de l'abonnement",
+      message: getErrorBody(error)?.detail || "Erreur lors de la prolongation de l'abonnement",
     };
   }
 }
@@ -633,11 +634,11 @@ export async function cancelSubscription(
     );
 
     return { success: true, message: response.data.message };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error canceling subscription:", error);
     return {
       success: false,
-      message: error.response?.data?.detail || "Erreur lors de l'annulation de l'abonnement",
+      message: getErrorBody(error)?.detail || "Erreur lors de l'annulation de l'abonnement",
     };
   }
 }
@@ -662,10 +663,10 @@ export async function createAdminSubscription(
     );
 
     return { success: true, data: response.data, message: "Abonnement créé avec succès" };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error creating subscription:", error);
-    const detail = error.response?.data?.detail
-      || Object.values(error.response?.data || {}).flat().join(", ")
+    const detail = getErrorBody(error)?.detail
+      || Object.values(getErrorBody(error) || {}).flat().join(", ")
       || "Erreur lors de la création de l'abonnement";
     return { success: false, message: detail };
   }

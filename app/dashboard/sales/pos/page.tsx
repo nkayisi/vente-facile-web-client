@@ -1,5 +1,6 @@
 "use client";
 
+import { flattenDrfErrors } from "@/lib/api/drf-error";
 import { Customer, getCustomers, createCustomer, CreateCustomerData } from "@/actions/contacts.actions";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProducts, Product } from "@/actions/products.actions";
@@ -120,6 +121,10 @@ export default function POSPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  // Garde anti double-soumission : synchrone, vérifié AVANT toute attente réseau.
+  // useState seul ne suffit pas car React batche les mises à jour et un double-clic
+  // rapide peut déclencher 2 fois `handlePayment` avant le re-render.
+  const submittingRef = useRef(false);
   const [isGeneratingProforma, setIsGeneratingProforma] = useState(false);
   const [isCreditSale, setIsCreditSale] = useState(false);
   const [paymentReference, setPaymentReference] = useState("");
@@ -193,6 +198,8 @@ export default function POSPage() {
 
           if (productsResult.success && productsResult.data) {
             setProducts(productsResult.data.results || []);
+          } else {
+            toast.error(productsResult.message || "Erreur lors du chargement des produits");
           }
           if (customersResult.success && customersResult.data) {
             setCustomers(customersResult.data.results || []);
@@ -549,6 +556,11 @@ export default function POSPage() {
 
   // Process payment
   const handlePayment = async () => {
+    // Protection double-clic : refuser si une soumission est déjà en cours.
+    if (submittingRef.current) {
+      return;
+    }
+
     if (!isCreditSale && !selectedPaymentMethod) {
       toast.error("Sélectionnez un mode de paiement");
       return;
@@ -588,6 +600,16 @@ export default function POSPage() {
 
     // Validation pour vente à crédit
     if (isCreditSale && selectedCustomer) {
+      // Surpaiement en mode crédit : si le client paie déjà le total complet,
+      // il n'y a pas de crédit à enregistrer — la vente doit être en mode
+      // comptant pour ne pas polluer l'historique des ventes à crédit.
+      if (creditAmount < 0) {
+        toast.error(
+          "Le montant payé dépasse le total. Pour une vente entièrement réglée, choisissez le mode comptant."
+        );
+        return;
+      }
+
       const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
       const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
       const newBalance = currentBalance + creditAmount;
@@ -599,6 +621,8 @@ export default function POSPage() {
     }
 
     const printTab = openPrintTab();
+    // Verrou synchrone AVANT setState pour bloquer le second clic immédiat.
+    submittingRef.current = true;
     setIsProcessing(true);
 
     try {
@@ -644,6 +668,15 @@ export default function POSPage() {
       });
 
       if (result.success && result.data) {
+        // Valeurs autoritatives renvoyées par le backend (peuvent différer du calcul
+        // local en cas d'arrondis Decimal vs float ou de cap des points loyauté).
+        const saleAuthoritative = result.data;
+        const backendTotal = parseFloat(saleAuthoritative.total) || (total - pointsDiscount);
+        const backendDiscount = parseFloat(saleAuthoritative.discount_amount) || 0;
+        const backendLoyaltyRedemption = parseFloat(saleAuthoritative.loyalty_redemption_amount || "0") || 0;
+        const backendChange = parseFloat(saleAuthoritative.change_amount) || 0;
+        const backendAmountDue = parseFloat(saleAuthoritative.amount_due) || 0;
+
         const pdfOutcome = (() => {
           const paperWidth = (orgSettings?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
           const receiptData: ReceiptData = {
@@ -652,7 +685,7 @@ export default function POSPage() {
             orgPhone: organization.phone || undefined,
             registerName: currentSession.register_name,
             cashierName: currentSession.opened_by_name,
-            reference: result.data.reference,
+            reference: saleAuthoritative.reference,
             date: new Date().toLocaleString("fr-CD"),
             customerName: selectedCustomer?.name,
             customerPhone: selectedCustomer?.phone || undefined,
@@ -665,9 +698,10 @@ export default function POSPage() {
             })),
             subtotal: calculateSubtotal(),
             taxAmount: calculateTax(),
-            discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount() + pointsDiscount),
+            // discount_amount inclut déjà la part loyauté (calculée par le backend).
+            discountAmount: backendDiscount,
             globalDiscountAmount: calculateGlobalDiscountAmount(),
-            total: total - pointsDiscount,
+            total: backendTotal,
             payments: (() => {
               const receiptPayments: { method: string; amount: number; currency: string }[] = [];
               const selectedMethodObj = getSelectedMethod();
@@ -682,30 +716,32 @@ export default function POSPage() {
                   currency: primaryCode,
                 });
               }
-              if (creditAmount > 0) {
+              if (backendAmountDue > 0) {
                 receiptPayments.push({
                   method: "À crédit",
-                  amount: creditAmount,
+                  amount: backendAmountDue,
                   currency: primaryCode,
                 });
               }
               return receiptPayments;
             })(),
             amountPaid: amountInPrimary,
-            change: !isCreditSale ? Math.max(0, amountInPrimary - (total - pointsDiscount)) : 0,
+            change: !isCreditSale ? backendChange : 0,
             currency: getPrimaryCurrency()?.currency_code || "CDF",
             receiptHeader: orgSettings?.receipt_header || undefined,
             receiptFooter: orgSettings?.receipt_footer || undefined,
-            isCreditSale: creditAmount > 0,
-            amountDue: creditAmount > 0 ? creditAmount : 0,
+            isCreditSale: backendAmountDue > 0,
+            amountDue: backendAmountDue,
             showLoyaltyPoints: !!(
               orgSettings?.show_loyalty_points_on_receipt &&
               selectedCustomer &&
               loyaltyProgram?.is_active
             ),
+            // Points gagnés/balance basés sur le total autoritatif renvoyé par
+            // le backend (qui a déjà déduit la part loyauté du total).
             loyaltyPointsEarned: loyaltyProgram?.is_active
               ? Math.floor(
-                  ((total - pointsDiscount) *
+                  (backendTotal *
                     (loyaltyProgram.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1)) /
                     100
                 )
@@ -714,7 +750,7 @@ export default function POSPage() {
               ? customerLoyalty.current_points -
                 (usePoints ? pointsToUse : 0) +
                 Math.floor(
-                  ((total - pointsDiscount) *
+                  (backendTotal *
                     (loyaltyProgram?.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1)) /
                     100
                 )
@@ -733,10 +769,17 @@ export default function POSPage() {
               : "Reçu téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
         });
 
-        // Mark receipt as printed
-        markReceiptPrinted(session.accessToken, organization.id, result.data.id).catch((err: unknown) => {
+        // Mark receipt as printed — on attend la réponse pour pouvoir signaler
+        // une éventuelle erreur (le statut DB doit refléter la réalité).
+        try {
+          const printedRes = await markReceiptPrinted(session.accessToken, organization.id, result.data.id);
+          if (printedRes && printedRes.success === false) {
+            toast.error("Le reçu n'a pas pu être marqué comme imprimé côté serveur. Vérifiez dans l'historique.");
+          }
+        } catch (err: unknown) {
           console.error("Failed to mark receipt as printed:", err);
-        });
+          toast.error("Impossible de mettre à jour le statut d'impression du reçu.");
+        }
 
         // Reset cart
         setCart([]);
@@ -759,30 +802,33 @@ export default function POSPage() {
           });
           if (productsResult.success && productsResult.data) {
             setProducts(productsResult.data.results || []);
+          } else {
+            toast.error(productsResult.message || "Erreur lors du rafraîchissement des produits");
           }
         }
       } else {
-        // Parse backend errors for clear display
+        // Parse backend errors récursivement : DRF retourne souvent des structures
+        // imbriquées (errors.payments[0].amount = ["..."], errors.items[2].quantity).
+        // Sans ce dépliage, le toast affichait "[object Object]" ou du JSON brut.
         const errors = result.errors;
         let errorMsg = result.message || "Erreur lors de la création de la vente";
+        let description: string | undefined;
 
         if (errors) {
-          if (errors.items) {
-            const itemsError = Array.isArray(errors.items) ? errors.items.join(". ") : String(errors.items);
-            errorMsg = itemsError;
-          }
-          const fieldErrors = Object.entries(errors)
-            .filter(([key]) => key !== 'items')
-            .map(([, val]) => Array.isArray(val) ? val.join(". ") : String(val))
-            .filter(Boolean);
-          if (fieldErrors.length > 0) {
-            errorMsg = [errorMsg, ...fieldErrors].join(" | ");
+          const flat = flattenDrfErrors(errors);
+          if (flat.length > 0) {
+            errorMsg = flat[0];
+            if (flat.length > 1) {
+              description = flat.slice(1).join(" • ");
+            }
           }
         }
 
         toast.error(errorMsg, {
           duration: 6000,
-          description: errorMsg.includes("Stock") ? "Veuillez ajuster les quantités dans le panier." : undefined,
+          description: description ?? (errorMsg.toLowerCase().includes("stock")
+            ? "Veuillez ajuster les quantités dans le panier."
+            : undefined),
         });
 
         if (errorMsg.includes("Stock") || errorMsg.includes("stock")) {
@@ -795,6 +841,7 @@ export default function POSPage() {
       toast.error("Une erreur est survenue lors du paiement");
     } finally {
       setIsProcessing(false);
+      submittingRef.current = false;
     }
   };
 
@@ -968,6 +1015,9 @@ export default function POSPage() {
       });
       if (result.success && result.data) {
         setSearchResults(result.data.results || []);
+      } else {
+        setSearchResults([]);
+        toast.error(result.message || "Erreur lors de la recherche des produits");
       }
       setIsSearching(false);
     }, 300);
@@ -1072,8 +1122,28 @@ export default function POSPage() {
             <div className="flex items-center justify-center h-full">
               <p className="text-gray-500">Aucun produit trouvé</p>
             </div>
+          ) : !searchQuery.trim() && products.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-2 px-6 text-center">
+              <Package className="h-10 w-10 text-gray-300" />
+              <p className="font-medium text-gray-600">Aucun produit avec stock disponible</p>
+              <p className="max-w-md text-sm text-gray-500">
+                {currentSession?.warehouse_name
+                  ? `Aucun produit n'a de stock disponible dans l'entrepôt « ${currentSession.warehouse_name} ». Réceptionnez ou transférez du stock vers cet entrepôt pour le vendre ici.`
+                  : "Aucun produit n'a de stock disponible. Réceptionnez ou transférez du stock vers votre entrepôt pour le vendre ici."}
+              </p>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="flex flex-col gap-2">
+              {!searchQuery.trim() && products.length > 20 && (
+                <div className="p-2 bg-blue-50 rounded-lg border border-blue-200 text-xs text-blue-700 flex items-center gap-2">
+                  <Search className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Affichage des 20 premiers produits sur {products.length}. Utilisez la
+                    recherche ci-dessus pour parcourir tout le catalogue.
+                  </span>
+                </div>
+              )}
+              <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {(searchQuery.trim() ? displayedProducts : products.slice(0, 20)).map(product => {
                 const isLocked = lockedProductIds.has(product.id);
                 const canAdd = canAddProductToCart(product);
@@ -1304,6 +1374,7 @@ export default function POSPage() {
                   </Card>
                 );
               })}
+              </div>
             </div>
           )}
         </div>
@@ -1474,7 +1545,13 @@ export default function POSPage() {
                 <Button
                   variant="outline"
                   type="button"
-                  title="Générer une facture proforma (sans vente ni stock)"
+                  title={
+                    cart.length === 0
+                      ? "Ajoutez d'abord un produit au panier."
+                      : total < 0
+                        ? "Le total est négatif — réduisez les remises."
+                        : "Générer une facture proforma (sans vente ni stock)"
+                  }
                   className="h-10 min-w-0 px-2 text-sm font-medium"
                   disabled={cart.length === 0 || total < 0 || isGeneratingProforma || isProcessing}
                   onClick={handleGenerateProforma}
@@ -1488,7 +1565,13 @@ export default function POSPage() {
                 </Button>
                 <Button
                   type="button"
-                  title={`Encaisser ${formatPrice(total)}`}
+                  title={
+                    cart.length === 0
+                      ? "Ajoutez d'abord un produit au panier."
+                      : total < 0
+                        ? "Le total est négatif — réduisez les remises."
+                        : `Encaisser ${formatPrice(total)}`
+                  }
                   className="h-10 min-w-0 bg-orange-500 px-2 text-sm font-medium hover:bg-orange-600"
                   disabled={cart.length === 0 || total < 0 || isProcessing || isGeneratingProforma}
                   onClick={() => {
@@ -1675,7 +1758,13 @@ export default function POSPage() {
             <Button
               variant="outline"
               type="button"
-              title="Générer une facture proforma (sans vente ni stock)"
+              title={
+                cart.length === 0
+                  ? "Ajoutez d'abord un produit au panier."
+                  : total < 0
+                    ? "Le total est négatif — réduisez les remises."
+                    : "Générer une facture proforma (sans vente ni stock)"
+              }
               className="h-10 min-w-0 px-2 text-sm font-medium"
               disabled={cart.length === 0 || total < 0 || isGeneratingProforma || isProcessing}
               onClick={handleGenerateProforma}
@@ -1689,7 +1778,13 @@ export default function POSPage() {
             </Button>
             <Button
               type="button"
-              title={`Encaisser ${formatPrice(total)}`}
+              title={
+                cart.length === 0
+                  ? "Ajoutez d'abord un produit au panier."
+                  : total < 0
+                    ? "Le total est négatif — réduisez les remises."
+                    : `Encaisser ${formatPrice(total)}`
+              }
               className="h-10 min-w-0 bg-orange-500 px-2 text-sm font-medium hover:bg-orange-600"
               disabled={cart.length === 0 || total < 0 || isProcessing || isGeneratingProforma}
               onClick={openPaymentDialog}
@@ -1703,12 +1798,22 @@ export default function POSPage() {
 
       {/* Payment Dialog */}
       <Dialog open={showPaymentDialog} onOpenChange={(open) => {
-        if (!isProcessing) {
-          setShowPaymentDialog(open);
+        if (isProcessing) {
+          // L'utilisateur tente de fermer le dialog pendant un submit en
+          // cours (Esc, clic backdrop, ou fermeture forcée). On bloque la
+          // fermeture et on l'informe explicitement — sinon il pense que
+          // la vente n'a pas été créée et risque de doubler.
           if (!open) {
-            setIsCreditSale(false);
-            setPaymentReference("");
+            toast.info(
+              "Traitement en cours, merci de patienter avant de fermer."
+            );
           }
+          return;
+        }
+        setShowPaymentDialog(open);
+        if (!open) {
+          setIsCreditSale(false);
+          setPaymentReference("");
         }
       }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
@@ -1763,9 +1868,20 @@ export default function POSPage() {
                           type="number"
                           value={pointsToUse}
                           onChange={(e) => {
+                            // Cap à la fois par solde dispo ET par la valeur monétaire
+                            // utilisable sur le total courant : un client ne peut pas
+                            // appliquer plus de points que ce que la facture vaut.
+                            const pointValue = loyaltyProgram.point_value
+                              ? parseFloat(loyaltyProgram.point_value)
+                              : 1;
+                            const totalNow = calculateTotal();
+                            const maxByTotal = pointValue > 0
+                              ? Math.floor(totalNow / pointValue)
+                              : customerLoyalty.current_points;
                             const value = Math.min(
                               Math.max(0, parseInt(e.target.value) || 0),
-                              customerLoyalty.current_points
+                              customerLoyalty.current_points,
+                              maxByTotal,
                             );
                             setPointsToUse(value);
                           }}
@@ -1817,14 +1933,22 @@ export default function POSPage() {
                     )}
                   </button>
                 ))}
-                {/* Credit sale option */}
+                {/* Credit sale option — désactivé tant qu'aucun client n'est sélectionné */}
                 <button
                   type="button"
+                  disabled={!selectedCustomer && !isCreditSale}
+                  title={!selectedCustomer ? "Sélectionnez d'abord un client" : undefined}
                   className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 transition-all ${isCreditSale
                     ? "border-amber-500 bg-amber-50 text-amber-700 shadow-sm"
-                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                    : !selectedCustomer
+                      ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed opacity-60"
+                      : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
                     }`}
                   onClick={() => {
+                    if (!selectedCustomer) {
+                      toast.error("Sélectionnez un client avant de passer en vente à crédit");
+                      return;
+                    }
                     setIsCreditSale(true);
                     setSelectedPaymentMethod("");
                     setPaymentAmount("0");
@@ -1895,6 +2019,34 @@ export default function POSPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Pre-warning : limite de crédit dépassée AVANT submit */}
+                {selectedCustomer && (() => {
+                  const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
+                  const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
+                  // creditAmount = total - paiement (en devise primaire). On le
+                  // recalcule ici car la variable du handler n'est pas en scope JSX.
+                  const paidInPrimary = getAmountInPrimary();
+                  const creditAmountLocal = Math.max(0, total - paidInPrimary);
+                  const projectedBalance = currentBalance + creditAmountLocal;
+                  if (creditLimit > 0 && projectedBalance > creditLimit) {
+                    return (
+                      <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                        <p className="text-sm font-semibold text-red-700 flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 shrink-0" />
+                          Limite de crédit dépassée
+                        </p>
+                        <ul className="mt-1.5 text-xs text-red-700 space-y-0.5">
+                          <li>Dette actuelle : {formatPrice(currentBalance)}</li>
+                          <li>+ crédit de cette vente : {formatPrice(creditAmountLocal)}</li>
+                          <li>= total projeté : <strong>{formatPrice(projectedBalance)}</strong></li>
+                          <li>Limite autorisée : {formatPrice(creditLimit)}</li>
+                        </ul>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             )}
 
@@ -1955,6 +2107,7 @@ export default function POSPage() {
                 <Input
                   type="number"
                   step="any"
+                  min="0"
                   value={paymentAmount}
                   onChange={e => setPaymentAmount(e.target.value)}
                   className="h-14 text-2xl text-center font-bold pl-10 pr-16"

@@ -1,8 +1,9 @@
 "use server";
 
 import axios from "@/lib/auth/api-helper";
+import { getErrorBody } from "@/lib/api/drf-error";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 function getHeaders(accessToken: string, organizationId: string) {
   return {
@@ -149,9 +150,56 @@ export async function getDashboardSummary(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get dashboard summary error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get dashboard summary error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du résumé" };
+  }
+}
+
+export interface UserActivityReport {
+  user: { id: string; name: string; email: string; role: string };
+  period: { start: string; end: string; group_by: string };
+  sales: {
+    count: number;
+    total: number | string;
+    by_payment_method: { method: string; total: number | string }[];
+  };
+  expenses: { count: number; total: number | string };
+  cash: { cash_in: number | string; cash_out: number | string; net: number | string };
+  breakdown: { bucket: string; count: number; total: number | string }[];
+}
+
+/**
+ * Rapport d'activité d'un utilisateur sur une période (admin / gérant).
+ * group_by : "hour" | "day".
+ */
+export type UserActivityFilters = Omit<ReportFilters, "group_by"> & {
+  group_by?: "hour" | "day";
+};
+
+export async function getUserActivityReport(
+  accessToken: string,
+  organizationId: string,
+  userId: string,
+  filters?: UserActivityFilters
+): Promise<ApiResponse<UserActivityReport>> {
+  try {
+    const params = new URLSearchParams();
+    params.append("user", userId);
+    if (filters?.period) params.append("period", filters.period);
+    if (filters?.date_from) params.append("date_from", filters.date_from);
+    if (filters?.date_to) params.append("date_to", filters.date_to);
+    if (filters?.group_by) params.append("group_by", filters.group_by);
+
+    const response = await axios.get(
+      `${API_BASE_URL}/reports/statistics/user_activity/?${params.toString()}`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error("[Reports] Get user activity error:", getErrorBody(error) || (error as Error)?.message);
+    return { success: false, message: "Erreur lors de la récupération du rapport utilisateur" };
   }
 }
 
@@ -172,8 +220,8 @@ export async function getSalesStats(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get sales stats error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get sales stats error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des statistiques de ventes" };
   }
 }
@@ -198,8 +246,8 @@ export async function getSalesByPeriod(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get sales by period error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get sales by period error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des ventes par période" };
   }
 }
@@ -223,8 +271,8 @@ export async function getSalesByCategory(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get sales by category error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get sales by category error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des ventes par catégorie" };
   }
 }
@@ -248,8 +296,8 @@ export async function getSalesByPaymentMethod(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get sales by payment method error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get sales by payment method error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des ventes par méthode de paiement" };
   }
 }
@@ -273,8 +321,8 @@ export async function getTopProducts(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get top products error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get top products error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des meilleurs produits" };
   }
 }
@@ -299,8 +347,8 @@ export async function getTopCustomers(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get top customers error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get top customers error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des meilleurs clients" };
   }
 }
@@ -316,8 +364,8 @@ export async function getStockStats(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get stock stats error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get stock stats error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des statistiques de stock" };
   }
 }
@@ -339,8 +387,8 @@ export async function getCashbookStats(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get cashbook stats error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get cashbook stats error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des statistiques de caisse" };
   }
 }
@@ -365,8 +413,8 @@ export async function getCashFlow(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get cash flow error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get cash flow error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du flux de trésorerie" };
   }
 }
@@ -388,8 +436,8 @@ export async function getCustomerStats(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get customer stats error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get customer stats error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des statistiques clients" };
   }
 }
@@ -449,8 +497,8 @@ export async function getDailyCashReport(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get daily cash report error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get daily cash report error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du rapport journalier" };
   }
 }
@@ -498,8 +546,8 @@ export async function getProfitMargins(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get profit margins error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get profit margins error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des marges" };
   }
 }
@@ -523,8 +571,8 @@ export async function getProductProfits(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get product profits error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get product profits error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des bénéfices par produit" };
   }
 }
@@ -575,8 +623,8 @@ export async function getStockDetails(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get stock details error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get stock details error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des détails du stock" };
   }
 }
@@ -598,8 +646,8 @@ export async function getStockMovementsSummary(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get stock movements summary error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get stock movements summary error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du résumé des mouvements" };
   }
 }
@@ -624,8 +672,8 @@ export async function getProductSupplies(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Reports] Get product supplies error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Reports] Get product supplies error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des approvisionnements" };
   }
 }

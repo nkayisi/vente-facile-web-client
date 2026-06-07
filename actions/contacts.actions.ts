@@ -1,8 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import axios from "@/lib/auth/api-helper";
+import { getErrorBody } from "@/lib/api/drf-error";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 // =============================================================================
 // TYPES
@@ -209,8 +211,8 @@ export async function getCustomers(
       : response.data;
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Contacts] Get customers error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Get customers error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des clients" };
   }
 }
@@ -227,8 +229,8 @@ export async function getCustomer(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Get customer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Get customer error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du client" };
   }
 }
@@ -245,13 +247,15 @@ export async function createCustomer(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/contacts");
+
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Create customer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Create customer error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: "Erreur lors de la création du client",
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -269,13 +273,16 @@ export async function updateCustomer(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/contacts");
+    revalidatePath(`/dashboard/contacts/${customerId}`);
+
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Update customer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Update customer error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: "Erreur lors de la mise à jour du client",
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -291,9 +298,11 @@ export async function deleteCustomer(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/contacts");
+
     return { success: true };
-  } catch (error: any) {
-    console.error("[Contacts] Delete customer error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Delete customer error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la suppression du client" };
   }
 }
@@ -322,8 +331,8 @@ export async function getCustomerTransactions(
       : response.data.results || [];
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Contacts] Get transactions error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Get transactions error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des transactions" };
   }
 }
@@ -341,9 +350,9 @@ export async function recordCustomerPayment(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Record payment error:", error.response?.data || error.message);
-    return { success: false, message: error.response?.data?.error || "Erreur lors de l'enregistrement du paiement" };
+  } catch (error: unknown) {
+    console.error("[Contacts] Record payment error:", getErrorBody(error) || (error as Error)?.message);
+    return { success: false, message: getErrorBody(error)?.error || "Erreur lors de l'enregistrement du paiement" };
   }
 }
 
@@ -360,9 +369,9 @@ export async function recordCustomerAdvance(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Record advance error:", error.response?.data || error.message);
-    return { success: false, message: error.response?.data?.error || "Erreur lors de l'enregistrement de l'avance" };
+  } catch (error: unknown) {
+    console.error("[Contacts] Record advance error:", getErrorBody(error) || (error as Error)?.message);
+    return { success: false, message: getErrorBody(error)?.error || "Erreur lors de l'enregistrement de l'avance" };
   }
 }
 
@@ -379,9 +388,9 @@ export async function adjustCustomerBalance(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Adjust balance error:", error.response?.data || error.message);
-    return { success: false, message: error.response?.data?.error || "Erreur lors de l'ajustement" };
+  } catch (error: unknown) {
+    console.error("[Contacts] Adjust balance error:", getErrorBody(error) || (error as Error)?.message);
+    return { success: false, message: getErrorBody(error)?.error || "Erreur lors de l'ajustement" };
   }
 }
 
@@ -395,8 +404,8 @@ export async function getCustomersWithBalance(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Get debtors error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Get debtors error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des débiteurs" };
   }
 }
@@ -411,8 +420,8 @@ export async function getDebtSummary(
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Get debt summary error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Get debt summary error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du résumé des dettes" };
   }
 }
@@ -450,8 +459,8 @@ export async function getSuppliers(
       : response.data;
 
     return { success: true, data };
-  } catch (error: any) {
-    console.error("[Contacts] Get suppliers error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Get suppliers error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des fournisseurs" };
   }
 }
@@ -468,8 +477,8 @@ export async function getSupplier(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Get supplier error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Get supplier error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération du fournisseur" };
   }
 }
@@ -486,13 +495,15 @@ export async function createSupplier(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/contacts");
+
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Create supplier error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Create supplier error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: "Erreur lors de la création du fournisseur",
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -510,13 +521,16 @@ export async function updateSupplier(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/contacts");
+    revalidatePath(`/dashboard/contacts/suppliers/${supplierId}`);
+
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Update supplier error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Update supplier error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
       message: "Erreur lors de la mise à jour du fournisseur",
-      errors: error.response?.data,
+      errors: getErrorBody(error),
     };
   }
 }
@@ -532,9 +546,11 @@ export async function deleteSupplier(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/contacts");
+
     return { success: true };
-  } catch (error: any) {
-    console.error("[Contacts] Delete supplier error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Delete supplier error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la suppression du fournisseur" };
   }
 }
@@ -554,8 +570,8 @@ export async function getCustomerStats(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[Contacts] Get customer stats error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Contacts] Get customer stats error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des statistiques" };
   }
 }

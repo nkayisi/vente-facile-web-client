@@ -1,8 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import axios from "@/lib/auth/api-helper";
+import { getErrorBody } from "@/lib/api/drf-error";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 // =============================================================================
 // TYPES
@@ -171,8 +173,8 @@ export async function getInventorySessions(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Get sessions error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Get sessions error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des inventaires" };
   }
 }
@@ -189,8 +191,8 @@ export async function getInventorySession(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Get session error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Get session error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération de l'inventaire" };
   }
 }
@@ -207,13 +209,15 @@ export async function createInventorySession(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/inventory");
+
     return { success: true, message: "Inventaire créé avec succès", data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Create session error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Create session error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.detail || error.response?.data?.warehouse?.[0] || "Erreur lors de la création de l'inventaire",
-      errors: error.response?.data,
+      message: getErrorBody(error)?.detail || getErrorBody(error)?.warehouse?.[0] || "Erreur lors de la création de l'inventaire",
+      errors: getErrorBody(error),
     };
   }
 }
@@ -229,12 +233,14 @@ export async function deleteInventorySession(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/inventory");
+
     return { success: true, message: "Inventaire supprimé" };
-  } catch (error: any) {
-    console.error("[inventory] Delete session error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Delete session error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de la suppression",
+      message: getErrorBody(error)?.error || "Erreur lors de la suppression",
     };
   }
 }
@@ -251,12 +257,15 @@ export async function startInventorySession(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/inventory");
+    revalidatePath(`/dashboard/inventory/${sessionId}`);
+
     return { success: true, message: "Inventaire démarré", data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Start session error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Start session error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors du démarrage de l'inventaire",
+      message: getErrorBody(error)?.error || "Erreur lors du démarrage de l'inventaire",
     };
   }
 }
@@ -275,11 +284,11 @@ export async function submitInventoryCounts(
     );
 
     return { success: true, message: "Comptages enregistrés", data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Submit counts error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Submit counts error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'enregistrement des comptages",
+      message: getErrorBody(error)?.error || "Erreur lors de l'enregistrement des comptages",
     };
   }
 }
@@ -296,12 +305,15 @@ export async function submitForReview(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/inventory");
+    revalidatePath(`/dashboard/inventory/${sessionId}`);
+
     return { success: true, message: "Inventaire soumis pour révision", data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Submit for review error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Submit for review error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de la soumission",
+      message: getErrorBody(error)?.error || "Erreur lors de la soumission",
     };
   }
 }
@@ -318,12 +330,16 @@ export async function validateInventorySession(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/inventory");
+    revalidatePath(`/dashboard/inventory/${sessionId}`);
+    revalidatePath("/dashboard/stock");
+
     return { success: true, message: "Inventaire validé et stock ajusté", data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Validate session error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Validate session error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de la validation",
+      message: getErrorBody(error)?.error || "Erreur lors de la validation",
     };
   }
 }
@@ -340,12 +356,15 @@ export async function cancelInventorySession(
       { headers: getHeaders(accessToken, organizationId) }
     );
 
+    revalidatePath("/dashboard/inventory");
+    revalidatePath(`/dashboard/inventory/${sessionId}`);
+
     return { success: true, message: "Inventaire annulé", data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Cancel session error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Cancel session error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: error.response?.data?.error || "Erreur lors de l'annulation",
+      message: getErrorBody(error)?.error || "Erreur lors de l'annulation",
     };
   }
 }
@@ -370,8 +389,8 @@ export async function getInventoryCounts(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Get counts error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Get counts error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des comptages" };
   }
 }
@@ -388,8 +407,8 @@ export async function getInventoryPrintData(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Get print data error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Get print data error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des données d'impression" };
   }
 }
@@ -417,8 +436,8 @@ export async function getLockedProducts(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error("[inventory] Get locked products error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[inventory] Get locked products error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des produits bloqués" };
   }
 }

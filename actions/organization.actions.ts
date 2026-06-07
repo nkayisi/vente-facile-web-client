@@ -1,8 +1,9 @@
 "use server";
 
 import axios from "@/lib/auth/api-helper";
+import { getErrorBody } from "@/lib/api/drf-error";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 // Types pour les organisations
 export type BusinessType = "boutique" | "supermarket" | "pharmacy" | "depot" | "restaurant" | "other";
@@ -98,11 +99,11 @@ export async function getUserOrganizations(accessToken: string): Promise<Organiz
       success: true,
       data: response.data.results || [],
     };
-  } catch (error: any) {
-    console.error("[Server Action] Get organizations error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Server Action] Get organizations error:", getErrorBody(error) || (error as Error)?.message);
 
-    const errorCode = error.response?.data?.code;
-    const errorMessage = error.response?.data?.detail || error.message || "Impossible de récupérer les organisations";
+    const errorCode = getErrorBody(error)?.code;
+    const errorMessage = getErrorBody(error)?.detail || (error as Error)?.message || "Impossible de récupérer les organisations";
 
     return {
       success: false,
@@ -157,13 +158,12 @@ export async function createOrganization(
       message: "Organisation créée avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Server Action] Create organization error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Server Action] Create organization error:", getErrorBody(error) || (error as Error)?.message);
 
     // Gérer les erreurs de validation du backend
-    if (error.response?.data) {
-      const errorData = error.response.data;
-
+    const errorData = getErrorBody(error);
+    if (errorData) {
       return {
         success: false,
         message: errorData.detail || "Erreur lors de la création de l'organisation",
@@ -173,7 +173,7 @@ export async function createOrganization(
 
     return {
       success: false,
-      message: error.message || "Une erreur est survenue lors de la création de l'organisation",
+      message: (error as Error)?.message || "Une erreur est survenue lors de la création de l'organisation",
     };
   }
 }
@@ -206,12 +206,45 @@ export async function switchOrganization(
       message: "Organisation changée avec succès",
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Server Action] Switch organization error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Server Action] Switch organization error:", getErrorBody(error) || (error as Error)?.message);
 
     return {
       success: false,
-      message: error.message || "Impossible de changer d'organisation",
+      message: (error as Error)?.message || "Impossible de changer d'organisation",
+    };
+  }
+}
+
+export interface BranchFilters {
+  search?: string;
+  is_active?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+/**
+ * Server Action pour récupérer une succursale par ID.
+ * Utilisé par ``useInitialOption`` pour la pré-sélection en édition.
+ */
+export async function getBranch(
+  accessToken: string,
+  organizationId: string,
+  branchId: string
+): Promise<{ success: boolean; data?: Branch; message?: string }> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/branches/${branchId}/`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "X-Organization-ID": organizationId,
+      },
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: (error as Error)?.message || "Succursale introuvable",
     };
   }
 }
@@ -221,16 +254,26 @@ export async function switchOrganization(
  */
 export async function getBranches(
   accessToken: string,
-  organizationId: string
+  organizationId: string,
+  filters?: BranchFilters
 ): Promise<{ success: boolean; data?: Branch[]; message?: string }> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/branches/`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "X-Organization-ID": organizationId,
-      },
-    });
+    const params = new URLSearchParams();
+    if (filters?.search) params.append("search", filters.search);
+    if (filters?.is_active !== undefined) params.append("is_active", String(filters.is_active));
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
+
+    const queryString = params.toString();
+    const response = await axios.get(
+      `${API_BASE_URL}/branches/${queryString ? `?${queryString}` : ""}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "X-Organization-ID": organizationId,
+        },
+      });
 
     const data = Array.isArray(response.data)
       ? response.data
@@ -240,12 +283,12 @@ export async function getBranches(
       success: true,
       data,
     };
-  } catch (error: any) {
-    console.error("[Server Action] Get branches error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Server Action] Get branches error:", getErrorBody(error) || (error as Error)?.message);
 
     return {
       success: false,
-      message: error.message || "Impossible de récupérer les succursales",
+      message: (error as Error)?.message || "Impossible de récupérer les succursales",
     };
   }
 }
@@ -332,12 +375,12 @@ export async function getDashboardStats(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
-    console.error("[Server Action] Get dashboard stats error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    console.error("[Server Action] Get dashboard stats error:", getErrorBody(error) || (error as Error)?.message);
 
     return {
       success: false,
-      message: error.message || "Impossible de récupérer les statistiques du dashboard",
+      message: (error as Error)?.message || "Impossible de récupérer les statistiques du dashboard",
     };
   }
 }

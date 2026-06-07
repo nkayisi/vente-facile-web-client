@@ -51,6 +51,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { PermissionGate } from "@/components/auth/permission-gate";
 import { formatPrice, formatNumber, formatDateTime } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
@@ -562,16 +563,18 @@ export default function StockPage() {
                                   <Pencil className="h-4 w-4 mr-2" />
                                   Modifier
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setSelectedWarehouse(warehouse);
-                                    setShowDeleteDialog(true);
-                                  }}
-                                  className="text-red-600"
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Supprimer
-                                </DropdownMenuItem>
+                                <PermissionGate permission="warehouses.delete">
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setSelectedWarehouse(warehouse);
+                                      setShowDeleteDialog(true);
+                                    }}
+                                    className="text-red-600"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Supprimer
+                                  </DropdownMenuItem>
+                                </PermissionGate>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>

@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
 import {
   ArrowLeft,
   Loader2,
@@ -32,16 +32,15 @@ import {
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   createProduct,
-  getCategories,
-  getBrands,
-  getUnits,
   checkProductDuplicate,
-  Category,
-  Brand,
-  Unit,
   CreateProductData,
   DuplicateCheckResult,
 } from "@/actions/products.actions";
+import {
+  createCategorySearchHandler,
+  createBrandSearchHandler,
+  createUnitSearchHandler,
+} from "@/lib/select-search-handlers";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/format";
 import { useCurrency } from "@/components/providers/currency-provider";
@@ -78,14 +77,8 @@ export default function NewProductPage() {
     is_featured: false,
   });
 
-  // Reference data
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
-
   // UI state
   const [isLoading, setIsLoading] = useState(false);
-  const [isFetchingData, setIsFetchingData] = useState(true);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<"general" | "pricing" | "stock" | "settings">("general");
   const [completedTabs, setCompletedTabs] = useState<Set<string>>(new Set());
@@ -110,36 +103,8 @@ export default function NewProductPage() {
     fetchOrganization();
   }, [session?.accessToken]);
 
-  // Fetch reference data
-  useEffect(() => {
-    async function fetchReferenceData() {
-      if (!session?.accessToken || !organization?.id) {
-        setIsFetchingData(false);
-        return;
-      }
-
-      setIsFetchingData(true);
-
-      const [categoriesResult, brandsResult, unitsResult] = await Promise.all([
-        getCategories(session.accessToken, organization.id),
-        getBrands(session.accessToken, organization.id),
-        getUnits(session.accessToken, organization.id),
-      ]);
-
-      if (categoriesResult.success && categoriesResult.data) {
-        setCategories(categoriesResult.data.results || []);
-      }
-      if (brandsResult.success && brandsResult.data) {
-        setBrands(brandsResult.data.results || []);
-      }
-      if (unitsResult.success && unitsResult.data) {
-        setUnits(unitsResult.data.results || []);
-      }
-
-      setIsFetchingData(false);
-    }
-    fetchReferenceData();
-  }, [session?.accessToken, organization]);
+  // La liste des catégories / marques / unités est chargée à la volée par
+  // ``SearchableSelectAsyncWithEmpty`` : pas de pré-fetch nécessaire.
 
   // Generate SKU from name
   const generateSKU = () => {
@@ -315,7 +280,7 @@ export default function NewProductPage() {
     { id: "settings", label: "Options", icon: Settings },
   ] as const;
 
-  if (isFetchingData) {
+  if (!organization) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
@@ -442,28 +407,34 @@ export default function NewProductPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Catégorie</Label>
-                  <SearchableSelect
-                    options={[
-                      { value: "none", label: "Aucune catégorie" },
-                      ...categories.map((cat) => ({ value: cat.id, label: cat.name })),
-                    ]}
-                    value={formData.category || "none"}
-                    onValueChange={(value) => handleChange("category", value === "none" ? null : value)}
+                  <SearchableSelectAsyncWithEmpty
+                    value={formData.category}
+                    onValueChange={(value) => handleChange("category", value)}
+                    onSearch={
+                      session?.accessToken && organization?.id
+                        ? createCategorySearchHandler(session.accessToken, organization.id)
+                        : async () => []
+                    }
+                    emptyLabel="Aucune catégorie"
                     placeholder="Sélectionner une catégorie"
                     searchPlaceholder="Rechercher une catégorie..."
+                    disabled={!session?.accessToken || !organization?.id}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Marque</Label>
-                  <SearchableSelect
-                    options={[
-                      { value: "none", label: "Aucune marque" },
-                      ...brands.map((brand) => ({ value: brand.id, label: brand.name })),
-                    ]}
-                    value={formData.brand || "none"}
-                    onValueChange={(value) => handleChange("brand", value === "none" ? null : value)}
+                  <SearchableSelectAsyncWithEmpty
+                    value={formData.brand}
+                    onValueChange={(value) => handleChange("brand", value)}
+                    onSearch={
+                      session?.accessToken && organization?.id
+                        ? createBrandSearchHandler(session.accessToken, organization.id)
+                        : async () => []
+                    }
+                    emptyLabel="Aucune marque"
                     placeholder="Sélectionner une marque"
                     searchPlaceholder="Rechercher une marque..."
+                    disabled={!session?.accessToken || !organization?.id}
                   />
                 </div>
               </div>
@@ -472,15 +443,18 @@ export default function NewProductPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Unité de mesure</Label>
-                  <SearchableSelect
-                    options={[
-                      { value: "none", label: "Aucune unité" },
-                      ...units.map((unit) => ({ value: unit.id, label: `${unit.name} (${unit.symbol})` })),
-                    ]}
-                    value={formData.unit || "none"}
-                    onValueChange={(value) => handleChange("unit", value === "none" ? null : value)}
+                  <SearchableSelectAsyncWithEmpty
+                    value={formData.unit}
+                    onValueChange={(value) => handleChange("unit", value)}
+                    onSearch={
+                      session?.accessToken && organization?.id
+                        ? createUnitSearchHandler(session.accessToken, organization.id)
+                        : async () => []
+                    }
+                    emptyLabel="Aucune unité"
                     placeholder="Sélectionner une unité"
                     searchPlaceholder="Rechercher une unité..."
+                    disabled={!session?.accessToken || !organization?.id}
                   />
                 </div>
               </div>

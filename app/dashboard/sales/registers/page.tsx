@@ -10,7 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
+import {
+  createBranchSearchHandler,
+  createWarehouseSearchHandler,
+} from "@/lib/select-search-handlers";
 import {
   Dialog,
   DialogContent,
@@ -35,8 +39,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
-import { getUserOrganizations, getBranches, Organization, Branch } from "@/actions/organization.actions";
-import { getWarehouses, Warehouse } from "@/actions/stock.actions";
+import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getRegisters,
   getRegisterSessions,
@@ -61,8 +64,8 @@ export default function RegistersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [registers, setRegisters] = useState<Register[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
+  // Les selects async pour succursale + entrepôt chargent leur liste à la
+  // volée — pas besoin de state local complet.
   const [sessions, setSessions] = useState<RegisterSession[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -74,6 +77,9 @@ export default function RegistersPage() {
   const [selectedRegister, setSelectedRegister] = useState<Register | null>(null);
   const [selectedSession, setSelectedSession] = useState<RegisterSession | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Fermeture de session : comptage manuel optionnel + notes
+  const [closeCountedBalance, setCloseCountedBalance] = useState<string>("");
+  const [closeNotes, setCloseNotes] = useState<string>("");
 
   // Form state
   const [formData, setFormData] = useState<CreateRegisterData>({
@@ -97,26 +103,15 @@ export default function RegistersPage() {
           const org = orgResult.data[0];
           setOrganization(org);
 
-          // Fetch in parallel
-          const [registersResult, warehousesResult, branchesResult, sessionsResult] = await Promise.all([
+          // Fetch in parallel — la liste des succursales/entrepôts est
+          // résolue dynamiquement par les selects async.
+          const [registersResult, sessionsResult] = await Promise.all([
             getRegisters(session.accessToken, org.id),
-            getWarehouses(session.accessToken, org.id),
-            getBranches(session.accessToken, org.id),
             getRegisterSessions(session.accessToken, org.id, { status: "open" }),
           ]);
 
           if (registersResult.success && registersResult.data) {
             setRegisters(registersResult.data);
-          }
-          if (warehousesResult.success && warehousesResult.data) {
-            setWarehouses(warehousesResult.data);
-          }
-          if (branchesResult.success && branchesResult.data) {
-            setBranches(branchesResult.data);
-            // Set default branch
-            if (branchesResult.data.length > 0) {
-              setFormData(prev => ({ ...prev, branch: branchesResult.data![0].id }));
-            }
           }
           if (sessionsResult.success && sessionsResult.data) {
             setSessions(sessionsResult.data);
@@ -133,11 +128,8 @@ export default function RegistersPage() {
     fetchData();
   }, [session?.accessToken]);
 
-  const warehousesForBranch = useMemo(() => {
-    const bid = formData.branch;
-    if (!bid) return warehouses;
-    return warehouses.filter(w => !w.branch || w.branch === bid);
-  }, [warehouses, formData.branch]);
+  // Mémo conservé pour la stabilité de la ref du handler warehouse —
+  // sinon le composant async perd son cache à chaque render du parent.
 
   // Handle create/update register
   const handleSubmitRegister = async (e: React.FormEvent) => {
@@ -260,15 +252,55 @@ export default function RegistersPage() {
     }
   };
 
+  // Solde attendu = solde d'ouverture + total ventes cash de la session.
+  // On utilise `sales_total` comme proxy si le backend ne renvoie pas
+  // encore `expected_balance` (champ calculé à la fermeture).
+  const closeExpectedBalance = useMemo(() => {
+    if (!selectedSession) return 0;
+    const opening = parseFloat(selectedSession.opening_balance || "0") || 0;
+    const salesCash = parseFloat(selectedSession.sales_total || "0") || 0;
+    return opening + salesCash;
+  }, [selectedSession]);
+
+  const closeCountedNum = useMemo(() => {
+    const v = parseFloat(closeCountedBalance);
+    return Number.isFinite(v) ? v : null;
+  }, [closeCountedBalance]);
+
+  const closeDifference = useMemo(() => {
+    if (closeCountedNum === null) return 0;
+    return closeCountedNum - closeExpectedBalance;
+  }, [closeCountedNum, closeExpectedBalance]);
+
   // Handle close session
   const handleCloseSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session?.accessToken || !organization?.id || !selectedSession) return;
 
+    // Si le caissier a saisi un montant et qu'il diffère du solde attendu,
+    // exiger une note explicative (le backend le valide aussi).
+    if (closeCountedNum !== null && Math.abs(closeDifference) > 0.005 && !closeNotes.trim()) {
+      toast.error("Une note explicative est obligatoire lorsque le comptage diffère du solde attendu.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const result = await closeSession(session.accessToken, organization.id, selectedSession.id);
+      const payload: { counted_balance?: string; notes?: string } = {};
+      if (closeCountedNum !== null) {
+        payload.counted_balance = closeCountedNum.toFixed(2);
+      }
+      if (closeNotes.trim()) {
+        payload.notes = closeNotes.trim();
+      }
+
+      const result = await closeSession(
+        session.accessToken,
+        organization.id,
+        selectedSession.id,
+        payload,
+      );
 
       if (result.success) {
         toast.success("Session fermée avec succès");
@@ -288,6 +320,8 @@ export default function RegistersPage() {
 
         setShowCloseSessionDialog(false);
         setSelectedSession(null);
+        setCloseCountedBalance("");
+        setCloseNotes("");
       } else {
         toast.error(result.message || "Erreur lors de la fermeture");
       }
@@ -303,7 +337,7 @@ export default function RegistersPage() {
     setFormData({
       name: "",
       code: "",
-      branch: branches.length > 0 ? branches[0].id : "",
+      branch: "",
       warehouse: "",
       is_active: true,
       receipt_header: "",
@@ -512,6 +546,11 @@ export default function RegistersPage() {
                           setShowOpenSessionDialog(true);
                         }}
                         disabled={!register.is_active}
+                        title={
+                          !register.is_active
+                            ? "Cette caisse est désactivée — réactivez-la dans les paramètres pour ouvrir une session."
+                            : undefined
+                        }
                       >
                         <Play className="h-4 w-4 mr-2" />
                         Ouvrir une session
@@ -563,34 +602,54 @@ export default function RegistersPage() {
 
             <div className="space-y-2">
               <Label>Succursale *</Label>
-              <SearchableSelect
-                options={branches.map((branch: Branch) => ({ value: branch.id, label: branch.name }))}
-                value={formData.branch || undefined}
+              <SearchableSelectAsyncWithEmpty
+                value={formData.branch || null}
                 onValueChange={value => {
-                  const opts = warehouses.filter(w => !w.branch || w.branch === value);
-                  const keepWh = opts.some(w => w.id === formData.warehouse);
+                  // Changement de branche → réinitialiser l'entrepôt (l'utilisateur
+                  // doit explicitement re-choisir un entrepôt appartenant à la
+                  // nouvelle branche, le filtre serveur s'en charge).
                   setFormData({
                     ...formData,
-                    branch: value,
-                    warehouse: keepWh ? formData.warehouse : opts[0]?.id ?? "",
+                    branch: value || "",
+                    warehouse: "",
                   });
                 }}
+                onSearch={
+                  session?.accessToken && organization?.id
+                    ? createBranchSearchHandler(session.accessToken, organization.id)
+                    : async () => []
+                }
+                emptyLabel="—"
                 placeholder="Sélectionner une succursale"
                 searchPlaceholder="Rechercher une succursale..."
+                disabled={!session?.accessToken || !organization?.id}
               />
             </div>
 
             <div className="space-y-2">
               <Label>Entrepôt *</Label>
-              <SearchableSelect
-                options={warehousesForBranch.map(warehouse => ({
-                  value: warehouse.id,
-                  label: warehouse.name,
-                }))}
-                value={formData.warehouse || undefined}
-                onValueChange={value => setFormData({ ...formData, warehouse: value })}
-                placeholder="Sélectionner un entrepôt"
+              <SearchableSelectAsyncWithEmpty
+                value={formData.warehouse || null}
+                onValueChange={value => setFormData({ ...formData, warehouse: value || "" })}
+                onSearch={
+                  session?.accessToken && organization?.id
+                    ? createWarehouseSearchHandler(session.accessToken, organization.id, {
+                        // Filtre serveur : seuls les entrepôts de la branche
+                        // sélectionnée (ou sans branche) sont proposés.
+                        ...(formData.branch ? { branch: formData.branch } : {}),
+                      })
+                    : async () => []
+                }
+                emptyLabel="—"
+                placeholder={
+                  formData.branch
+                    ? "Sélectionner un entrepôt"
+                    : "Choisissez d'abord une succursale"
+                }
                 searchPlaceholder="Rechercher un entrepôt..."
+                disabled={
+                  !session?.accessToken || !organization?.id || !formData.branch
+                }
               />
             </div>
 
@@ -666,12 +725,21 @@ export default function RegistersPage() {
       </Dialog>
 
       {/* Close Session Dialog */}
-      <Dialog open={showCloseSessionDialog} onOpenChange={setShowCloseSessionDialog}>
+      <Dialog
+        open={showCloseSessionDialog}
+        onOpenChange={(open) => {
+          setShowCloseSessionDialog(open);
+          if (!open) {
+            setCloseCountedBalance("");
+            setCloseNotes("");
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Fermer la session</DialogTitle>
             <DialogDescription>
-              Fermez la session de caisse en cours
+              Vérifiez le comptage de caisse avant de clôturer.
             </DialogDescription>
           </DialogHeader>
 
@@ -679,17 +747,68 @@ export default function RegistersPage() {
             {selectedSession && (
               <div className="p-3 bg-gray-50 rounded-lg space-y-2 text-sm">
                 <div className="flex justify-between">
+                  <span className="text-gray-500">Solde d&apos;ouverture</span>
+                  <span className="font-medium">
+                    {formatPrice(selectedSession.opening_balance)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-gray-500">Ventes</span>
                   <span className="font-medium">
                     {selectedSession.sales_count} ({formatPrice(selectedSession.sales_total)})
                   </span>
                 </div>
+                <div className="flex justify-between border-t pt-2">
+                  <span className="text-gray-600 font-medium">Solde attendu</span>
+                  <span className="font-semibold">
+                    {formatPrice(closeExpectedBalance.toFixed(2))}
+                  </span>
+                </div>
               </div>
             )}
 
-            <p className="text-sm text-gray-600">
-              Le solde de fermeture est calculé automatiquement à partir des paiements en espèces enregistrés.
-            </p>
+            <div className="space-y-2">
+              <Label htmlFor="counted_balance">
+                Montant réellement compté en caisse (optionnel)
+              </Label>
+              <Input
+                id="counted_balance"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Laisser vide pour utiliser le solde attendu"
+                value={closeCountedBalance}
+                onChange={(e) => setCloseCountedBalance(e.target.value)}
+              />
+              {closeCountedNum !== null && Math.abs(closeDifference) > 0.005 && (
+                <p
+                  className={
+                    closeDifference < 0
+                      ? "text-sm font-medium text-red-600"
+                      : "text-sm font-medium text-amber-600"
+                  }
+                >
+                  Écart : {closeDifference > 0 ? "+" : ""}
+                  {formatPrice(closeDifference.toFixed(2))}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="close_notes">
+                Notes {closeCountedNum !== null && Math.abs(closeDifference) > 0.005 && (
+                  <span className="text-red-600">*</span>
+                )}
+              </Label>
+              <textarea
+                id="close_notes"
+                rows={3}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="Explication obligatoire en cas d'écart"
+                value={closeNotes}
+                onChange={(e) => setCloseNotes(e.target.value)}
+              />
+            </div>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowCloseSessionDialog(false)}>

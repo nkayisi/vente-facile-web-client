@@ -41,7 +41,8 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
+import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
 import {
   Search,
   Loader2,
@@ -677,14 +678,24 @@ export default function InventoryPage() {
             </div>
             <div className="space-y-2">
               <Label>Entrepôt *</Label>
-              <SearchableSelect
-                options={warehouses.map((wh) => ({
-                  value: wh.id,
-                  label: `${wh.name}${(warehouseStockCounts[wh.id] || 0) === 0 ? " (vide)" : ` (${warehouseStockCounts[wh.id]} produits)`}`,
-                }))}
-                value={newSession.warehouse}
-                onValueChange={(val) => setNewSession((prev) => ({ ...prev, warehouse: val, category_ids: [] }))}
+              <SearchableSelectAsyncWithEmpty
+                value={newSession.warehouse || null}
+                onValueChange={(val) =>
+                  setNewSession((prev) => ({
+                    ...prev,
+                    warehouse: val || "",
+                    category_ids: [],
+                  }))
+                }
+                onSearch={
+                  session?.accessToken && organization?.id
+                    ? createWarehouseSearchHandler(session.accessToken, organization.id)
+                    : async () => []
+                }
+                emptyLabel="—"
                 placeholder="Sélectionner un entrepôt"
+                searchPlaceholder="Rechercher un entrepôt..."
+                disabled={!session?.accessToken || !organization?.id}
               />
               {newSession.warehouse && (warehouseStockCounts[newSession.warehouse] || 0) === 0 && (
                 <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">

@@ -14,7 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
+import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
 import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
@@ -528,29 +529,41 @@ export default function TransfersPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Entrepôt source *</Label>
-                <SearchableSelect
-                  options={warehouses.map(warehouse => ({ value: warehouse.id, label: warehouse.name }))}
-                  value={formData.source_warehouse || undefined}
+                <SearchableSelectAsyncWithEmpty
+                  value={formData.source_warehouse || null}
                   onValueChange={value =>
-                    setFormData({ ...formData, source_warehouse: value })
+                    setFormData({ ...formData, source_warehouse: value || "" })
                   }
+                  onSearch={
+                    session?.accessToken && organization?.id
+                      ? createWarehouseSearchHandler(session.accessToken, organization.id)
+                      : async () => []
+                  }
+                  emptyLabel="—"
                   placeholder="Source"
                   searchPlaceholder="Rechercher un entrepôt..."
+                  disabled={!session?.accessToken || !organization?.id}
                 />
               </div>
 
               <div className="space-y-2">
                 <Label>Entrepôt destination *</Label>
-                <SearchableSelect
-                  options={warehouses
-                    .filter(w => w.id !== formData.source_warehouse)
-                    .map(warehouse => ({ value: warehouse.id, label: warehouse.name }))}
-                  value={formData.destination_warehouse || undefined}
+                <SearchableSelectAsyncWithEmpty
+                  value={formData.destination_warehouse || null}
                   onValueChange={value =>
-                    setFormData({ ...formData, destination_warehouse: value })
+                    setFormData({ ...formData, destination_warehouse: value || "" })
                   }
+                  onSearch={
+                    session?.accessToken && organization?.id
+                      ? createWarehouseSearchHandler(session.accessToken, organization.id)
+                      : async () => []
+                  }
+                  emptyLabel="—"
                   placeholder="Destination"
                   searchPlaceholder="Rechercher un entrepôt..."
+                  disabled={
+                    !session?.accessToken || !organization?.id || !formData.source_warehouse
+                  }
                 />
               </div>
             </div>

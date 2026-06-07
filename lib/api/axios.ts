@@ -1,9 +1,20 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from "axios";
 import { getSession } from "next-auth/react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+function resolveApiBaseUrl(): string {
+  const url = process.env.NEXT_PUBLIC_API_URL;
+  if (url && url.length > 0) return url;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXT_PUBLIC_API_URL is required in production (frontend/lib/api/axios.ts)",
+    );
+  }
+  // Dev only fallback
+  return "http://127.0.0.1:8005/api/v1";
+}
 
-// Log de l'URL de base en développement
+const API_BASE_URL = resolveApiBaseUrl();
+
 if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
   console.log("Axios baseURL:", API_BASE_URL);
 }

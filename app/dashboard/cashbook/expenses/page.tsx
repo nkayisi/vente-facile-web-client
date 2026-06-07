@@ -584,7 +584,8 @@ export default function ExpensesPage() {
                                   Payer directement
                                 </DropdownMenuItem>
                               )}
-                            {expense.status !== "cancelled" && expense.status !== "rejected" && (
+                            {expense.status !== "cancelled" && expense.status !== "rejected" &&
+                              hasPermission("cashbook.approve_expense") && (
                               <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem

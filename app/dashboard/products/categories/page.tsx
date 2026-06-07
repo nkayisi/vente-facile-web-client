@@ -25,7 +25,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
+import { createCategorySearchHandler } from "@/lib/select-search-handlers";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -406,17 +407,29 @@ export default function CategoriesPage() {
 
             <div className="w-full space-y-2">
               <Label htmlFor="parent">Catégorie parente</Label>
-              <SearchableSelect
-                options={[
-                  { value: "none", label: "Aucune (catégorie racine)" },
-                  ...getParentOptions().map((cat) => ({ value: cat.id, label: cat.name })),
-                ]}
-                value={formData.parent || "none"}
+              <SearchableSelectAsyncWithEmpty
+                value={formData.parent}
                 onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, parent: value === "none" ? null : value }))
+                  setFormData((prev) => ({ ...prev, parent: value }))
                 }
+                onSearch={
+                  session?.accessToken && organization?.id
+                    ? createCategorySearchHandler(session.accessToken, organization.id, {
+                        // En édition, exclure la catégorie courante et ses descendants
+                        // pour éviter la création d'un cycle parent ↔ enfant.
+                        ...(editingCategory ? { exclude_descendants_of: editingCategory.id } : {}),
+                      })
+                    : async () => []
+                }
+                initialOption={
+                  editingCategory?.parent && editingCategory?.parent_name
+                    ? { value: editingCategory.parent, label: editingCategory.parent_name }
+                    : null
+                }
+                emptyLabel="Aucune (catégorie racine)"
                 placeholder="Aucune (catégorie racine)"
                 searchPlaceholder="Rechercher une catégorie..."
+                disabled={!session?.accessToken || !organization?.id}
               />
             </div>
 

@@ -2,8 +2,9 @@
 
 import axios from "@/lib/auth/api-helper";
 import type { UserPermissions } from "@/lib/permissions";
+import { getErrorBody } from "@/lib/api/drf-error";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 interface PermissionsResponse {
   success: boolean;
@@ -27,12 +28,12 @@ export async function getUserPermissions(
       success: true,
       data: response.data,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
       error:
-        error?.response?.data?.detail ||
-        error?.message ||
+        getErrorBody(error)?.detail ||
+        (error as Error)?.message ||
         "Erreur lors de la récupération des permissions",
     };
   }

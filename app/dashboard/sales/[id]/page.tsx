@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -32,14 +32,20 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatDateTime } from "@/lib/format";
+import { PermissionGate } from "@/components/auth/permission-gate";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getSale,
   cancelSale,
   markReceiptPrinted,
+  addPaymentToSale,
+  getPaymentMethods,
   Sale,
   SaleStatus,
+  PaymentMethod,
 } from "@/actions/sales.actions";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   assignPdfToPrintWindow,
   closePrintTabIfBlank,
@@ -70,6 +76,16 @@ export default function SaleDetailPage() {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  // Add payment dialog state
+  const [showAddPaymentDialog, setShowAddPaymentDialog] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [addPaymentMethod, setAddPaymentMethod] = useState<string>("");
+  const [addPaymentAmount, setAddPaymentAmount] = useState<string>("");
+  const [addPaymentReference, setAddPaymentReference] = useState<string>("");
+  const [addPaymentNotes, setAddPaymentNotes] = useState<string>("");
+  const [isAddingPayment, setIsAddingPayment] = useState(false);
+  // Garde anti double-clic synchrone (cf. POS page)
+  const addPaymentSubmittingRef = useRef(false);
 
   // Fetch data
   useEffect(() => {
@@ -173,6 +189,74 @@ export default function SaleDetailPage() {
     }
   };
 
+  // Charger les méthodes de paiement au premier affichage du dialog
+  const ensurePaymentMethodsLoaded = async () => {
+    if (paymentMethods.length > 0) return;
+    if (!session?.accessToken || !organization?.id) return;
+    const res = await getPaymentMethods(session.accessToken, organization.id, { is_active: true });
+    if (res.success && res.data) {
+      setPaymentMethods(res.data);
+      const def = res.data.find(m => m.is_default) || res.data[0];
+      if (def) setAddPaymentMethod(def.id);
+    }
+  };
+
+  // Pré-remplir le montant avec amount_due lors de l'ouverture de la modale
+  const openAddPaymentDialog = async () => {
+    if (!sale) return;
+    setAddPaymentAmount(sale.amount_due || "0");
+    setAddPaymentReference("");
+    setAddPaymentNotes("");
+    await ensurePaymentMethodsLoaded();
+    setShowAddPaymentDialog(true);
+  };
+
+  const handleAddPayment = async () => {
+    if (addPaymentSubmittingRef.current) return;
+    if (!sale || !session?.accessToken || !organization?.id) return;
+
+    const amt = parseFloat(addPaymentAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast.error("Le montant doit être positif.");
+      return;
+    }
+    const due = parseFloat(sale.amount_due) || 0;
+    if (amt > due + 0.01) {
+      toast.error(`Le montant ne peut pas dépasser le restant dû (${due}).`);
+      return;
+    }
+    if (!addPaymentMethod) {
+      toast.error("Sélectionnez une méthode de paiement.");
+      return;
+    }
+
+    addPaymentSubmittingRef.current = true;
+    setIsAddingPayment(true);
+    try {
+      const res = await addPaymentToSale(session.accessToken, organization.id, sale.id, {
+        payment_method: addPaymentMethod,
+        amount: amt,
+        reference: addPaymentReference || undefined,
+        notes: addPaymentNotes || undefined,
+      });
+      if (!res.success) {
+        toast.error(res.message || "Erreur lors de l'ajout du paiement.");
+        return;
+      }
+      toast.success("Paiement enregistré.");
+      // Refresh sale data
+      const refreshed = await getSale(session.accessToken, organization.id, sale.id);
+      if (refreshed.success && refreshed.data) setSale(refreshed.data);
+      setShowAddPaymentDialog(false);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau lors de l'ajout du paiement.");
+    } finally {
+      setIsAddingPayment(false);
+      addPaymentSubmittingRef.current = false;
+    }
+  };
+
   // Handle cancel
   const handleCancel = async () => {
     if (!session?.accessToken || !organization?.id) return;
@@ -260,6 +344,18 @@ export default function SaleDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {(sale.status === 'pending' || sale.status === 'partially_paid') && (
+            <PermissionGate permission="sales.create">
+              <Button
+                variant="outline"
+                onClick={openAddPaymentDialog}
+                className="border-green-600 text-green-700 hover:bg-green-50"
+              >
+                <DollarSign className="h-4 w-4 mr-2" />
+                Ajouter un paiement
+              </Button>
+            </PermissionGate>
+          )}
           {!sale.receipt_printed && (
             <Button
               variant="outline"
@@ -276,14 +372,16 @@ export default function SaleDetailPage() {
             </Button>
           )}
           {canCancel && (
-            <Button
-              variant="outline"
-              className="text-red-600 border-red-600 hover:bg-red-50"
-              onClick={() => setShowCancelDialog(true)}
-            >
-              <XCircle className="h-4 w-4 mr-2" />
-              Annuler
-            </Button>
+            <PermissionGate permission="sales.cancel">
+              <Button
+                variant="outline"
+                className="text-red-600 border-red-600 hover:bg-red-50"
+                onClick={() => setShowCancelDialog(true)}
+              >
+                <XCircle className="h-4 w-4 mr-2" />
+                Annuler
+              </Button>
+            </PermissionGate>
           )}
         </div>
       </div>
@@ -522,6 +620,114 @@ export default function SaleDetailPage() {
             <Button variant="destructive" onClick={handleCancel} disabled={isCancelling}>
               {isCancelling && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Oui, annuler
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Payment Dialog — encaisser un paiement sur une vente pending / partially_paid */}
+      <Dialog
+        open={showAddPaymentDialog}
+        onOpenChange={(open) => {
+          setShowAddPaymentDialog(open);
+          if (!open) {
+            setAddPaymentAmount("");
+            setAddPaymentReference("");
+            setAddPaymentNotes("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ajouter un paiement</DialogTitle>
+            <DialogDescription>
+              Encaissez un règlement sur cette vente. La vente passera en « Terminée »
+              si le total est atteint.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Total facture</span>
+                <span className="font-medium">{formatPrice(sale.total)} {sale.currency}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Déjà payé</span>
+                <span className="font-medium">{formatPrice(sale.amount_paid)} {sale.currency}</span>
+              </div>
+              <div className="flex justify-between border-t pt-1.5">
+                <span className="text-gray-600 font-semibold">Restant dû</span>
+                <span className="font-bold text-green-700">{formatPrice(sale.amount_due)} {sale.currency}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="add_payment_method">Méthode de paiement</Label>
+              <select
+                id="add_payment_method"
+                value={addPaymentMethod}
+                onChange={(e) => setAddPaymentMethod(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                {paymentMethods.length === 0 && (
+                  <option value="">— Chargement —</option>
+                )}
+                {paymentMethods.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="add_payment_amount">Montant</Label>
+              <Input
+                id="add_payment_amount"
+                type="number"
+                min="0"
+                step="0.01"
+                max={sale.amount_due}
+                value={addPaymentAmount}
+                onChange={(e) => setAddPaymentAmount(e.target.value)}
+                placeholder={sale.amount_due}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="add_payment_reference">Référence (optionnel)</Label>
+              <Input
+                id="add_payment_reference"
+                value={addPaymentReference}
+                onChange={(e) => setAddPaymentReference(e.target.value)}
+                placeholder="N° transaction, chèque, etc."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="add_payment_notes">Notes (optionnel)</Label>
+              <textarea
+                id="add_payment_notes"
+                rows={2}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                value={addPaymentNotes}
+                onChange={(e) => setAddPaymentNotes(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowAddPaymentDialog(false)}
+              disabled={isAddingPayment}
+            >
+              Annuler
+            </Button>
+            <Button onClick={handleAddPayment} disabled={isAddingPayment}>
+              {isAddingPayment && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Enregistrer le paiement
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,9 +1,11 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import axios from "@/lib/auth/api-helper";
+import { getErrorBody } from "@/lib/api/drf-error";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 // =============================================================================
 // TYPES
@@ -346,11 +348,12 @@ export async function getIncomeCategories(
       `${API_BASE_URL}/income-categories/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération des catégories",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération des catégories",
     };
   }
 }
@@ -366,11 +369,12 @@ export async function createIncomeCategory(
       data,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || error?.response?.data?.name?.[0] || "Erreur lors de la création",
+      error: getErrorBody(error)?.detail || getErrorBody(error)?.name?.[0] || "Erreur lors de la création",
     };
   }
 }
@@ -387,11 +391,12 @@ export async function updateIncomeCategory(
       data,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la mise à jour",
+      error: getErrorBody(error)?.detail || "Erreur lors de la mise à jour",
     };
   }
 }
@@ -406,11 +411,12 @@ export async function deleteIncomeCategory(
       `${API_BASE_URL}/income-categories/${categoryId}/`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la suppression",
+      error: getErrorBody(error)?.detail || "Erreur lors de la suppression",
     };
   }
 }
@@ -433,11 +439,12 @@ export async function getExpenseCategories(
       `${API_BASE_URL}/expense-categories/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération des catégories",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération des catégories",
     };
   }
 }
@@ -453,11 +460,12 @@ export async function createExpenseCategory(
       data,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || error?.response?.data?.name?.[0] || "Erreur lors de la création",
+      error: getErrorBody(error)?.detail || getErrorBody(error)?.name?.[0] || "Erreur lors de la création",
     };
   }
 }
@@ -474,11 +482,12 @@ export async function updateExpenseCategory(
       data,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la mise à jour",
+      error: getErrorBody(error)?.detail || "Erreur lors de la mise à jour",
     };
   }
 }
@@ -493,11 +502,12 @@ export async function deleteExpenseCategory(
       `${API_BASE_URL}/expense-categories/${categoryId}/`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la suppression",
+      error: getErrorBody(error)?.detail || "Erreur lors de la suppression",
     };
   }
 }
@@ -537,11 +547,12 @@ export async function getExpenses(
       `${API_BASE_URL}/expenses/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération des dépenses",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération des dépenses",
     };
   }
 }
@@ -556,11 +567,12 @@ export async function getExpense(
       `${API_BASE_URL}/expenses/${expenseId}/`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération de la dépense",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération de la dépense",
     };
   }
 }
@@ -576,9 +588,10 @@ export async function createExpense(
       data,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
-    const errorData = error?.response?.data;
+  } catch (error: unknown) {
+    const errorData = getErrorBody(error);
     let errorMsg = "Erreur lors de la création de la dépense";
     if (errorData?.detail) errorMsg = errorData.detail;
     else if (errorData?.description) errorMsg = errorData.description[0];
@@ -599,11 +612,12 @@ export async function updateExpense(
       data,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la mise à jour",
+      error: getErrorBody(error)?.detail || "Erreur lors de la mise à jour",
     };
   }
 }
@@ -618,11 +632,12 @@ export async function deleteExpense(
       `${API_BASE_URL}/expenses/${expenseId}/`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la suppression",
+      error: getErrorBody(error)?.detail || "Erreur lors de la suppression",
     };
   }
 }
@@ -638,11 +653,12 @@ export async function submitExpense(
       {},
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la soumission",
+      error: getErrorBody(error)?.detail || "Erreur lors de la soumission",
     };
   }
 }
@@ -658,11 +674,12 @@ export async function approveExpense(
       {},
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de l'approbation",
+      error: getErrorBody(error)?.detail || "Erreur lors de l'approbation",
     };
   }
 }
@@ -679,11 +696,12 @@ export async function rejectExpense(
       { reason },
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors du rejet",
+      error: getErrorBody(error)?.detail || "Erreur lors du rejet",
     };
   }
 }
@@ -700,11 +718,12 @@ export async function payExpense(
       data || {},
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors du paiement",
+      error: getErrorBody(error)?.detail || "Erreur lors du paiement",
     };
   }
 }
@@ -721,11 +740,12 @@ export async function cancelExpense(
       { reason },
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de l'annulation",
+      error: getErrorBody(error)?.detail || "Erreur lors de l'annulation",
     };
   }
 }
@@ -744,11 +764,12 @@ export async function getExpenseStats(
       `${API_BASE_URL}/expenses/stats/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération des statistiques",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération des statistiques",
     };
   }
 }
@@ -788,11 +809,12 @@ export async function getCashMovements(
       `${API_BASE_URL}/cash-movements/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération des mouvements",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération des mouvements",
     };
   }
 }
@@ -808,9 +830,10 @@ export async function createCashMovement(
       data,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
-    const errorData = error?.response?.data;
+  } catch (error: unknown) {
+    const errorData = getErrorBody(error);
     let errorMsg = "Erreur lors de la création du mouvement";
     if (errorData?.detail) errorMsg = errorData.detail;
     else if (errorData?.movement_type) errorMsg = errorData.movement_type[0];
@@ -830,11 +853,12 @@ export async function cancelCashMovement(
       { reason },
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de l'annulation",
+      error: getErrorBody(error)?.detail || "Erreur lors de l'annulation",
     };
   }
 }
@@ -848,11 +872,12 @@ export async function getCashBalance(
       `${API_BASE_URL}/cash-movements/balance/`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération du solde",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération du solde",
     };
   }
 }
@@ -871,11 +896,12 @@ export async function getCashSummary(
       `${API_BASE_URL}/cash-movements/summary/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération du résumé",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération du résumé",
     };
   }
 }
@@ -899,10 +925,10 @@ export async function getDailyReport(
     );
 
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération du rapport",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération du rapport",
     };
   }
 }
@@ -922,11 +948,12 @@ export async function getMonthlyReport(
       `${API_BASE_URL}/cash-movements/monthly-report/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération du rapport",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération du rapport",
     };
   }
 }
@@ -944,11 +971,12 @@ export async function getAnnualReport(
       `${API_BASE_URL}/cash-movements/annual-report/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération du rapport annuel",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération du rapport annuel",
     };
   }
 }
@@ -968,11 +996,12 @@ export async function getCustomReport(
       `${API_BASE_URL}/cash-movements/custom-report/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    revalidatePath("/dashboard/cashbook");
     return { success: true, data: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.response?.data?.detail || "Erreur lors de la récupération du rapport personnalisé",
+      error: getErrorBody(error)?.detail || "Erreur lors de la récupération du rapport personnalisé",
     };
   }
 }

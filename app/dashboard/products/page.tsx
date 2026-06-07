@@ -25,7 +25,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PermissionGate } from "@/components/auth/permission-gate";
+import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
+import {
+    createCategorySearchHandler,
+    createBrandSearchHandler,
+} from "@/lib/select-search-handlers";
 import {
     Popover,
     PopoverContent,
@@ -84,8 +89,6 @@ import {
     exportProductsExcel,
     exportProductsPdf,
     Product,
-    Category,
-    Brand,
     ProductFilters,
     ImportResult,
 } from "@/actions/products.actions";
@@ -101,8 +104,6 @@ export default function ProductsPage() {
     // State
     const [organization, setOrganization] = useState<Organization | null>(null);
     const [products, setProducts] = useState<Product[]>([]);
-    const [categories, setCategories] = useState<Category[]>([]);
-    const [brands, setBrands] = useState<Brand[]>([]);
     const [categoriesCount, setCategoriesCount] = useState(0);
     const [brandsCount, setBrandsCount] = useState(0);
     const [unitsCount, setUnitsCount] = useState(0);
@@ -112,7 +113,9 @@ export default function ProductsPage() {
     // Filters
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedCategory, setSelectedCategory] = useState<string>("all");
+    const [selectedCategoryLabel, setSelectedCategoryLabel] = useState<string>("");
     const [selectedBrand, setSelectedBrand] = useState<string>("all");
+    const [selectedBrandLabel, setSelectedBrandLabel] = useState<string>("");
     const [selectedStatus, setSelectedStatus] = useState<string>("all");
     const [showFilters, setShowFilters] = useState(false);
 
@@ -152,23 +155,22 @@ export default function ProductsPage() {
         fetchOrganization();
     }, [session?.accessToken]);
 
-    // Fetch categories, brands and units counts
+    // Counts uniquement : la liste réelle est chargée à la volée par les
+    // ``SearchableSelectAsyncWithEmpty`` (page_size=1 pour minimiser le payload).
     useEffect(() => {
         async function fetchFiltersData() {
             if (!session?.accessToken || !organization?.id) return;
 
             const [categoriesResult, brandsResult, unitsResult] = await Promise.all([
-                getCategories(session.accessToken, organization.id),
-                getBrands(session.accessToken, organization.id),
-                getUnits(session.accessToken, organization.id),
+                getCategories(session.accessToken, organization.id, { page_size: 1 }),
+                getBrands(session.accessToken, organization.id, { page_size: 1 }),
+                getUnits(session.accessToken, organization.id, { page_size: 1 }),
             ]);
 
             if (categoriesResult.success && categoriesResult.data) {
-                setCategories(categoriesResult.data.results || []);
                 setCategoriesCount(categoriesResult.data.count || 0);
             }
             if (brandsResult.success && brandsResult.data) {
-                setBrands(brandsResult.data.results || []);
                 setBrandsCount(brandsResult.data.count || 0);
             }
             if (unitsResult.success && unitsResult.data) {
@@ -405,7 +407,7 @@ export default function ProductsPage() {
                                 <AvatarImage
                                     src={product.image}
                                     alt=""
-                                    className="rounded-md object-cover ring-1 ring-black/10 dark:ring-white/10"
+                                    className="rounded-md object-cover ring-1 ring-black/10"
                                 />
                             ) : null}
                             <AvatarFallback className="rounded-md">
@@ -512,17 +514,19 @@ export default function ProductsPage() {
                                 <Edit className="h-4 w-4" />
                                 Modifier
                             </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                className="gap-2 text-destructive focus:text-destructive"
-                                onClick={() => {
-                                    setProductToDelete(product);
-                                    setDeleteDialogOpen(true);
-                                }}
-                            >
-                                <Trash2 className="h-4 w-4" />
-                                Supprimer
-                            </DropdownMenuItem>
+                            <PermissionGate permission="products.delete">
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    className="gap-2 text-destructive focus:text-destructive"
+                                    onClick={() => {
+                                        setProductToDelete(product);
+                                        setDeleteDialogOpen(true);
+                                    }}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Supprimer
+                                </DropdownMenuItem>
+                            </PermissionGate>
                         </DropdownMenuContent>
                     </DropdownMenu>
                 ),
@@ -703,29 +707,41 @@ export default function ProductsPage() {
                                     <div className="space-y-3">
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-gray-500">Catégorie</label>
-                                            <SearchableSelect
-                                                options={[
-                                                    { value: "all", label: "Toutes les catégories" },
-                                                    ...categories.map((cat) => ({ value: cat.id, label: cat.name })),
-                                                ]}
-                                                value={selectedCategory}
-                                                onValueChange={setSelectedCategory}
+                                            <SearchableSelectAsyncWithEmpty
+                                                value={selectedCategory === "all" ? null : selectedCategory}
+                                                onValueChange={(value, label) => {
+                                                    setSelectedCategory(value ?? "all");
+                                                    setSelectedCategoryLabel(label ?? "");
+                                                }}
+                                                onSearch={
+                                                    session?.accessToken && organization?.id
+                                                        ? createCategorySearchHandler(session.accessToken, organization.id)
+                                                        : async () => []
+                                                }
+                                                emptyLabel="Toutes les catégories"
                                                 placeholder="Catégorie"
                                                 searchPlaceholder="Rechercher une catégorie..."
+                                                disabled={!session?.accessToken || !organization?.id}
                                             />
                                         </div>
 
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-gray-500">Marque</label>
-                                            <SearchableSelect
-                                                options={[
-                                                    { value: "all", label: "Toutes les marques" },
-                                                    ...brands.map((brand) => ({ value: brand.id, label: brand.name })),
-                                                ]}
-                                                value={selectedBrand}
-                                                onValueChange={setSelectedBrand}
+                                            <SearchableSelectAsyncWithEmpty
+                                                value={selectedBrand === "all" ? null : selectedBrand}
+                                                onValueChange={(value, label) => {
+                                                    setSelectedBrand(value ?? "all");
+                                                    setSelectedBrandLabel(label ?? "");
+                                                }}
+                                                onSearch={
+                                                    session?.accessToken && organization?.id
+                                                        ? createBrandSearchHandler(session.accessToken, organization.id)
+                                                        : async () => []
+                                                }
+                                                emptyLabel="Toutes les marques"
                                                 placeholder="Marque"
                                                 searchPlaceholder="Rechercher une marque..."
+                                                disabled={!session?.accessToken || !organization?.id}
                                             />
                                         </div>
 
@@ -755,16 +771,16 @@ export default function ProductsPage() {
                     <div className="flex flex-wrap gap-2">
                         {selectedCategory !== "all" && (
                             <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1 bg-orange-50 text-orange-700 border border-orange-200">
-                                {categories.find(c => c.id === selectedCategory)?.name}
-                                <button onClick={() => setSelectedCategory("all")} className="ml-1 hover:bg-orange-200 rounded-full p-0.5">
+                                {selectedCategoryLabel || "Catégorie filtrée"}
+                                <button onClick={() => { setSelectedCategory("all"); setSelectedCategoryLabel(""); }} className="ml-1 hover:bg-orange-200 rounded-full p-0.5">
                                     <X className="h-3 w-3" />
                                 </button>
                             </Badge>
                         )}
                         {selectedBrand !== "all" && (
                             <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-1 bg-orange-50 text-orange-700 border border-orange-200">
-                                {brands.find(b => b.id === selectedBrand)?.name}
-                                <button onClick={() => setSelectedBrand("all")} className="ml-1 hover:bg-orange-200 rounded-full p-0.5">
+                                {selectedBrandLabel || "Marque filtrée"}
+                                <button onClick={() => { setSelectedBrand("all"); setSelectedBrandLabel(""); }} className="ml-1 hover:bg-orange-200 rounded-full p-0.5">
                                     <X className="h-3 w-3" />
                                 </button>
                             </Badge>

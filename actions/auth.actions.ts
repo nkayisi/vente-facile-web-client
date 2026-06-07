@@ -1,8 +1,20 @@
 "use server";
 
 import axios from "@/lib/auth/api-helper";
+import { getErrorBody } from "@/lib/api/drf-error";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+function resolveApiBaseUrl(): string {
+    const url = process.env.NEXT_PUBLIC_API_URL;
+    if (url && url.length > 0) return url;
+    if (process.env.NODE_ENV === "production") {
+        throw new Error(
+            "NEXT_PUBLIC_API_URL is required in production (frontend/actions/auth.actions.ts)",
+        );
+    }
+    return "http://127.0.0.1:8005/api/v1";
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 export interface RegisterWithOrganizationData {
     email: string;
@@ -145,13 +157,12 @@ export async function registerUser(formData: {
             message: "Compte créé avec succès",
             data: response.data,
         };
-    } catch (error: any) {
-        console.error("[Server Action] Registration error:", error.response?.data || error.message);
+    } catch (error: unknown) {
+        console.error("[Server Action] Registration error:", getErrorBody(error) || (error as Error)?.message);
 
         // Gérer les erreurs de validation du backend
-        if (error.response?.data) {
-            const errorData = error.response.data;
-
+        const errorData = getErrorBody(error);
+        if (errorData) {
             return {
                 success: false,
                 message: errorData.detail || "Erreur lors de la création du compte",
@@ -161,7 +172,7 @@ export async function registerUser(formData: {
 
         return {
             success: false,
-            message: error.message || "Une erreur est survenue lors de la création du compte",
+            message: (error as Error)?.message || "Une erreur est survenue lors de la création du compte",
         };
     }
 }
@@ -196,10 +207,10 @@ export async function loginUser(formData: {
             message: "Connexion réussie",
             data: response.data,
         };
-    } catch (error: any) {
-        console.error("[Server Action] Login error:", error.response?.data || error.message);
+    } catch (error: unknown) {
+        console.error("[Server Action] Login error:", getErrorBody(error) || (error as Error)?.message);
 
-        if (error.response?.status === 401) {
+        if ((error as { response?: { status?: number } })?.response?.status === 401) {
             return {
                 success: false,
                 message: "Email ou mot de passe incorrect",
@@ -208,7 +219,7 @@ export async function loginUser(formData: {
 
         return {
             success: false,
-            message: error.message || "Une erreur est survenue lors de la connexion",
+            message: (error as Error)?.message || "Une erreur est survenue lors de la connexion",
         };
     }
 }
@@ -264,12 +275,12 @@ export async function getUserProfile(accessToken: string) {
             success: true,
             data: response.data as UserProfile,
         };
-    } catch (error: any) {
-        console.error("[Server Action] Get profile error:", error.response?.data || error.message);
+    } catch (error: unknown) {
+        console.error("[Server Action] Get profile error:", getErrorBody(error) || (error as Error)?.message);
 
         return {
             success: false,
-            message: error.message || "Impossible de récupérer le profil",
+            message: (error as Error)?.message || "Impossible de récupérer le profil",
         };
     }
 }
@@ -291,11 +302,11 @@ export async function updateUserProfile(accessToken: string, data: UpdateProfile
             data: response.data as UserProfile,
             message: "Profil mis à jour avec succès",
         };
-    } catch (error: any) {
-        console.error("[Server Action] Update profile error:", error.response?.data || error.message);
+    } catch (error: unknown) {
+        console.error("[Server Action] Update profile error:", getErrorBody(error) || (error as Error)?.message);
         return {
             success: false,
-            message: error.response?.data?.detail || "Erreur lors de la mise à jour du profil",
+            message: getErrorBody(error)?.detail || "Erreur lors de la mise à jour du profil",
         };
     }
 }
@@ -320,11 +331,11 @@ export async function updateUserAvatar(accessToken: string, file: File) {
             data: response.data as UserProfile,
             message: "Photo de profil mise à jour",
         };
-    } catch (error: any) {
-        console.error("[Server Action] Update avatar error:", error.response?.data || error.message);
+    } catch (error: unknown) {
+        console.error("[Server Action] Update avatar error:", getErrorBody(error) || (error as Error)?.message);
         return {
             success: false,
-            message: error.response?.data?.detail || "Erreur lors de la mise à jour de la photo",
+            message: getErrorBody(error)?.detail || "Erreur lors de la mise à jour de la photo",
         };
     }
 }
@@ -346,8 +357,8 @@ export async function removeUserAvatar(accessToken: string) {
             data: response.data as UserProfile,
             message: "Photo de profil supprimée",
         };
-    } catch (error: any) {
-        console.error("[Server Action] Remove avatar error:", error.response?.data || error.message);
+    } catch (error: unknown) {
+        console.error("[Server Action] Remove avatar error:", getErrorBody(error) || (error as Error)?.message);
         return {
             success: false,
             message: "Erreur lors de la suppression de la photo",
@@ -371,10 +382,10 @@ export async function changePassword(accessToken: string, data: ChangePasswordDa
             success: true,
             message: "Mot de passe modifié avec succès",
         };
-    } catch (error: any) {
-        console.error("[Server Action] Change password error:", error.response?.data || error.message);
+    } catch (error: unknown) {
+        console.error("[Server Action] Change password error:", getErrorBody(error) || (error as Error)?.message);
 
-        const errors = error.response?.data;
+        const errors = getErrorBody(error);
         let message = "Erreur lors du changement de mot de passe";
         if (errors?.current_password) message = errors.current_password[0] || errors.current_password;
         else if (errors?.new_password) message = errors.new_password[0] || errors.new_password;
@@ -400,11 +411,11 @@ export async function requestPasswordReset(email: string) {
             success: true,
             message: response.data?.message || "Si cet email existe, un lien de réinitialisation a été envoyé.",
         };
-    } catch (error: any) {
-        console.error("[Server Action] Request password reset error:", error.response?.data || error.message);
+    } catch (error: unknown) {
+        console.error("[Server Action] Request password reset error:", getErrorBody(error) || (error as Error)?.message);
         return {
             success: false,
-            message: error.response?.data?.error || "Une erreur est survenue. Veuillez réessayer.",
+            message: getErrorBody(error)?.error || "Une erreur est survenue. Veuillez réessayer.",
         };
     }
 }
@@ -425,10 +436,10 @@ export async function confirmPasswordReset(uid: string, token: string, new_passw
             success: true,
             message: response.data?.message || "Mot de passe réinitialisé avec succès.",
         };
-    } catch (error: any) {
-        console.error("[Server Action] Confirm password reset error:", error.response?.data || error.message);
+    } catch (error: unknown) {
+        console.error("[Server Action] Confirm password reset error:", getErrorBody(error) || (error as Error)?.message);
 
-        const errors = error.response?.data;
+        const errors = getErrorBody(error);
         let message = "Une erreur est survenue. Veuillez réessayer.";
         if (errors?.error) message = errors.error;
         else if (errors?.new_password) message = Array.isArray(errors.new_password) ? errors.new_password[0] : errors.new_password;
