@@ -4,7 +4,9 @@ import axios from "@/lib/auth/api-helper";
 import { getErrorBody } from "@/lib/api/drf-error";
 
 function resolveApiBaseUrl(): string {
-    const url = process.env.NEXT_PUBLIC_API_URL;
+    // Code serveur : prefere l'URL interne Docker (conteneur→conteneur) si elle
+    // existe, sinon l'URL publique (dev hors Docker = meme hote).
+    const url = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL;
     if (url && url.length > 0) return url;
     if (process.env.NODE_ENV === "production") {
         throw new Error(

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { formatApiErrorBody, formatAxiosErrorMessage } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
+const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
 // =============================================================================
 // TYPES
@@ -238,7 +238,11 @@ export interface SalesStats {
 export interface CreateRegisterData {
   name: string;
   code: string;
-  branch: string;
+  /**
+   * Succursale : optionnelle. Le champ a été retiré de l'UI — le backend la
+   * dérive de l'entrepôt (ou de la succursale principale) si elle est absente.
+   */
+  branch?: string;
   warehouse: string;
   is_active?: boolean;
   receipt_header?: string;

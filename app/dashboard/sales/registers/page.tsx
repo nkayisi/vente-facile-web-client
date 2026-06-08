@@ -11,10 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
-import {
-  createBranchSearchHandler,
-  createWarehouseSearchHandler,
-} from "@/lib/select-search-handlers";
+import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
 import {
   Dialog,
   DialogContent,
@@ -81,11 +78,11 @@ export default function RegistersPage() {
   const [closeCountedBalance, setCloseCountedBalance] = useState<string>("");
   const [closeNotes, setCloseNotes] = useState<string>("");
 
-  // Form state
+  // Form state — plus de champ "branch" : la succursale est dérivée côté backend
+  // à partir de l'entrepôt (ou de la succursale principale).
   const [formData, setFormData] = useState<CreateRegisterData>({
     name: "",
     code: "",
-    branch: "",
     warehouse: "",
     is_active: true,
     receipt_header: "",
@@ -144,9 +141,14 @@ export default function RegistersPage() {
     setIsSubmitting(true);
 
     try {
-      const dataToSend = {
-        ...formData,
+      // On n'envoie PAS de succursale : le backend la dérive de l'entrepôt.
+      const dataToSend: CreateRegisterData = {
+        name: formData.name,
+        code: formData.code,
         warehouse: formData.warehouse,
+        is_active: formData.is_active,
+        receipt_header: formData.receipt_header,
+        receipt_footer: formData.receipt_footer,
       };
 
       let result;
@@ -337,7 +339,6 @@ export default function RegistersPage() {
     setFormData({
       name: "",
       code: "",
-      branch: "",
       warehouse: "",
       is_active: true,
       receipt_header: "",
@@ -352,7 +353,6 @@ export default function RegistersPage() {
     setFormData({
       name: register.name,
       code: register.code,
-      branch: register.branch,
       warehouse: register.warehouse || "",
       is_active: register.is_active,
       receipt_header: register.receipt_header || "",
@@ -601,32 +601,6 @@ export default function RegistersPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Succursale *</Label>
-              <SearchableSelectAsyncWithEmpty
-                value={formData.branch || null}
-                onValueChange={value => {
-                  // Changement de branche → réinitialiser l'entrepôt (l'utilisateur
-                  // doit explicitement re-choisir un entrepôt appartenant à la
-                  // nouvelle branche, le filtre serveur s'en charge).
-                  setFormData({
-                    ...formData,
-                    branch: value || "",
-                    warehouse: "",
-                  });
-                }}
-                onSearch={
-                  session?.accessToken && organization?.id
-                    ? createBranchSearchHandler(session.accessToken, organization.id)
-                    : async () => []
-                }
-                emptyLabel="—"
-                placeholder="Sélectionner une succursale"
-                searchPlaceholder="Rechercher une succursale..."
-                disabled={!session?.accessToken || !organization?.id}
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label>Entrepôt *</Label>
               <SearchableSelectAsyncWithEmpty
                 value={formData.warehouse || null}
@@ -634,22 +608,14 @@ export default function RegistersPage() {
                 onSearch={
                   session?.accessToken && organization?.id
                     ? createWarehouseSearchHandler(session.accessToken, organization.id, {
-                        // Filtre serveur : seuls les entrepôts de la branche
-                        // sélectionnée (ou sans branche) sont proposés.
-                        ...(formData.branch ? { branch: formData.branch } : {}),
+                        is_active: true,
                       })
                     : async () => []
                 }
                 emptyLabel="—"
-                placeholder={
-                  formData.branch
-                    ? "Sélectionner un entrepôt"
-                    : "Choisissez d'abord une succursale"
-                }
+                placeholder="Sélectionner un entrepôt"
                 searchPlaceholder="Rechercher un entrepôt..."
-                disabled={
-                  !session?.accessToken || !organization?.id || !formData.branch
-                }
+                disabled={!session?.accessToken || !organization?.id}
               />
             </div>
 
