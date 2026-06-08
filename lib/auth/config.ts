@@ -4,7 +4,9 @@ import type { JWT } from "next-auth/jwt";
 import { refreshWithMutex } from "./refresh-mutex";
 
 function resolveApiBaseUrl(): string {
-  const url = process.env.NEXT_PUBLIC_API_URL;
+  // next-auth s'execute cote serveur : prefere l'URL interne Docker
+  // (conteneur→conteneur) si definie, sinon l'URL publique (dev hors Docker).
+  const url = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL;
   if (url && url.length > 0) return url;
   if (process.env.NODE_ENV === "production") {
     throw new Error(
