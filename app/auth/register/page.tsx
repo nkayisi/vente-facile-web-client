@@ -187,7 +187,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <Card className="w-full max-w-2xl border-0 shadow-none">
+    <Card className="w-full max-w-2xl border-0 shadow-none sm:p-7">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">Créer ma boutique</CardTitle>
         <CardDescription>

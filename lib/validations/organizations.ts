@@ -47,6 +47,47 @@ export const createOrganizationSchema = z.object({
 // Types TypeScript dérivés
 export type CreateOrganizationFormData = z.infer<typeof createOrganizationSchema>;
 
+// Schéma pour la modification des infos d'établissement.
+// Champs non modifiables après création (exclus) : slug, business_type (type
+// d'activité), currency (devise principale).
+export const updateOrganizationSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Le nom doit contenir au moins 2 caractères")
+    .max(100, "Le nom ne peut pas dépasser 100 caractères"),
+  email: z
+    .string()
+    .trim()
+    .email("Email invalide")
+    .or(z.literal(""))
+    .optional(),
+  phone: z
+    .string()
+    .trim()
+    .min(1, "Le numéro de téléphone est requis")
+    .max(20, "Le numéro ne peut pas dépasser 20 caractères"),
+  address: z.string().trim().max(255, "L'adresse ne peut pas dépasser 255 caractères").optional(),
+  city: z.string().trim().max(100, "La ville ne peut pas dépasser 100 caractères").optional(),
+  country: z.string().trim().max(100, "Le pays ne peut pas dépasser 100 caractères").optional(),
+  tax_id: z.string().trim().max(50, "Trop long").optional(),
+  rccm: z.string().trim().max(50, "Trop long").optional(),
+  id_nat: z.string().trim().max(50, "Trop long").optional(),
+  timezone: z.string().trim().optional(),
+});
+
+export type UpdateOrganizationFormData = z.infer<typeof updateOrganizationSchema>;
+
+// Libellés des types d'établissement (valeurs alignées sur le backend).
+export const businessTypeLabels: Record<string, string> = {
+  boutique: "Boutique",
+  supermarket: "Supermarché",
+  pharmacy: "Pharmacie",
+  depot: "Dépôt",
+  restaurant: "Restaurant",
+  other: "Autre",
+};
+
 // Schéma pour l'organisation (réponse API)
 export const organizationSchema = z.object({
   id: z.string().uuid(),

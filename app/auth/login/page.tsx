@@ -127,7 +127,7 @@ function LoginForm() {
   };
 
   return (
-    <Card className="w-full max-w-md shadow-lg mx-auto border-0">
+    <Card className="w-full max-w-md shadow-lg mx-auto border-0 sm:px-6 sm:py-10">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">Connexion</CardTitle>
         <CardDescription>

@@ -179,6 +179,102 @@ export async function createOrganization(
 }
 
 /**
+ * Server Action pour récupérer le détail complet d'une organisation.
+ * Contrairement à la liste (OrganizationListSerializer, allégée), ce endpoint
+ * renvoie tous les champs (email, phone, address, etc.) via OrganizationDetailSerializer.
+ */
+export async function getOrganization(
+  accessToken: string,
+  organizationId: string
+): Promise<OrganizationResponse> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/organizations/${organizationId}/`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "X-Organization-ID": organizationId,
+      },
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error("[Server Action] Get organization error:", getErrorBody(error) || (error as Error)?.message);
+    return {
+      success: false,
+      message:
+        getErrorBody(error)?.detail ||
+        (error as Error)?.message ||
+        "Impossible de récupérer les informations de l'établissement",
+    };
+  }
+}
+
+// Champs modifiables de l'établissement. business_type (type d'activité), slug et
+// currency (devise principale) sont volontairement exclus : non modifiables après création.
+export interface UpdateOrganizationData {
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  tax_id?: string;
+  rccm?: string;
+  id_nat?: string;
+  timezone?: string;
+}
+
+/**
+ * Server Action pour modifier les informations d'une organisation (établissement).
+ * Utilise PATCH /organizations/{id}/ (OrganizationUpdateSerializer côté backend).
+ * Nécessite le rôle manager+ (IsTenantAdmin).
+ */
+export async function updateOrganization(
+  accessToken: string,
+  organizationId: string,
+  data: UpdateOrganizationData
+): Promise<OrganizationResponse> {
+  try {
+    console.log("[Server Action] Updating organization:", organizationId);
+
+    const response = await axios.patch(
+      `${API_BASE_URL}/organizations/${organizationId}/`,
+      data,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "X-Organization-ID": organizationId,
+        },
+      }
+    );
+
+    console.log("[Server Action] Organization updated successfully:", response.data.id);
+
+    return {
+      success: true,
+      message: "Établissement mis à jour avec succès",
+      data: response.data,
+    };
+  } catch (error: unknown) {
+    console.error("[Server Action] Update organization error:", getErrorBody(error) || (error as Error)?.message);
+
+    const errorData = getErrorBody(error);
+    if (errorData) {
+      return {
+        success: false,
+        message: errorData.detail || "Erreur lors de la mise à jour de l'établissement",
+        errors: errorData,
+      };
+    }
+
+    return {
+      success: false,
+      message: (error as Error)?.message || "Une erreur est survenue lors de la mise à jour de l'établissement",
+    };
+  }
+}
+
+/**
  * Server Action pour changer l'organisation active
  */
 export async function switchOrganization(
