@@ -10,8 +10,8 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { useSession, signOut } from "next-auth/react";
-import { getUserOrganizations } from "@/actions/organization.actions";
+import { useSession } from "next-auth/react";
+import { useOrganization } from "@/components/auth/organization-checker";
 import { getUserPermissions } from "@/actions/permissions.actions";
 import type {
   UserPermissions,
@@ -56,6 +56,10 @@ const PermissionsContext = createContext<PermissionsContextType>({
 
 export function PermissionsProvider({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession();
+  // L'organisation est déjà chargée par OrganizationChecker (parent) : on la
+  // consomme via le contexte plutôt que de refaire un appel getUserOrganizations
+  // (économise 1 requête backend par chargement du dashboard).
+  const { organization } = useOrganization();
   const [permissions, setPermissions] = useState<UserPermissions | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,35 +67,18 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const hasFetched = useRef(false);
 
   const accessToken = session?.accessToken;
+  const orgId = organization?.id ?? null;
 
   const fetchPermissions = useCallback(async () => {
-    if (status !== "authenticated" || !accessToken) {
+    if (status !== "authenticated" || !accessToken || !orgId) {
       setIsLoading(false);
       return;
     }
 
     try {
       setError(null);
-
-      // Récupérer l'organisation active
-      const orgsResult = await getUserOrganizations(accessToken);
-
-      // Si l'utilisateur n'existe pas, déconnecter automatiquement
-      if (!orgsResult.success && orgsResult.errorCode === 'user_not_found') {
-        console.warn("User not found, signing out...");
-        await signOut({ callbackUrl: '/auth/login' });
-        return;
-      }
-
-      if (!orgsResult.success || !orgsResult.data || orgsResult.data.length === 0) {
-        setIsLoading(false);
-        return;
-      }
-
-      const orgId = orgsResult.data[0].id;
       setOrganizationId(orgId);
 
-      // Récupérer les permissions
       const permResult = await getUserPermissions(accessToken, orgId);
       if (permResult.success && permResult.data) {
         setPermissions(permResult.data);
@@ -103,17 +90,17 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken, status]);
+  }, [accessToken, status, orgId]);
 
   useEffect(() => {
     if (hasFetched.current) return;
-    if (status === "authenticated" && accessToken) {
+    if (status === "authenticated" && accessToken && orgId) {
       hasFetched.current = true;
       fetchPermissions();
     } else if (status === "unauthenticated") {
       setIsLoading(false);
     }
-  }, [fetchPermissions, status, accessToken]);
+  }, [fetchPermissions, status, accessToken, orgId]);
 
   const value = useMemo<PermissionsContextType>(() => ({
     permissions,

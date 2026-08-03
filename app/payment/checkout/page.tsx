@@ -27,7 +27,7 @@ import {
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 12000;
 const POLL_TIMEOUT_MS = 180000;
 
 const OPERATORS: {

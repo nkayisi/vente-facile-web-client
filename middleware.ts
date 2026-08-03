@@ -22,17 +22,18 @@ const PROTECTED_ROUTE_PREFIXES = [
 ];
 
 export default auth((req) => {
-  const { nextUrl } = req;
-  const session = req.auth;
-  const isLoggedIn = !!session?.user;
-  const hasSessionError = session?.error === "RefreshAccessTokenError";
-  const hasValidToken = !!session?.accessToken;
+  try {
+    const { nextUrl } = req;
+    const session = req.auth;
+    const isLoggedIn = !!session?.user;
+    const hasSessionError = session?.error === "RefreshAccessTokenError";
+    const hasValidToken = !!session?.accessToken;
 
-  const isPublicRoute = PUBLIC_ROUTES.includes(nextUrl.pathname);
-  const isAuthRoute = AUTH_ROUTES.includes(nextUrl.pathname);
-  const isProtectedRoute = PROTECTED_ROUTE_PREFIXES.some(prefix =>
-    nextUrl.pathname.startsWith(prefix)
-  );
+    const isPublicRoute = PUBLIC_ROUTES.includes(nextUrl.pathname);
+    const isAuthRoute = AUTH_ROUTES.includes(nextUrl.pathname);
+    const isProtectedRoute = PROTECTED_ROUTE_PREFIXES.some(prefix =>
+      nextUrl.pathname.startsWith(prefix)
+    );
 
   // 1. Session expirée (refresh token invalide) - déconnecter l'utilisateur
   // Ne rediriger que depuis les routes protégées pour éviter une boucle infinie
@@ -73,7 +74,14 @@ export default auth((req) => {
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+    return NextResponse.next();
+  } catch (error) {
+    // Fail-open : une erreur inattendue dans le middleware ne doit pas produire
+    // un 500 (page cassée/blanche). On laisse passer la requête ; les gardes
+    // côté client (OrganizationChecker, SessionMonitor) prennent le relais.
+    console.error("[Middleware] Erreur inattendue, passage en fail-open:", error);
+    return NextResponse.next();
+  }
 });
 
 // Configuration du matcher pour spécifier les routes à protéger

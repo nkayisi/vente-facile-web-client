@@ -8,6 +8,7 @@ import { SessionMonitor } from "@/components/auth/session-monitor";
 import { PermissionsProvider } from "@/components/auth/permissions-provider";
 import { SubscriptionGuard } from "@/components/auth/subscription-guard";
 import { RoutePermissionGuard } from "@/components/auth/route-permission-guard";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 export default function DashboardLayout({
   children,
@@ -31,30 +32,37 @@ export default function DashboardLayout({
   }, []);
 
   return (
-    <OrganizationChecker>
-      <PermissionsProvider>
-        <SubscriptionGuard>
-          <SessionMonitor />
-          <div className="flex h-screen bg-gray-50">
-            {/* Sidebar */}
-            <Sidebar
-              isMobileOpen={isMobileSidebarOpen}
-              onMobileClose={() => setIsMobileSidebarOpen(false)}
-            />
+    // Filet externe : dernier recours si un crash survient dans une garde,
+    // un provider ou la structure du dashboard.
+    <ErrorBoundary name="dashboard-shell">
+      <OrganizationChecker>
+        <PermissionsProvider>
+          <SubscriptionGuard>
+            <SessionMonitor />
+            <div className="flex h-screen bg-gray-50">
+              {/* Sidebar */}
+              <Sidebar
+                isMobileOpen={isMobileSidebarOpen}
+                onMobileClose={() => setIsMobileSidebarOpen(false)}
+              />
 
-            {/* Main Content */}
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              {/* Header */}
-              <DashboardHeader onMenuClick={() => setIsMobileSidebarOpen(true)} />
+              {/* Main Content */}
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                {/* Header */}
+                <DashboardHeader onMenuClick={() => setIsMobileSidebarOpen(true)} />
 
-              {/* Page Content */}
-              <main className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6">
-                <RoutePermissionGuard>{children}</RoutePermissionGuard>
-              </main>
+                {/* Page Content — filet interne : un crash de page affiche un
+                    fallback local SANS détruire la sidebar/navigation. */}
+                <main className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6">
+                  <ErrorBoundary name="dashboard-page">
+                    <RoutePermissionGuard>{children}</RoutePermissionGuard>
+                  </ErrorBoundary>
+                </main>
+              </div>
             </div>
-          </div>
-        </SubscriptionGuard>
-      </PermissionsProvider>
-    </OrganizationChecker>
+          </SubscriptionGuard>
+        </PermissionsProvider>
+      </OrganizationChecker>
+    </ErrorBoundary>
   );
 }

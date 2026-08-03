@@ -21,6 +21,7 @@ import {
   Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { reportClientError } from "@/lib/observability/report-error";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import Image from "next/image";
@@ -63,9 +64,18 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
       const result = await getSubscriptionStatus(accessToken, orgId);
       if (result.success && result.data) {
         setSubscriptionStatus(result.data);
+      } else {
+        // Échec « métier » (réponse non-succès). On reste fail-open (accès
+        // autorisé) plutôt que de bloquer sur une erreur transitoire, mais on
+        // remonte l'anomalie pour l'observabilité.
+        reportClientError(new Error("Statut d'abonnement indisponible"), {
+          boundary: "subscription-guard",
+        });
       }
     } catch (error) {
-      console.error("Error checking subscription:", error);
+      // Fail-open volontaire : une panne du endpoint d'abonnement ne doit pas
+      // enfermer l'utilisateur hors de son compte ni produire de page blanche.
+      reportClientError(error, { boundary: "subscription-guard" });
     } finally {
       setIsLoading(false);
     }

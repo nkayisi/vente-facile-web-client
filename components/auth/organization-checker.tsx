@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { CurrencyProvider } from "@/components/providers/currency-provider";
-import { Loader2 } from "lucide-react";
+import { reportClientError } from "@/lib/observability/report-error";
+import { Loader2, WifiOff } from "lucide-react";
 
 interface OrganizationContextValue {
   organization: Organization | null;
@@ -26,6 +27,10 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
   const { data: session, status } = useSession();
   const [isChecking, setIsChecking] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
+  /** Erreur de chargement des organisations (réseau / backend). Affichée avec un bouton « Réessayer » plutôt qu'une page blanche. */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  /** Incrémenté pour forcer un nouveau chargement (bouton Réessayer). */
+  const [reloadNonce, setReloadNonce] = useState(0);
   /** Dernier accessToken pour lequel le chargement des orgs est terminé (permet refetch après refresh JWT). */
   const lastLoadedTokenRef = useRef<string | null>(null);
   const orgFetchInFlightRef = useRef(false);
@@ -88,8 +93,10 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
     const tokenForThisFetch = accessToken;
     orgFetchInFlightRef.current = true;
     setIsChecking(true);
+    setLoadError(null);
 
     (async () => {
+      let fetchSucceeded = false;
       try {
         const result = await getUserOrganizations(tokenForThisFetch);
 
@@ -105,33 +112,57 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
         }
 
         if (result.success && result.data) {
+          fetchSucceeded = true;
           if (result.data.length === 0) {
+            // Aucune organisation : on redirige vers l'inscription.
             router.push("/auth/register");
           } else {
             setOrganization(result.data[0]);
           }
         } else {
-          console.warn("Could not fetch organizations, allowing access");
-          setOrganization(null);
+          // Échec backend (401 après retry, 5xx, etc.). NE PAS renvoyer une page
+          // blanche : afficher une erreur récupérable. On conserve l'org déjà
+          // chargée si on en avait une (refetch échoué après refresh JWT).
+          reportClientError(new Error("Échec du chargement des organisations"), {
+            boundary: "organization-checker",
+            errorCode: result.errorCode,
+          });
+          setLoadError(
+            "Impossible de charger votre espace de travail. Vérifiez votre connexion et réessayez."
+          );
         }
       } catch (error) {
-        console.error("Error checking organizations:", error);
+        reportClientError(error, { boundary: "organization-checker" });
         if (accessTokenRef.current === tokenForThisFetch) {
-          setOrganization(null);
+          setLoadError(
+            "Impossible de charger votre espace de travail. Vérifiez votre connexion et réessayez."
+          );
         }
       } finally {
         if (accessTokenRef.current === tokenForThisFetch) {
-          lastLoadedTokenRef.current = tokenForThisFetch;
+          // On ne marque le token comme « chargé » que si le fetch a réussi,
+          // pour qu'un simple Réessayer relance réellement l'appel.
+          if (fetchSucceeded) {
+            lastLoadedTokenRef.current = tokenForThisFetch;
+          }
+          setIsChecking(false);
         }
         orgFetchInFlightRef.current = false;
-        setIsChecking(false);
       }
     })();
 
     return () => {
       orgFetchInFlightRef.current = false;
     };
-  }, [status, accessToken, router, session?.error]);
+  }, [status, accessToken, router, session?.error, reloadNonce]);
+
+  const retry = useCallback(() => {
+    lastLoadedTokenRef.current = null;
+    orgFetchInFlightRef.current = false;
+    setLoadError(null);
+    setIsChecking(true);
+    setReloadNonce((n) => n + 1);
+  }, []);
 
   const contextValue = useMemo(() => ({
     organization,
@@ -149,8 +180,49 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
     );
   }
 
-  if (!organization && !isChecking) {
-    return null; // Redirection en cours vers onboarding
+  // Erreur de chargement sans org disponible : écran récupérable, JAMAIS de page
+  // blanche. Si une org est déjà chargée (refetch échoué), on laisse l'app tourner.
+  if (loadError && !organization) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="text-center max-w-md">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-orange-100">
+            <WifiOff className="h-7 w-7 text-orange-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            Connexion à votre espace impossible
+          </h2>
+          <p className="text-sm text-gray-500 mb-6">{loadError}</p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={retry}
+              className="inline-flex h-10 items-center justify-center rounded-md bg-orange-600 px-4 text-sm font-medium text-white hover:bg-orange-700"
+            >
+              Réessayer
+            </button>
+            <button
+              onClick={() => signOut({ callbackUrl: "/auth/login" })}
+              className="inline-flex h-10 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Se reconnecter
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Pas d'org et pas d'erreur : une redirection (register / login) est en cours.
+  // On affiche un loader plutôt qu'un écran vide, le temps que la navigation opère.
+  if (!organization) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-orange-600 mx-auto mb-4" />
+          <p className="text-gray-600">Redirection...</p>
+        </div>
+      </div>
+    );
   }
 
   return (

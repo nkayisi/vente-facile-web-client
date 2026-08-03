@@ -109,10 +109,23 @@ axiosInstance.interceptors.response.use(
           // 1. Déclenche le jwt callback côté serveur (rafraîchit le token si expiré)
           // 2. Met à jour le cookie de session avec le nouveau JWT
           // 3. Retourne la session fraîche avec le nouveau accessToken
-          const refreshResponse = await fetch("/api/auth/session", {
-            method: "GET",
-            credentials: "include",
-          });
+          //
+          // IMPORTANT : `fetch` natif n'hérite PAS du timeout de l'instance axios.
+          // Sans AbortController, un endpoint qui pend laisserait `isRefreshing`
+          // à true et toutes les requêtes en file d'attente non résolues →
+          // spinner/chargement infini (page qui ne s'affiche jamais).
+          const refreshController = new AbortController();
+          const refreshTimeout = setTimeout(() => refreshController.abort(), 15000);
+          let refreshResponse: Response;
+          try {
+            refreshResponse = await fetch("/api/auth/session", {
+              method: "GET",
+              credentials: "include",
+              signal: refreshController.signal,
+            });
+          } finally {
+            clearTimeout(refreshTimeout);
+          }
 
           if (refreshResponse.ok) {
             const freshSession = await refreshResponse.json();
