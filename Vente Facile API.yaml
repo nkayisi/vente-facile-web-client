@@ -2773,7 +2773,6 @@ paths:
             type: string
             enum:
               - bank_transfer
-              - card
               - cash
               - check
               - credit
@@ -2781,7 +2780,6 @@ paths:
               - other
           description: |-
             * `cash` - Espèces
-            * `card` - Carte bancaire
             * `mobile_money` - Mobile Money
             * `bank_transfer` - Virement bancaire
             * `check` - Chèque
@@ -10925,7 +10923,6 @@ components:
     MethodTypeEnum:
       enum:
         - cash
-        - card
         - mobile_money
         - bank_transfer
         - check
@@ -10934,7 +10931,6 @@ components:
       type: string
       description: |-
         * `cash` - Espèces
-        * `card` - Carte bancaire
         * `mobile_money` - Mobile Money
         * `bank_transfer` - Virement bancaire
         * `check` - Chèque

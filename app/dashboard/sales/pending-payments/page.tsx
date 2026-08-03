@@ -523,7 +523,7 @@ export default function PendingPaymentsPage() {
             {/* Payment Methods - Visual Buttons */}
             <div className="space-y-2">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mode de paiement</Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {paymentMethods.map(method => {
                   const getIcon = (type: string) => {
                     switch (type) {

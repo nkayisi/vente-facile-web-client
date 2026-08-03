@@ -1906,13 +1906,13 @@ export default function POSPage() {
             {/* 1. Payment Methods Selection */}
             <div className="space-y-2">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mode de paiement</Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {/* Dynamic payment methods from backend */}
                 {paymentMethods.map(method => (
                   <button
                     key={method.id}
                     type="button"
-                    className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 transition-all ${!isCreditSale && selectedPaymentMethod === method.id
+                    className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-2 transition-all ${!isCreditSale && selectedPaymentMethod === method.id
                       ? "border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
                       : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
                       }`}
@@ -1922,7 +1922,7 @@ export default function POSPage() {
                       setPaymentAmount(calculateTotal().toString());
                     }}
                   >
-                    <div className="flex gap-2 sm:flex-col justify-items-center">
+                    <div className="flex gap-2 justify-items-center">
                       {getPaymentIcon(method.method_type)}
                       <span className="text-xs font-medium leading-tight text-center">{method.name}</span>
                     </div>
@@ -1954,7 +1954,7 @@ export default function POSPage() {
                     setPaymentAmount("0");
                   }}
                 >
-                  <div className="flex gap-2 sm:flex-col justify-items-center">
+                  <div className="flex gap-2 justify-items-center">
                     <HandCoins className="h-5 w-5" />
                     <span className="text-xs font-medium leading-tight text-center">Crédit</span>
                   </div>
@@ -2110,7 +2110,7 @@ export default function POSPage() {
                   min="0"
                   value={paymentAmount}
                   onChange={e => setPaymentAmount(e.target.value)}
-                  className="h-14 text-2xl text-center font-bold pl-10 pr-16"
+                  className="h-10 text-2xl text-center font-bold pl-10 pr-16 ring-0"
                   placeholder={total.toString()}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">
@@ -2177,7 +2177,7 @@ export default function POSPage() {
                 <div className="p-2 bg-red-50 rounded-lg border border-red-200">
                   <p className="text-xs text-red-600 font-medium flex items-center gap-1.5">
                     <AlertTriangle className="h-3.5 w-3.5" />
-                    Montant insuffisant — il manque {formatPrice(total - getAmountInPrimary())}
+                    Montant insuffisant - il manque {formatPrice(total - getAmountInPrimary())}
                   </p>
                 </div>
               )}

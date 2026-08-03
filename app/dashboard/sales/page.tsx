@@ -390,7 +390,7 @@ export default function SalesPage() {
             <CardTitle className="text-lg">Répartition par mode de paiement</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               {stats.by_payment_method.map((method, index) => (
                 <div
                   key={index}

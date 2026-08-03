@@ -4872,7 +4872,6 @@ export interface components {
         };
         /**
          * @description * `cash` - Espèces
-         *     * `card` - Carte bancaire
          *     * `mobile_money` - Mobile Money
          *     * `bank_transfer` - Virement bancaire
          *     * `check` - Chèque
@@ -4880,7 +4879,7 @@ export interface components {
          *     * `other` - Autre
          * @enum {string}
          */
-        MethodTypeEnum: "cash" | "card" | "mobile_money" | "bank_transfer" | "check" | "credit" | "other";
+        MethodTypeEnum: "cash" | "mobile_money" | "bank_transfer" | "check" | "credit" | "other";
         /**
          * @description * `purchase` - Achat
          *     * `sale` - Vente
@@ -10852,14 +10851,13 @@ export interface operations {
                 is_active?: boolean;
                 /**
                  * @description * `cash` - Espèces
-                 *     * `card` - Carte bancaire
                  *     * `mobile_money` - Mobile Money
                  *     * `bank_transfer` - Virement bancaire
                  *     * `check` - Chèque
                  *     * `credit` - Crédit
                  *     * `other` - Autre
                  */
-                method_type?: "bank_transfer" | "card" | "cash" | "check" | "credit" | "mobile_money" | "other";
+                method_type?: "bank_transfer" | "cash" | "check" | "credit" | "mobile_money" | "other";
                 /** @description A page number within the paginated result set. */
                 page?: number;
                 /** @description A search term. */

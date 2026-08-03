@@ -993,7 +993,7 @@ export default function CustomerDetailPage() {
             {/* Payment Methods - Visual Buttons */}
             <div className="space-y-2">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mode de paiement</Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {paymentMethods.map(method => {
                   const getIcon = (type: string) => {
                     switch (type) {
@@ -1008,7 +1008,7 @@ export default function CustomerDetailPage() {
                     <button
                       key={method.id}
                       type="button"
-                      className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 transition-all ${selectedPaymentMethod === method.id
+                      className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-2 transition-all ${selectedPaymentMethod === method.id
                         ? "border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
                         : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
                         }`}
