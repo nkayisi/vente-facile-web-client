@@ -78,7 +78,7 @@ import {
   openPrintTab,
   PaymentReceiptData,
 } from "@/lib/receipt-printer";
-import { getCustomerLoyalty, CustomerLoyalty, LoyaltyProgram, getLoyaltyProgram } from "@/actions/settings.actions";
+import { getCustomerLoyalty, CustomerLoyalty, LoyaltyProgram, getLoyaltyProgram, getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import { Star } from "lucide-react";
 
 export default function CustomerDetailPage() {
@@ -116,6 +116,21 @@ export default function CustomerDetailPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   const [invoicePaymentAmount, setInvoicePaymentAmount] = useState("");
   const [invoicePaymentRef, setInvoicePaymentRef] = useState("");
+  // Multi-devise : devise du règlement + taux org (conversion & validation).
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
+  const [invoicePaymentCurrency, setInvoicePaymentCurrency] = useState<string>("");
+
+  const invRateOf = (code: string) => {
+    const c = orgCurrencies.find(x => x.currency_code === code);
+    const r = c ? parseFloat(c.exchange_rate) : 1;
+    return r > 0 ? r : 1;
+  };
+  const invSymbolOf = (code: string) =>
+    orgCurrencies.find(x => x.currency_code === code)?.currency_symbol || code;
+  const invToSaleCurrency = (amount: number) => {
+    if (!selectedSale || !invoicePaymentCurrency || invoicePaymentCurrency === selectedSale.currency) return amount;
+    return (amount * invRateOf(invoicePaymentCurrency)) / invRateOf(selectedSale.currency);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -255,8 +270,10 @@ export default function CustomerDetailPage() {
     }
 
     const amountDue = parseFloat(selectedSale.amount_due);
-    if (amount > amountDue) {
-      toast.error(`Le montant ne peut pas dépasser ${formatPrice(amountDue)}`);
+    // Le restant dû est en devise de la vente : comparer la valeur convertie.
+    const amountInSale = invToSaleCurrency(amount);
+    if (amountInSale > amountDue + 0.01) {
+      toast.error(`Le montant ne peut pas dépasser ${formatPrice(amountDue)} ${selectedSale.currency}`);
       return;
     }
 
@@ -270,6 +287,9 @@ export default function CustomerDetailPage() {
         {
           payment_method: selectedPaymentMethod,
           amount: amount,
+          ...(invoicePaymentCurrency && invoicePaymentCurrency !== selectedSale.currency
+            ? { currency: invoicePaymentCurrency }
+            : {}),
           reference: invoicePaymentRef || undefined,
         }
       );
@@ -337,7 +357,14 @@ export default function CustomerDetailPage() {
     const cashMethod = paymentMethods.find(m => m.method_type === "cash");
     setSelectedPaymentMethod(cashMethod?.id || "");
     setInvoicePaymentRef("");
+    setInvoicePaymentCurrency(sale.currency);
     setShowInvoicePaymentDialog(true);
+    // Charger les devises de l'org (pour le règlement multi-devise).
+    if (orgCurrencies.length === 0 && session?.accessToken && organization) {
+      getOrganizationCurrencies(session.accessToken, organization.id).then(res => {
+        if (res.success && res.data) setOrgCurrencies(res.data);
+      });
+    }
   };
 
   const handleUpdateCreditLimit = async () => {
@@ -1029,7 +1056,26 @@ export default function CustomerDetailPage() {
 
             {/* Amount Input */}
             <div className="space-y-3">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Montant reçu</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Montant reçu</Label>
+                {orgCurrencies.length > 1 && (
+                  <div className="flex gap-1">
+                    {orgCurrencies.map((c) => (
+                      <button
+                        key={c.currency_code}
+                        type="button"
+                        onClick={() => setInvoicePaymentCurrency(c.currency_code)}
+                        className={`px-2 py-1 rounded-md border text-xs font-semibold ${invoicePaymentCurrency === c.currency_code
+                          ? "border-orange-500 bg-orange-50 text-orange-700"
+                          : "border-gray-200 bg-white text-gray-500"
+                          }`}
+                      >
+                        {c.currency_code}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="relative">
                 <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <Input
@@ -1039,8 +1085,15 @@ export default function CustomerDetailPage() {
                   className="h-14 text-2xl text-center font-bold pl-10 pr-16"
                   placeholder={selectedSale?.amount_due || "0"}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">{defaultCurrency.symbol}</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">
+                  {invoicePaymentCurrency ? invSymbolOf(invoicePaymentCurrency) : defaultCurrency.symbol}
+                </span>
               </div>
+              {selectedSale && invoicePaymentCurrency && invoicePaymentCurrency !== selectedSale.currency && parseFloat(invoicePaymentAmount) > 0 && (
+                <p className="text-xs text-blue-600 text-center">
+                  = {formatPrice(invToSaleCurrency(parseFloat(invoicePaymentAmount)))} {selectedSale.currency}
+                </p>
+              )}
 
               {/* Remaining after payment */}
               {parseFloat(invoicePaymentAmount) > 0 && parseFloat(invoicePaymentAmount) < parseFloat(selectedSale?.amount_due || "0") && (

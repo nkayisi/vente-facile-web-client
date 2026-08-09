@@ -76,6 +76,8 @@ export default function RegistersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Fermeture de session : comptage manuel optionnel + notes
   const [closeCountedBalance, setCloseCountedBalance] = useState<string>("");
+  // Comptage manuel par devise (multi-devise RDC) : { code: montant saisi }.
+  const [closeCountedByCurrency, setCloseCountedByCurrency] = useState<Record<string, string>>({});
   const [closeNotes, setCloseNotes] = useState<string>("");
 
   // Form state — plus de champ "branch" : la succursale est dérivée côté backend
@@ -264,6 +266,13 @@ export default function RegistersPage() {
     return opening + salesCash;
   }, [selectedSession]);
 
+  // Devises présentes dans le tiroir de la session (multi-devise RDC).
+  const closeCurrencies = useMemo(
+    () => (selectedSession?.currency_balances || []).map(c => c.currency),
+    [selectedSession],
+  );
+  const isMultiCurrencyClose = closeCurrencies.length > 1;
+
   const closeCountedNum = useMemo(() => {
     const v = parseFloat(closeCountedBalance);
     return Number.isFinite(v) ? v : null;
@@ -279,9 +288,9 @@ export default function RegistersPage() {
     e.preventDefault();
     if (!session?.accessToken || !organization?.id || !selectedSession) return;
 
-    // Si le caissier a saisi un montant et qu'il diffère du solde attendu,
-    // exiger une note explicative (le backend le valide aussi).
-    if (closeCountedNum !== null && Math.abs(closeDifference) > 0.005 && !closeNotes.trim()) {
+    // Mono-devise : on peut pré-valider l'écart client-side. Multi-devise :
+    // l'attendu par devise est calculé au backend, qui exige la note si écart.
+    if (!isMultiCurrencyClose && closeCountedNum !== null && Math.abs(closeDifference) > 0.005 && !closeNotes.trim()) {
       toast.error("Une note explicative est obligatoire lorsque le comptage diffère du solde attendu.");
       return;
     }
@@ -289,8 +298,18 @@ export default function RegistersPage() {
     setIsSubmitting(true);
 
     try {
-      const payload: { counted_balance?: string; notes?: string } = {};
-      if (closeCountedNum !== null) {
+      const payload: {
+        counted_balance?: string;
+        counted_balances?: { currency: string; amount: string }[];
+        notes?: string;
+      } = {};
+      if (isMultiCurrencyClose) {
+        const entries = closeCurrencies
+          .map(c => ({ currency: c, raw: closeCountedByCurrency[c] }))
+          .filter(e => e.raw !== undefined && e.raw !== "" && Number.isFinite(parseFloat(e.raw)))
+          .map(e => ({ currency: e.currency, amount: parseFloat(e.raw).toFixed(2) }));
+        if (entries.length > 0) payload.counted_balances = entries;
+      } else if (closeCountedNum !== null) {
         payload.counted_balance = closeCountedNum.toFixed(2);
       }
       if (closeNotes.trim()) {
@@ -323,6 +342,7 @@ export default function RegistersPage() {
         setShowCloseSessionDialog(false);
         setSelectedSession(null);
         setCloseCountedBalance("");
+        setCloseCountedByCurrency({});
         setCloseNotes("");
       } else {
         toast.error(result.message || "Erreur lors de la fermeture");
@@ -697,6 +717,7 @@ export default function RegistersPage() {
           setShowCloseSessionDialog(open);
           if (!open) {
             setCloseCountedBalance("");
+        setCloseCountedByCurrency({});
             setCloseNotes("");
           }
         }}
@@ -733,32 +754,57 @@ export default function RegistersPage() {
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="counted_balance">
-                Montant réellement compté en caisse (optionnel)
-              </Label>
-              <Input
-                id="counted_balance"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Laisser vide pour utiliser le solde attendu"
-                value={closeCountedBalance}
-                onChange={(e) => setCloseCountedBalance(e.target.value)}
-              />
-              {closeCountedNum !== null && Math.abs(closeDifference) > 0.005 && (
-                <p
-                  className={
-                    closeDifference < 0
-                      ? "text-sm font-medium text-red-600"
-                      : "text-sm font-medium text-amber-600"
-                  }
-                >
-                  Écart : {closeDifference > 0 ? "+" : ""}
-                  {formatPrice(closeDifference.toFixed(2))}
+            {isMultiCurrencyClose ? (
+              <div className="space-y-2">
+                <Label>Montant réellement compté, par devise (optionnel)</Label>
+                <p className="text-xs text-gray-500">
+                  Le tiroir contient plusieurs devises. Comptez chacune séparément —
+                  le solde attendu est calculé par devise à la fermeture.
                 </p>
-              )}
-            </div>
+                {closeCurrencies.map((code) => (
+                  <div key={code} className="flex items-center gap-2">
+                    <span className="w-14 shrink-0 text-sm font-semibold">{code}</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Laisser vide pour utiliser l'attendu"
+                      value={closeCountedByCurrency[code] ?? ""}
+                      onChange={(e) =>
+                        setCloseCountedByCurrency((prev) => ({ ...prev, [code]: e.target.value }))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="counted_balance">
+                  Montant réellement compté en caisse (optionnel)
+                </Label>
+                <Input
+                  id="counted_balance"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Laisser vide pour utiliser le solde attendu"
+                  value={closeCountedBalance}
+                  onChange={(e) => setCloseCountedBalance(e.target.value)}
+                />
+                {closeCountedNum !== null && Math.abs(closeDifference) > 0.005 && (
+                  <p
+                    className={
+                      closeDifference < 0
+                        ? "text-sm font-medium text-red-600"
+                        : "text-sm font-medium text-amber-600"
+                    }
+                  >
+                    Écart : {closeDifference > 0 ? "+" : ""}
+                    {formatPrice(closeDifference.toFixed(2))}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="close_notes">

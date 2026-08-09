@@ -44,6 +44,7 @@ import {
   SaleStatus,
   PaymentMethod,
 } from "@/actions/sales.actions";
+import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -82,6 +83,9 @@ export default function SaleDetailPage() {
   const [addPaymentMethod, setAddPaymentMethod] = useState<string>("");
   const [addPaymentAmount, setAddPaymentAmount] = useState<string>("");
   const [addPaymentReference, setAddPaymentReference] = useState<string>("");
+  // Multi-devise : devise du règlement + taux org (conversion & validation).
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
+  const [addPaymentCurrency, setAddPaymentCurrency] = useState<string>("");
   const [addPaymentNotes, setAddPaymentNotes] = useState<string>("");
   const [isAddingPayment, setIsAddingPayment] = useState(false);
   // Garde anti double-clic synchrone (cf. POS page)
@@ -189,16 +193,37 @@ export default function SaleDetailPage() {
     }
   };
 
-  // Charger les méthodes de paiement au premier affichage du dialog
+  // Charger les méthodes de paiement + devises au premier affichage du dialog
   const ensurePaymentMethodsLoaded = async () => {
-    if (paymentMethods.length > 0) return;
     if (!session?.accessToken || !organization?.id) return;
-    const res = await getPaymentMethods(session.accessToken, organization.id, { is_active: true });
-    if (res.success && res.data) {
-      setPaymentMethods(res.data);
-      const def = res.data.find(m => m.is_default) || res.data[0];
-      if (def) setAddPaymentMethod(def.id);
+    if (paymentMethods.length === 0) {
+      const res = await getPaymentMethods(session.accessToken, organization.id, { is_active: true });
+      if (res.success && res.data) {
+        setPaymentMethods(res.data);
+        const def = res.data.find(m => m.is_default) || res.data[0];
+        if (def) setAddPaymentMethod(def.id);
+      }
     }
+    if (orgCurrencies.length === 0) {
+      const cur = await getOrganizationCurrencies(session.accessToken, organization.id);
+      if (cur.success && cur.data) setOrgCurrencies(cur.data);
+    }
+    // Devise du règlement par défaut = devise de la vente.
+    if (sale) setAddPaymentCurrency(sale.currency);
+  };
+
+  // Conversions basées sur OrganizationCurrency.exchange_rate (principale par unité).
+  const payRateOf = (code: string) => {
+    const c = orgCurrencies.find(x => x.currency_code === code);
+    const r = c ? parseFloat(c.exchange_rate) : 1;
+    return r > 0 ? r : 1;
+  };
+  const paySymbolOf = (code: string) =>
+    orgCurrencies.find(x => x.currency_code === code)?.currency_symbol || code;
+  // Convertit un montant de la devise du règlement vers la devise de la vente.
+  const payToSaleCurrency = (amount: number) => {
+    if (!sale || !addPaymentCurrency || addPaymentCurrency === sale.currency) return amount;
+    return (amount * payRateOf(addPaymentCurrency)) / payRateOf(sale.currency);
   };
 
   // Pré-remplir le montant avec amount_due lors de l'ouverture de la modale
@@ -221,8 +246,10 @@ export default function SaleDetailPage() {
       return;
     }
     const due = parseFloat(sale.amount_due) || 0;
-    if (amt > due + 0.01) {
-      toast.error(`Le montant ne peut pas dépasser le restant dû (${due}).`);
+    // Le restant dû est en devise de la vente : on compare la valeur convertie.
+    const amtInSale = payToSaleCurrency(amt);
+    if (amtInSale > due + 0.01) {
+      toast.error(`Le montant ne peut pas dépasser le restant dû (${formatPrice(due)} ${sale.currency}).`);
       return;
     }
     if (!addPaymentMethod) {
@@ -236,6 +263,10 @@ export default function SaleDetailPage() {
       const res = await addPaymentToSale(session.accessToken, organization.id, sale.id, {
         payment_method: addPaymentMethod,
         amount: amt,
+        // Devise du règlement si différente de la vente — conversion backend.
+        ...(addPaymentCurrency && addPaymentCurrency !== sale.currency
+          ? { currency: addPaymentCurrency }
+          : {}),
         reference: addPaymentReference || undefined,
         notes: addPaymentNotes || undefined,
       });
@@ -682,17 +713,41 @@ export default function SaleDetailPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="add_payment_amount">Montant</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="add_payment_amount">Montant</Label>
+                {orgCurrencies.length > 1 && (
+                  <div className="flex gap-1">
+                    {orgCurrencies.map((c) => (
+                      <button
+                        key={c.currency_code}
+                        type="button"
+                        onClick={() => setAddPaymentCurrency(c.currency_code)}
+                        className={`px-2 py-1 rounded-md border text-xs font-semibold ${addPaymentCurrency === c.currency_code
+                          ? "border-orange-500 bg-orange-50 text-orange-700"
+                          : "border-gray-200 bg-white text-gray-500"
+                          }`}
+                      >
+                        {c.currency_code}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <Input
                 id="add_payment_amount"
                 type="number"
                 min="0"
                 step="0.01"
-                max={sale.amount_due}
                 value={addPaymentAmount}
                 onChange={(e) => setAddPaymentAmount(e.target.value)}
                 placeholder={sale.amount_due}
               />
+              {addPaymentCurrency && sale.currency !== addPaymentCurrency && parseFloat(addPaymentAmount) > 0 && (
+                <p className="text-xs text-blue-600">
+                  = {formatPrice(payToSaleCurrency(parseFloat(addPaymentAmount)))} {sale.currency}
+                  {" "}(reçu en {paySymbolOf(addPaymentCurrency)})
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

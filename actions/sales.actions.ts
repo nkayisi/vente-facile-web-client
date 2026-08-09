@@ -38,6 +38,14 @@ export interface Register {
   created_at: string;
 }
 
+export interface RegisterSessionCurrencyBalance {
+  currency: string;
+  opening_balance: string;
+  expected_balance: string | null;
+  counted_balance: string | null;
+  difference: string | null;
+}
+
 export interface RegisterSession {
   id: string;
   register: string;
@@ -54,6 +62,8 @@ export interface RegisterSession {
   expected_balance: string | null;
   counted_balance: string | null;
   difference: string | null;
+  /** Soldes de caisse ventilés par devise (multi-devise RDC). */
+  currency_balances?: RegisterSessionCurrencyBalance[];
   opened_at: string;
   closed_at: string | null;
   sales_count: number;
@@ -99,7 +109,10 @@ export interface Payment {
   id: string;
   payment_method: string;
   payment_method_name: string;
+  /** Valeur imputée à la facture, dans la devise de la vente. */
   amount: string;
+  /** Montant réellement remis par le client, dans `currency`. */
+  tendered_amount: string | null;
   currency: string;
   exchange_rate: string;
   reference: string;
@@ -136,6 +149,8 @@ export interface Sale {
   amount_paid: string;
   amount_due: string;
   change_amount: string;
+  /** Devise dans laquelle la monnaie a été rendue (choix caissier). */
+  change_currency: string;
   currency: string;
   exchange_rate: string;
   notes: string;
@@ -249,15 +264,23 @@ export interface CreateRegisterData {
   receipt_footer?: string;
 }
 
-export interface OpenSessionData {
-  register: string;
+export interface CurrencyAmount {
+  currency: string;
+  amount: string | number;
 }
 
-/** Corps vide : le backend calcule solde de fermeture et ignore les notes. */
+export interface OpenSessionData {
+  register: string;
+  /** Fonds d'ouverture par devise (sinon hérités de la dernière session fermée). */
+  opening_balances?: CurrencyAmount[];
+}
+
 export interface CloseSessionData {
-  /** Montant réel compté en caisse. Si omis, la différence est traitée comme nulle. */
+  /** Compat mono-devise : compté pour la devise principale. */
   counted_balance?: string | number;
-  /** Note explicative — obligatoire côté backend si la différence est non nulle. */
+  /** Comptage réel PAR devise (ex. [{currency:"USD", amount:20}]). */
+  counted_balances?: CurrencyAmount[];
+  /** Note explicative — obligatoire côté backend si un écart est non nul. */
   notes?: string;
 }
 
@@ -284,8 +307,13 @@ export interface CreateSaleItemData {
 
 export interface CreatePaymentData {
   payment_method: string;
-  amount: number;
+  /** Montant réellement remis, dans `currency`. Prioritaire sur `amount`. */
+  tendered_amount?: number;
+  /** Rétro-compat : traité comme le montant remis si `tendered_amount` absent. */
+  amount?: number;
+  /** Devise du règlement (par défaut = devise de la vente). */
   currency?: string;
+  /** Taux : devise de la vente pour 1 unité de `currency`. */
   exchange_rate?: number;
   reference?: string;
   notes?: string;
@@ -300,8 +328,12 @@ export interface CreateSaleData {
   discount_percentage?: number;
   /** Remise globale en montant fixe (prioritaire sur discount_percentage) */
   global_discount_amount?: number;
+  /** Devise de la facture (par défaut = devise principale de l'org). */
   currency?: string;
+  /** Taux : devise principale pour 1 unité de la devise de facture. */
   exchange_rate?: number;
+  /** Devise de la monnaie rendue (choix caissier). */
+  change_currency?: string;
   notes?: string;
   internal_notes?: string;
   due_date?: string;
@@ -313,11 +345,14 @@ export interface CreateSaleData {
 
 export interface AddPaymentData {
   payment_method: string;
+  /** Montant réellement remis, dans `currency`. */
   amount: number;
   /** Devise du paiement (par défaut = devise de la vente). */
   currency?: string;
-  /** Taux de change si payment_currency ≠ sale.currency. */
+  /** Taux : devise de la vente pour 1 unité de `currency`. */
   exchange_rate?: number;
+  /** Devise de la monnaie rendue si ce paiement solde la vente. */
+  change_currency?: string;
   reference?: string;
   notes?: string;
 }

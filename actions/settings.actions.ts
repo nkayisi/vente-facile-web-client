@@ -38,6 +38,7 @@ export interface OrganizationCurrency {
   currency_code: string;
   currency_name: string;
   currency_symbol: string;
+  currency_decimal_places: number;
   is_primary: boolean;
   exchange_rate: string;
   is_active: boolean;

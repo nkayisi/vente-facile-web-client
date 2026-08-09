@@ -197,13 +197,18 @@ export default function PendingPaymentsPage() {
     setIsProcessing(true);
 
     try {
-      const pc = getPaymentCurrencyObj();
+      // On envoie la devise du règlement si elle diffère de celle de la vente ;
+      // la conversion vers la devise de la vente est faite (autoritairement) par
+      // le backend via CurrencyService — évite toute hypothèse « vente = devise
+      // principale » côté client.
       const paymentData: AddPaymentData = {
         payment_method: selectedPaymentMethod,
         amount: rawAmount,
         reference: paymentReference || undefined,
-        ...(pc && !pc.is_primary ? { currency: paymentCurrency, exchange_rate: parseFloat(pc.exchange_rate) } : {}),
-      } as any;
+        ...(paymentCurrency && paymentCurrency !== selectedSale.currency
+          ? { currency: paymentCurrency }
+          : {}),
+      };
 
       const result = await addPaymentToSale(
         session.accessToken,

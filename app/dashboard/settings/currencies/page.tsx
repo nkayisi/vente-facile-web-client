@@ -9,7 +9,6 @@ import {
   Trash2,
   Edit,
   Check,
-  X,
   Crown,
   Loader2,
   Info,
@@ -68,12 +67,14 @@ export default function CurrenciesSettingsPage() {
   const [showAddCurrencyDialog, setShowAddCurrencyDialog] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<string>("");
   const [exchangeRate, setExchangeRate] = useState("1");
+  // Opération à appliquer pour aller de la devise PAR DÉFAUT vers la NOUVELLE :
+  //   "divide"   → montant_new = montant_défaut ÷ taux   (ex. CDF → USD, ÷2800)
+  //   "multiply" → montant_new = montant_défaut × taux   (ex. USD → CDF, ×2800)
+  // Le marchand saisit toujours un nombre « rond » (2800) et choisit le sens.
+  const [rateOp, setRateOp] = useState<"divide" | "multiply">("divide");
 
-  // Édition du taux
-  const [editingRate, setEditingRate] = useState<string | null>(null);
-  const [newRate, setNewRate] = useState("");
-  const [rateFromCurrency, setRateFromCurrency] = useState<string>("");
-  const [rateToCurrency, setRateToCurrency] = useState<string>("");
+  // Édition du taux (même éditeur × / ÷ que l'ajout, dans un dialog)
+  const [editingCurrency, setEditingCurrency] = useState<OrganizationCurrency | null>(null);
 
   const loadData = useCallback(async () => {
     if (!session?.accessToken || !organization?.id) return;
@@ -107,20 +108,141 @@ export default function CurrenciesSettingsPage() {
     (c) => !orgCurrencies.some((oc) => oc.currency_code === c.code)
   );
 
+  // Codes pour l'aperçu du taux dans le modal d'ajout.
+  const newCurrencyCode = currencies.find((c) => c.id === selectedCurrency)?.code || "?";
+  const defaultCode = primaryCurrency?.currency_code || "?";
+
+  // Taux CANONIQUE stocké côté backend = nombre d'unités de la devise PRINCIPALE
+  // pour 1 unité de la nouvelle devise. On le dérive du sens choisi + du taux saisi.
+  const computeCanonicalRate = (): number | null => {
+    const taux = parseFloat(exchangeRate);
+    if (!taux || taux <= 0 || isNaN(taux)) return null;
+    // op "divide"   : new = def ÷ taux ⇒ 1 new = taux def   ⇒ canonical = taux
+    // op "multiply" : new = def × taux ⇒ 1 new = 1/taux def ⇒ canonical = 1/taux
+    return rateOp === "divide" ? taux : 1 / taux;
+  };
+
+  // Formate un taux en nettoyant le bruit flottant du réciproque : un aller-retour
+  // 1/(1/2300) donne 2300.0000016 → on veut afficher « 2300 » exact. toPrecision(9)
+  // arrondit ce bruit tout en gardant les vrais taux (ex. 2850.75, 0.000434782609).
+  const fmtRate = (n: number): string => {
+    if (!isFinite(n) || isNaN(n) || n <= 0) return "?";
+    return parseFloat(n.toPrecision(9)).toString();
+  };
+
+  // Éditeur de taux réutilisable (ajout ET édition) : sens × / ÷ + montant +
+  // aperçu. C'est une fonction de rendu (pas un composant) pour préserver le
+  // focus de l'input entre les re-renders. `newCode` = code de la devise cible.
+  const renderRateEditor = (newCode: string) => {
+    const canonical = computeCanonicalRate();
+    const taux = parseFloat(exchangeRate);
+    const sample = 100;
+    const converted = rateOp === "divide" ? sample / taux : sample * taux;
+    return (
+      <div className="space-y-3">
+        {/* Sens de conversion : de la devise par défaut vers la nouvelle */}
+        <div className="space-y-1.5">
+          <p className="text-xs text-gray-500">
+            Pour convertir un montant de <strong>{defaultCode}</strong> vers{" "}
+            <strong>{newCode}</strong>, on&nbsp;:
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setRateOp("divide")}
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border-2 p-2.5 transition-all ${rateOp === "divide"
+                ? "border-orange-500 bg-orange-50 text-orange-700"
+                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                }`}
+            >
+              <span className="text-lg font-bold">÷ Divise</span>
+              <span className="text-[11px] text-gray-500">{newCode} vaut plus que {defaultCode}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRateOp("multiply")}
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border-2 p-2.5 transition-all ${rateOp === "multiply"
+                ? "border-orange-500 bg-orange-50 text-orange-700"
+                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                }`}
+            >
+              <span className="text-lg font-bold">× Multiplie</span>
+              <span className="text-[11px] text-gray-500">{newCode} vaut moins que {defaultCode}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Taux saisi — formule : montant {défaut} {op} taux → {nouvelle} */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm whitespace-nowrap">
+            Montant {defaultCode} {rateOp === "divide" ? "÷" : "×"}
+          </span>
+          <Input
+            type="number"
+            step="0.000001"
+            min="0"
+            value={exchangeRate}
+            onChange={(e) => setExchangeRate(e.target.value)}
+            className="w-32"
+            placeholder="Ex : 2800"
+          />
+          <span className="text-sm text-gray-500 whitespace-nowrap">→ {newCode}</span>
+        </div>
+
+        {/* Aperçu en direct */}
+        {canonical === null || newCode === "?" ? (
+          <p className="text-xs text-gray-400">
+            Saisissez un taux valide (&gt; 0) pour voir l&apos;équivalence.
+          </p>
+        ) : (
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 space-y-1 text-xs text-blue-800">
+            <p className="font-medium">Aperçu</p>
+            <p>1 {newCode} = <strong>{fmtRate(canonical)}</strong> {defaultCode}</p>
+            <p>1 {defaultCode} = <strong>{fmtRate(1 / canonical)}</strong> {newCode}</p>
+            <p className="text-blue-600">
+              Ex : {sample} {defaultCode} = <strong>{fmtRate(converted)}</strong> {newCode}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const resetAddDialog = () => {
+    setShowAddCurrencyDialog(false);
+    setSelectedCurrency("");
+    setExchangeRate("1");
+    setRateOp("divide");
+  };
+
   const handleAddCurrency = async () => {
     if (!session?.accessToken || !organization?.id || !selectedCurrency) return;
+
+    const isFirst = orgCurrencies.length === 0;
+    // La première devise est la principale : taux forcé à 1 (backend). Sinon on
+    // envoie le taux canonique dérivé du sens (× ou ÷) choisi par le marchand.
+    let canonicalRate = "1";
+    if (!isFirst) {
+      const canonical = computeCanonicalRate();
+      if (canonical === null) {
+        toast.error("Taux invalide");
+        return;
+      }
+      // 12 décimales : indispensable pour les réciproques (ex. principale USD,
+      // 1 CDF = 0.000434782609 USD). Tronquer à 6 fausse la conversion.
+      canonicalRate = canonical.toFixed(12);
+    }
+
     setIsSaving(true);
     try {
       const result = await addOrganizationCurrency(session.accessToken, organization.id, {
         currency: selectedCurrency,
-        exchange_rate: exchangeRate,
-        is_primary: orgCurrencies.length === 0,
+        exchange_rate: canonicalRate,
+        is_primary: isFirst,
       });
       if (result.success) {
         toast.success("Devise ajoutée avec succès");
-        setShowAddCurrencyDialog(false);
-        setSelectedCurrency("");
-        setExchangeRate("1");
+        resetAddDialog();
         loadData();
       } else {
         toast.error(result.message || "Erreur lors de l'ajout");
@@ -130,68 +252,57 @@ export default function CurrenciesSettingsPage() {
     }
   };
 
-  const handleUpdateRate = async (currencyId: string) => {
-    if (!session?.accessToken || !organization?.id || !newRate) return;
+  // Ouvre le dialog d'édition en pré-remplissant le sens (× / ÷) et le taux
+  // « naturel » déduits du taux canonique stocké (principale par unité).
+  const openEditRate = (currency: OrganizationCurrency) => {
+    const canonical = parseFloat(currency.exchange_rate);
+    if (canonical >= 1) {
+      // 1 {code} = canonical {défaut} ⇒ défaut→code : on DIVISE par canonical.
+      setRateOp("divide");
+      setExchangeRate(fmtRate(canonical));
+    } else if (canonical > 0) {
+      // 1 {défaut} = 1/canonical {code} ⇒ défaut→code : on MULTIPLIE.
+      // fmtRate nettoie le bruit du réciproque pour ré-afficher un taux « rond ».
+      setRateOp("multiply");
+      setExchangeRate(fmtRate(1 / canonical));
+    } else {
+      setRateOp("multiply");
+      setExchangeRate("1");
+    }
+    setEditingCurrency(currency);
+  };
 
-    const rateValue = parseFloat(newRate);
-    if (!rateValue || rateValue <= 0 || isNaN(rateValue)) {
+  const closeEditRate = () => {
+    setEditingCurrency(null);
+    setExchangeRate("1");
+    setRateOp("divide");
+  };
+
+  const handleUpdateRate = async () => {
+    if (!session?.accessToken || !organization?.id || !editingCurrency) return;
+
+    const canonical = computeCanonicalRate();
+    if (canonical === null) {
       toast.error("Taux invalide");
       return;
     }
-
-    // Convention canonique du backend :
-    //   exchange_rate(X) = nombre d'unités de X pour 1 unité de la devise principale.
-    //   (cf. backend/apps/settings/views.py : amount_in_primary = amount / from.exchange_rate)
-    //   Ex : primaire USD, CDF.exchange_rate = 2300  ⇒  1 USD = 2300 CDF.
-    //
-    // L'utilisateur saisit "1 fromCurr = rateValue toCurr". On recalcule
-    // l'exchange_rate de la devise de la ligne (rowCurr) à partir des taux connus.
-    const rowCurr = orgCurrencies.find((c) => c.id === currencyId);
-    if (!rowCurr) return;
-
-    const exch = (c?: OrganizationCurrency) =>
-      c?.is_primary ? 1 : parseFloat(c?.exchange_rate ?? "0");
-
-    const fromCurr = orgCurrencies.find((c) => c.currency_code === rateFromCurrency);
-    const toCurr = orgCurrencies.find((c) => c.currency_code === rateToCurrency);
-
-    let finalRate: number;
-    if (fromCurr && toCurr && fromCurr.currency_code !== toCurr.currency_code) {
-      if (toCurr.id === rowCurr.id) {
-        // 1 from = rateValue row  ⇒  exch(row) = rateValue * exch(from)
-        finalRate = rateValue * exch(fromCurr);
-      } else if (fromCurr.id === rowCurr.id) {
-        // 1 row = rateValue to  ⇒  exch(row) = exch(to) / rateValue
-        finalRate = exch(toCurr) / rateValue;
+    setIsSaving(true);
+    try {
+      const result = await updateExchangeRate(
+        session.accessToken,
+        organization.id,
+        editingCurrency.id,
+        canonical.toFixed(12)
+      );
+      if (result.success) {
+        toast.success("Taux de change mis à jour");
+        closeEditRate();
+        loadData();
       } else {
-        // Aucune des devises choisies n'est celle de la ligne : on interprète
-        // la valeur comme "1 principale = rateValue ligne".
-        finalRate = rateValue;
+        toast.error(result.message || "Erreur");
       }
-    } else {
-      finalRate = rateValue;
-    }
-
-    if (!finalRate || finalRate <= 0 || !isFinite(finalRate)) {
-      toast.error("Taux invalide");
-      return;
-    }
-
-    const result = await updateExchangeRate(
-      session.accessToken,
-      organization.id,
-      currencyId,
-      finalRate.toString()
-    );
-    if (result.success) {
-      toast.success("Taux de change mis à jour");
-      setEditingRate(null);
-      setNewRate("");
-      setRateFromCurrency("");
-      setRateToCurrency("");
-      loadData();
-    } else {
-      toast.error(result.message || "Erreur");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -274,104 +385,36 @@ export default function CurrenciesSettingsPage() {
                     </TableCell>
                     <TableCell>{currency.currency_symbol}</TableCell>
                     <TableCell>
-                      {editingRate === currency.id ? (
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600">1</span>
-                            <Select
-                              value={rateFromCurrency || primaryCurrency?.currency_code || ""}
-                              onValueChange={setRateFromCurrency}
-                            >
-                              <SelectTrigger className="w-24 h-8">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {orgCurrencies.map((c) => (
-                                  <SelectItem key={c.id} value={c.currency_code}>
-                                    {c.currency_code}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <span className="text-sm text-gray-600">=</span>
-                            <Input
-                              type="number"
-                              step="0.000001"
-                              value={newRate}
-                              onChange={(e) => setNewRate(e.target.value)}
-                              className="w-28 h-8"
-                              placeholder="Taux"
-                            />
-                            <Select
-                              value={rateToCurrency || currency.currency_code}
-                              onValueChange={setRateToCurrency}
-                            >
-                              <SelectTrigger className="w-24 h-8">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {orgCurrencies.map((c) => (
-                                  <SelectItem key={c.id} value={c.currency_code}>
-                                    {c.currency_code}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" variant="ghost" onClick={() => handleUpdateRate(currency.id)}>
-                              <Check className="h-4 w-4 text-green-500" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setEditingRate(null);
-                                setRateFromCurrency("");
-                                setRateToCurrency("");
-                              }}
-                            >
-                              <X className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">
-                            {(() => {
-                              const rate = parseFloat(currency.exchange_rate);
-                              const primaryCode = primaryCurrency?.currency_code || "?";
-                              if (currency.is_primary) {
-                                return `Devise principale`;
-                              }
-                              if (rate === 0 || isNaN(rate)) {
-                                return `1 ${primaryCode} = ? ${currency.currency_code}`;
-                              }
-                              // exchange_rate = nb d'unités de cette devise pour 1 unité de la principale
-                              // ⇒ « 1 {principale} = {taux} {cette devise} »
-                              return `1 ${primaryCode} = ${rate
-                                .toFixed(6)
-                                .replace(/\.?0+$/, "")} ${currency.currency_code}`;
-                            })()}
-                          </span>
-                          {!currency.is_primary && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setEditingRate(currency.id);
-                                const rate = parseFloat(currency.exchange_rate);
-                                setNewRate(rate !== 0 && !isNaN(rate) ? rate.toString() : "1");
-                                // Défaut cohérent avec l'affichage : « 1 principale = taux ligne »
-                                setRateFromCurrency(primaryCurrency?.currency_code || "");
-                                setRateToCurrency(currency.currency_code);
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">
+                          {(() => {
+                            const rate = parseFloat(currency.exchange_rate);
+                            const primaryCode = primaryCurrency?.currency_code || "?";
+                            if (currency.is_primary) {
+                              return `Devise principale`;
+                            }
+                            if (rate === 0 || isNaN(rate)) {
+                              return `1 ${currency.currency_code} = ? ${primaryCode}`;
+                            }
+                            // Affiche le sens « naturel » (nombre lisible) : si la
+                            // devise vaut moins que la principale (rate < 1), on
+                            // montre « 1 {principale} = X {code} ».
+                            if (rate < 1) {
+                              return `1 ${primaryCode} = ${fmtRate(1 / rate)} ${currency.currency_code}`;
+                            }
+                            return `1 ${currency.currency_code} = ${fmtRate(rate)} ${primaryCode}`;
+                          })()}
+                        </span>
+                        {!currency.is_primary && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openEditRate(currency)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">
                       {new Date(currency.last_rate_update).toLocaleDateString("fr-FR")}
@@ -418,12 +461,16 @@ export default function CurrenciesSettingsPage() {
               <p className="font-medium">Comment fonctionne la multidevise ?</p>
               <ul className="list-disc list-inside mt-1 space-y-1">
                 <li>La devise principale est utilisée pour tous les calculs internes</li>
-                <li>Les devises secondaires permettent d&apos;afficher les prix dans d&apos;autres monnaies</li>
+                <li>Les devises secondaires permettent d&apos;afficher les prix et d&apos;encaisser dans d&apos;autres monnaies</li>
                 <li>
-                  Le taux se lit toujours&nbsp;: <strong>1 devise principale = X unités de la devise secondaire</strong>
+                  Le taux se lit toujours&nbsp;: <strong>1 devise secondaire = X unités de la devise principale</strong>{" "}
+                  (ex. 1 USD = 2800 CDF)
+                </li>
+                <li>
+                  <strong>Conversion</strong> : vers la devise principale on <strong>multiplie</strong> par le taux ;
+                  depuis la devise principale on <strong>divise</strong> par le taux
                 </li>
                 <li>Pour modifier un taux, cliquez sur l&apos;icône d&apos;édition</li>
-                <li>Vous pouvez accepter des paiements dans n&apos;importe quelle devise configurée</li>
               </ul>
             </div>
           </div>
@@ -431,7 +478,7 @@ export default function CurrenciesSettingsPage() {
       </Card>
 
       {/* Add Currency Dialog */}
-      <Dialog open={showAddCurrencyDialog} onOpenChange={setShowAddCurrencyDialog}>
+      <Dialog open={showAddCurrencyDialog} onOpenChange={(open) => { if (!open) resetAddDialog(); else setShowAddCurrencyDialog(true); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Ajouter une devise</DialogTitle>
@@ -456,24 +503,14 @@ export default function CurrenciesSettingsPage() {
               </Select>
             </div>
             {orgCurrencies.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label>Taux de change</Label>
-                <div className="flex items-center gap-2">
-                  <span>1 {primaryCurrency?.currency_code} =</span>
-                  <Input
-                    type="number"
-                    step="0.000001"
-                    value={exchangeRate}
-                    onChange={(e) => setExchangeRate(e.target.value)}
-                    className="w-32"
-                  />
-                  <span>{currencies.find((c) => c.id === selectedCurrency)?.code || "?"}</span>
-                </div>
+                {renderRateEditor(newCurrencyCode)}
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddCurrencyDialog(false)}>
+            <Button variant="outline" onClick={resetAddDialog}>
               Annuler
             </Button>
             <Button
@@ -487,6 +524,40 @@ export default function CurrenciesSettingsPage() {
                 <Plus className="h-4 w-4 mr-2" />
               )}
               Ajouter
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Rate Dialog */}
+      <Dialog open={!!editingCurrency} onOpenChange={(open) => { if (!open) closeEditRate(); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Modifier le taux — {editingCurrency?.currency_code}
+            </DialogTitle>
+            <DialogDescription>
+              Ajustez le taux de change entre {defaultCode} et {editingCurrency?.currency_code}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {editingCurrency && renderRateEditor(editingCurrency.currency_code)}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditRate}>
+              Annuler
+            </Button>
+            <Button
+              onClick={handleUpdateRate}
+              disabled={isSaving}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4 mr-2" />
+              )}
+              Enregistrer
             </Button>
           </DialogFooter>
         </DialogContent>
