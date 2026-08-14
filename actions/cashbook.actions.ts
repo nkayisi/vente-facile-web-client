@@ -65,8 +65,14 @@ export interface Expense {
   category: string;
   category_name: string;
   category_color: string;
+  warehouse: string | null;
+  warehouse_name: string | null;
   description: string;
   amount: string;
+  /** Devise réelle de la dépense (peut différer de la devise principale). */
+  currency: string;
+  /** Unités de devise principale pour 1 unité de `currency`. Résolu serveur. */
+  exchange_rate: string;
   status: "draft" | "pending" | "approved" | "paid" | "rejected" | "cancelled";
   beneficiary: string;
   payment_method: string | null;
@@ -92,6 +98,9 @@ export interface CreateExpenseData {
   category: string;
   description: string;
   amount: string;
+  /** Devise de saisie. Omise ⇒ devise principale. Le taux est résolu serveur. */
+  currency?: string;
+  warehouse?: string | null;
   beneficiary?: string;
   payment_method?: string;
   payment_reference?: string;
@@ -128,6 +137,8 @@ export interface CashMovement {
   customer_name: string | null;
   supplier: string | null;
   supplier_name: string | null;
+  currency: string;
+  exchange_rate: string;
   balance_after: string;
   movement_date: string;
   is_cancelled: boolean;
@@ -145,6 +156,8 @@ export interface CreateCashMovementData {
   direction: "in" | "out";
   movement_type: string;
   amount: string;
+  /** Devise de saisie. Omise ⇒ devise principale. Le taux est résolu serveur. */
+  currency?: string;
   description: string;
   payment_method?: string;
   income_category?: string;
@@ -155,7 +168,30 @@ export interface CreateCashMovementData {
   notes?: string;
 }
 
+/** Solde + totaux du jour d'UNE devise (jamais de somme inter-devises). */
+export interface CurrencyBalance {
+  currency: string;
+  balance: string;
+  today_in: string;
+  today_out: string;
+  today_net: string;
+}
+
+/** Ouverture / entrées / sorties / clôture d'UNE devise sur une période. */
+export interface CurrencyReportRow {
+  currency: string;
+  opening_balance: string;
+  total_in: string;
+  total_out: string;
+  net: string;
+  closing_balance: string;
+}
+
 export interface CashBalance {
+  /** Solde de caisse ventilé PAR DEVISE (source de vérité pour l'affichage). */
+  by_currency: CurrencyBalance[];
+  /** Scalaires = devise principale uniquement (rétro-compat). */
+  currency: string;
   balance: string;
   today_in: string;
   today_out: string;
@@ -163,11 +199,20 @@ export interface CashBalance {
 }
 
 export interface CashSummary {
+  currency: string;
   total_in: string;
   total_out: string;
   net: string;
   count: number;
+  by_currency: Array<{
+    currency: string;
+    total_in: string;
+    total_out: string;
+    net: string;
+    count: number;
+  }>;
   by_type: Array<{
+    currency: string;
     movement_type: string;
     direction: string;
     total: string;
@@ -175,6 +220,7 @@ export interface CashSummary {
   }>;
   by_day: Array<{
     day: string;
+    currency: string;
     total_in: string;
     total_out: string;
     count: number;
@@ -183,12 +229,15 @@ export interface CashSummary {
 
 export interface DailyReport {
   date: string;
+  currency: string;
   opening_balance: string;
   closing_balance: string;
   total_in: string;
   total_out: string;
   net: string;
+  by_currency: CurrencyReportRow[];
   by_type: Array<{
+    currency: string;
     movement_type: string;
     direction: string;
     total: string;
@@ -206,25 +255,30 @@ export interface DailyReport {
 export interface MonthlyReport {
   year: number;
   month: number;
+  currency: string;
   opening_balance: string;
   closing_balance: string;
   total_in: string;
   total_out: string;
   net: string;
   count: number;
+  by_currency: CurrencyReportRow[];
   by_day: Array<{
     day: string;
+    currency: string;
     total_in: string;
     total_out: string;
     count: number;
   }>;
   by_type: Array<{
+    currency: string;
     movement_type: string;
     direction: string;
     total: string;
     count: number;
   }>;
   expense_by_category: Array<{
+    currency: string;
     expense__category__name: string;
     expense__category__color: string;
     total: string;
@@ -234,25 +288,30 @@ export interface MonthlyReport {
 
 export interface AnnualReport {
   year: number;
+  currency: string;
   opening_balance: string;
   closing_balance: string;
   total_in: string;
   total_out: string;
   net: string;
   count: number;
+  by_currency: CurrencyReportRow[];
   by_month: Array<{
     month: string;
+    currency: string;
     total_in: string;
     total_out: string;
     count: number;
   }>;
   by_type: Array<{
+    currency: string;
     movement_type: string;
     direction: string;
     total: string;
     count: number;
   }>;
   expense_by_category: Array<{
+    currency: string;
     expense__category__name: string;
     expense__category__color: string;
     total: string;
@@ -263,25 +322,30 @@ export interface AnnualReport {
 export interface CustomReport {
   date_from: string;
   date_to: string;
+  currency: string;
   opening_balance: string;
   closing_balance: string;
   total_in: string;
   total_out: string;
   net: string;
   count: number;
+  by_currency: CurrencyReportRow[];
   by_day: Array<{
     day: string;
+    currency: string;
     total_in: string;
     total_out: string;
     count: number;
   }>;
   by_type: Array<{
+    currency: string;
     movement_type: string;
     direction: string;
     total: string;
     count: number;
   }>;
   expense_by_category: Array<{
+    currency: string;
     expense__category__name: string;
     expense__category__color: string;
     total: string;
@@ -289,10 +353,25 @@ export interface CustomReport {
   }>;
 }
 
+/** Total des dépenses d'UNE devise (montant brut, jamais additionné aux autres). */
+export interface ExpenseCurrencyTotal {
+  currency: string;
+  total: string;
+  count: number;
+}
+
 export interface ExpenseStats {
+  /** Code de la devise principale (celle de `total` / `total_primary`). */
+  currency: string;
+  /** Ventilation par devise : le détail réel, sans conversion. */
+  by_currency: ExpenseCurrencyTotal[];
+  /** Total converti en devise principale (chiffre comptable). */
+  total_primary: string;
+  /** Alias rétro-compat de `total_primary`. */
   total: string;
   count: number;
   by_category: Array<{
+    currency: string;
     category__name: string;
     category__color: string;
     total: string;
@@ -300,6 +379,7 @@ export interface ExpenseStats {
   }>;
   by_month: Array<{
     month: string;
+    currency: string;
     total: string;
     count: number;
   }>;
@@ -519,6 +599,7 @@ export async function deleteExpenseCategory(
 export interface ExpenseFilters {
   status?: string;
   category?: string;
+  currency?: string;
   date_from?: string;
   date_to?: string;
   search?: string;
@@ -781,6 +862,7 @@ export async function getExpenseStats(
 export interface CashMovementFilters {
   direction?: string;
   movement_type?: string;
+  currency?: string;
   date_from?: string;
   date_to?: string;
   search?: string;

@@ -2081,6 +2081,17 @@ export default function POSPage() {
                   <span>Total à payer</span>
                   <span className="text-orange-600">{money(totalInSale())}</span>
                 </div>
+                {/* Équivalent dans la devise encaissée (si différente) */}
+                {(() => {
+                  const t0 = tenders[0];
+                  if (!t0 || t0.currency === saleCurrency()) return null;
+                  return (
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>≈ à encaisser en {t0.currency}</span>
+                      <span>{money(convMoney(totalInSale(), saleCurrency(), t0.currency), t0.currency)}</span>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -2090,6 +2101,12 @@ export default function POSPage() {
               if (!t) return null;
               const amt = parseFloat(t.amount) || 0;
               const method = getMethodById(t.method);
+              // Devise réellement encaissée (celle du montant reçu).
+              const payCur = t.currency;
+              // Montants exprimés dans la devise reçue (« montant converti »).
+              const totalInPay = convMoney(totalInSale(), saleCurrency(), payCur);
+              const paidInPay = convMoney(paidInSale(), saleCurrency(), payCur);
+              const missingInPay = roundMoney(totalInPay - paidInPay, payCur);
               return (
             <div className="space-y-3">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -2199,18 +2216,18 @@ export default function POSPage() {
                 )}
               </div>
 
-              {/* Total payé + monnaie/crédit */}
+              {/* Total payé + monnaie/crédit — exprimés dans la devise ENCAISSÉE */}
               <div className="p-3 bg-gray-50 rounded-xl space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Total payé</span>
-                  <span className="font-semibold">{money(paidInSale())}</span>
+                  <span className="font-semibold">{money(paidInPay, payCur)}</span>
                 </div>
 
-                {/* Vente à crédit : montant restant à crédit */}
+                {/* Vente à crédit : montant restant à crédit (devise encaissée) */}
                 {isCreditSale && totalInSale() - paidInSale() > MONEY_EPS && (
                   <div className="flex justify-between text-orange-700 font-medium">
                     <span>Montant à crédit</span>
-                    <span className="text-lg font-bold">{money(totalInSale() - paidInSale())}</span>
+                    <span className="text-lg font-bold">{money(missingInPay, payCur)}</span>
                   </div>
                 )}
 
@@ -2218,7 +2235,7 @@ export default function POSPage() {
                 {!isCreditSale && paidInSale() + MONEY_EPS < totalInSale() && (
                   <div className="flex justify-between text-red-600 font-medium">
                     <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> Il manque</span>
-                    <span>{money(totalInSale() - paidInSale())}</span>
+                    <span>{money(missingInPay, payCur)}</span>
                   </div>
                 )}
 
@@ -2299,7 +2316,10 @@ export default function POSPage() {
                 ? "Traitement..."
                 : isCreditSale
                   ? "Confirmer la vente à crédit"
-                  : `Encaisser ${money(totalInSale())}`
+                  : `Encaisser ${(() => {
+                      const pc = tenders[0]?.currency || saleCurrency();
+                      return money(convMoney(totalInSale(), saleCurrency(), pc), pc);
+                    })()}`
               }
             </Button>
           </DialogFooter>

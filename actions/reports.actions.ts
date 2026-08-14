@@ -38,7 +38,12 @@ export interface StockStats {
 }
 
 export interface CashbookStats {
+  /** Devise principale : celle de tous les montants scalaires ci-dessous. */
+  currency?: string;
+  /** Solde toutes devises confondues, converti en devise principale. */
   current_balance: string;
+  /** Détail réel du tiroir : le solde de chaque devise, sans conversion. */
+  balance_by_currency?: Array<{ currency: string; balance: string }>;
   total_income: string;
   total_expenses: string;
   net_flow: string;

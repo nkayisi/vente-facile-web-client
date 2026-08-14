@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -13,13 +13,21 @@ import {
   CalendarDays,
   CalendarRange,
   CalendarClock,
+  Wallet,
+  TrendingUp,
+  TrendingDown,
+  ArrowRightLeft,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice } from "@/lib/format";
+import { useCurrency } from "@/components/providers/currency-provider";
 import {
   getUserOrganizations,
   Organization,
 } from "@/actions/organization.actions";
+import {
+  getOrganizationCurrencies,
+  OrganizationCurrency,
+} from "@/actions/settings.actions";
 import {
   getDailyReport,
   getMonthlyReport,
@@ -29,13 +37,14 @@ import {
   MonthlyReport,
   AnnualReport,
   CustomReport,
+  CurrencyReportRow,
 } from "@/actions/cashbook.actions";
 import {
   createPDFDocument,
   addSummarySection,
   addTable,
   addSignatureSection,
-  formatCurrencyForPDF,
+  formatNumberForPDF,
   formatDateForPDF,
   formatMonthForPDF,
 } from "@/lib/pdf-utils";
@@ -82,8 +91,104 @@ const MONTH_NAMES = [
 
 export default function CashbookReportsPage() {
   const { data: session } = useSession();
+  const { currency: defaultCurrency } = useCurrency();
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Formatage par devise (CDF = 0 déc., USD/EUR = 2). Jamais de mélange.
+  const decimalsOf = (code: string) => {
+    const c = orgCurrencies.find((x) => x.currency_code === code);
+    return c ? c.currency_decimal_places : (defaultCurrency.decimal_places ?? 2);
+  };
+  const symbolOf = (code: string) =>
+    orgCurrencies.find((x) => x.currency_code === code)?.currency_symbol ||
+    (code === defaultCurrency.code ? defaultCurrency.symbol : code);
+  const money = (amount: string | number, code: string) => {
+    const n = typeof amount === "string" ? parseFloat(amount) : amount;
+    const value = isNaN(n) ? 0 : n;
+    return `${new Intl.NumberFormat("fr-CD", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: decimalsOf(code),
+    }).format(value)} ${symbolOf(code)}`;
+  };
+
+  // Montant SANS symbole (le code de devise sert de label → pas de doublon).
+  const amountOnly = (amount: string | number, code: string) => {
+    const n = typeof amount === "string" ? parseFloat(amount) : amount;
+    return new Intl.NumberFormat("fr-CD", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: decimalsOf(code),
+    }).format(isNaN(n) ? 0 : n);
+  };
+
+  // Signe affiché uniquement si le montant est non nul (évite « -0 » / « +0 »).
+  const sgn = (amount: string | number, sign: string) =>
+    (parseFloat(String(amount)) || 0) !== 0 ? sign : "";
+
+  // Une carte-métrique (Ouverture/Entrées/…) listant une ligne « CODE : montant »
+  // par devise, sans jamais additionner ni répéter la devise.
+  const renderReportMetricCard = (
+    title: string,
+    icon: ReactNode,
+    iconBg: string,
+    rows: CurrencyReportRow[] | undefined,
+    pick: (r: CurrencyReportRow) => string,
+    opts?: { sign?: string; className?: string; colorBySign?: boolean },
+  ) => (
+    <Card className="gap-0">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${iconBg}`}>{icon}</div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {!rows || rows.length === 0 ? (
+          <div className="text-lg font-bold">{amountOnly(0, defaultCurrency.code)} {defaultCurrency.code}</div>
+        ) : (
+          <div className="space-y-1">
+            {rows.map((r) => {
+              const val = pick(r);
+              const cls = opts?.colorBySign
+                ? parseFloat(val) >= 0 ? "text-green-600" : "text-red-600"
+                : opts?.className ?? "";
+              return (
+                <div key={r.currency} className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium text-gray-400">{r.currency}</span>
+                  <span className={`text-lg font-bold ${cls}`}>{sgn(val, opts?.sign ?? "")}{amountOnly(val, r.currency)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  // 4 cartes-métriques par devise : Ouverture, Entrées, Sorties, Clôture.
+  const renderReportSummaryCards = (rows?: CurrencyReportRow[]) => (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {renderReportMetricCard(
+        "Solde d'ouverture",
+        <Wallet className="h-5 w-5 text-gray-600" />, "bg-gray-100",
+        rows, (r) => r.opening_balance,
+      )}
+      {renderReportMetricCard(
+        "Total entrées",
+        <TrendingUp className="h-5 w-5 text-green-600" />, "bg-green-100",
+        rows, (r) => r.total_in, { sign: "+", className: "text-green-600" },
+      )}
+      {renderReportMetricCard(
+        "Total sorties",
+        <TrendingDown className="h-5 w-5 text-red-600" />, "bg-red-100",
+        rows, (r) => r.total_out, { sign: "-", className: "text-red-600" },
+      )}
+      {renderReportMetricCard(
+        "Solde de clôture",
+        <ArrowRightLeft className="h-5 w-5 text-blue-600" />, "bg-blue-100",
+        rows, (r) => r.closing_balance, { className: "text-blue-600" },
+      )}
+    </div>
+  );
 
   // Daily report
   const [selectedDate, setSelectedDate] = useState(
@@ -117,7 +222,12 @@ export default function CashbookReportsPage() {
       if (session?.accessToken) {
         const result = await getUserOrganizations(session.accessToken);
         if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
+          const org = result.data[0];
+          setOrganization(org);
+          const ccyRes = await getOrganizationCurrencies(session.accessToken, org.id);
+          if (ccyRes.success && ccyRes.data) {
+            setOrgCurrencies(Array.isArray(ccyRes.data) ? ccyRes.data : []);
+          }
         }
       }
     }
@@ -214,6 +324,52 @@ export default function CashbookReportsPage() {
     });
   }
 
+  // Montant PDF-safe AVEC symbole (jsPDF ne rend pas l'espace fine insécable
+  // d'Intl → formatNumberForPDF le remplace par un espace normal).
+  const pdfMoney = (amount: string | number, code: string) =>
+    `${formatNumberForPDF(amount, decimalsOf(code))} ${symbolOf(code)}`;
+
+  // Rend le rapport PDF PAR DEVISE, dans le style classique : pour chaque devise,
+  // un titre (si plusieurs devises) + une synthèse horizontale (Ouverture /
+  // Entrées / Sorties / Clôture) + un tableau de détail. Aucune somme mélangée.
+  // `detailFor(code, opening)` renvoie l'en-tête et le corps du tableau détail.
+  const renderCurrencySections = (
+    doc: Parameters<typeof addSummarySection>[0],
+    startY: number,
+    pageWidth: number,
+    rows: CurrencyReportRow[] | undefined,
+    detailFor: (code: string, opening: number) => { head: string[][]; body: string[][] },
+    tableOpts: Parameters<typeof addTable>[4],
+  ): number => {
+    const list = rows && rows.length > 0 ? rows : [];
+    const multi = list.length > 1;
+    let y = startY;
+    if (list.length === 0) {
+      return addSummarySection(doc, y, pageWidth, [
+        { label: "Solde ouverture", value: pdfMoney(0, defaultCurrency.code) },
+      ]);
+    }
+    list.forEach((r) => {
+      if (multi) {
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(0, 0, 0);
+        doc.text(`Devise : ${r.currency}`, 14, y);
+        y += 6;
+      }
+      y = addSummarySection(doc, y, pageWidth, [
+        { label: "Solde ouverture", value: pdfMoney(r.opening_balance, r.currency) },
+        { label: "Total entrées", value: `${sgn(r.total_in, "+")}${pdfMoney(r.total_in, r.currency)}`, color: "green" },
+        { label: "Total sorties", value: `${sgn(r.total_out, "-")}${pdfMoney(r.total_out, r.currency)}`, color: "red" },
+        { label: "Solde clôture", value: pdfMoney(r.closing_balance, r.currency), color: "blue" },
+      ]);
+      const { head, body } = detailFor(r.currency, parseFloat(r.opening_balance));
+      y = addTable(doc, y, head, body, tableOpts);
+      y += 4;
+    });
+    return y;
+  };
+
   function printDailyReport() {
     if (!dailyReport || !organization) return;
 
@@ -223,32 +379,30 @@ export default function CashbookReportsPage() {
       organizationName: organization.name,
     });
 
-    let y = addSummarySection(doc, startY, pageWidth, [
-      { label: "Solde ouverture", value: formatCurrencyForPDF(dailyReport.opening_balance) },
-      { label: "Total entrées", value: `+${formatCurrencyForPDF(dailyReport.total_in)}`, color: "green" },
-      { label: "Total sorties", value: `-${formatCurrencyForPDF(dailyReport.total_out)}`, color: "red" },
-      { label: "Solde clôture", value: formatCurrencyForPDF(dailyReport.closing_balance), color: "blue" },
-    ]);
-
-    let runningBalance = parseFloat(dailyReport.opening_balance);
-    const tableData = dailyReport.movements.results.map((m) => {
-      const amount = parseFloat(m.amount);
-      if (m.direction === "in") runningBalance += amount;
-      else runningBalance -= amount;
-      return [
-        new Date(m.movement_date).toLocaleTimeString("fr-CD", { hour: "2-digit", minute: "2-digit" }),
-        MOVEMENT_TYPE_LABELS[m.movement_type] || m.movement_type,
-        m.description.substring(0, 35),
-        m.direction === "in" ? `+${formatCurrencyForPDF(m.amount)}` : "",
-        m.direction === "out" ? `-${formatCurrencyForPDF(m.amount)}` : "",
-        formatCurrencyForPDF(runningBalance),
-      ];
-    });
-
-    y = addTable(doc, y, [["Heure", "Type", "Description", "Entrée", "Sortie", "Solde cumul"]], tableData, {
-      columnStyles: { 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" } },
-      highlightColumn: 5,
-    });
+    const y = renderCurrencySections(
+      doc, startY, pageWidth, dailyReport.by_currency,
+      (code, opening) => {
+        let running = opening;
+        const body = dailyReport.movements.results
+          .filter((m) => m.currency === code)
+          .map((m) => {
+            running += (m.direction === "in" ? 1 : -1) * parseFloat(m.amount);
+            return [
+              new Date(m.movement_date).toLocaleTimeString("fr-CD", { hour: "2-digit", minute: "2-digit" }),
+              MOVEMENT_TYPE_LABELS[m.movement_type] || m.movement_type,
+              m.description.substring(0, 30),
+              m.direction === "in" ? `+${pdfMoney(m.amount, code)}` : "",
+              m.direction === "out" ? `-${pdfMoney(m.amount, code)}` : "",
+              pdfMoney(running, code),
+            ];
+          });
+        return { head: [["Heure", "Type", "Description", "Entrée", "Sortie", "Solde cumul"]], body };
+      },
+      {
+        columnStyles: { 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" } },
+        highlightColumn: 5,
+      },
+    );
 
     addSignatureSection(doc, y, pageWidth, ["Caissier", "Responsable"]);
     doc.save(`rapport-journalier-${selectedDate}.pdf`);
@@ -263,30 +417,28 @@ export default function CashbookReportsPage() {
       organizationName: organization.name,
     });
 
-    let y = addSummarySection(doc, startY, pageWidth, [
-      { label: "Solde ouverture", value: formatCurrencyForPDF(monthlyReport.opening_balance) },
-      { label: "Total entrées", value: `+${formatCurrencyForPDF(monthlyReport.total_in)}`, color: "green" },
-      { label: "Total sorties", value: `-${formatCurrencyForPDF(monthlyReport.total_out)}`, color: "red" },
-      { label: "Solde clôture", value: formatCurrencyForPDF(monthlyReport.closing_balance), color: "blue" },
-    ]);
-
-    let runningBalance = parseFloat(monthlyReport.opening_balance);
-    const tableData = monthlyReport.by_day.map((day) => {
-      const dayIn = parseFloat(day.total_in);
-      const dayOut = parseFloat(day.total_out);
-      runningBalance += dayIn - dayOut;
-      return [
-        formatDateForPDF(day.day),
-        `+${formatCurrencyForPDF(day.total_in)}`,
-        `-${formatCurrencyForPDF(day.total_out)}`,
-        formatCurrencyForPDF(runningBalance),
-      ];
-    });
-
-    y = addTable(doc, y, [["Date", "Entrées", "Sorties", "Solde cumul"]], tableData, {
-      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
-      highlightColumn: 3,
-    });
+    const y = renderCurrencySections(
+      doc, startY, pageWidth, monthlyReport.by_currency,
+      (code, opening) => {
+        let running = opening;
+        const body = monthlyReport.by_day
+          .filter((day) => day.currency === code)
+          .map((day) => {
+            running += parseFloat(day.total_in) - parseFloat(day.total_out);
+            return [
+              formatDateForPDF(day.day),
+              `${sgn(day.total_in, "+")}${pdfMoney(day.total_in, code)}`,
+              `${sgn(day.total_out, "-")}${pdfMoney(day.total_out, code)}`,
+              pdfMoney(running, code),
+            ];
+          });
+        return { head: [["Date", "Entrées", "Sorties", "Solde cumul"]], body };
+      },
+      {
+        columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
+        highlightColumn: 3,
+      },
+    );
 
     addSignatureSection(doc, y, pageWidth, ["Caissier", "Responsable"]);
     doc.save(`rapport-mensuel-${selectedYear}-${String(selectedMonth).padStart(2, "0")}.pdf`);
@@ -301,30 +453,28 @@ export default function CashbookReportsPage() {
       organizationName: organization.name,
     });
 
-    let y = addSummarySection(doc, startY, pageWidth, [
-      { label: "Solde ouverture", value: formatCurrencyForPDF(annualReport.opening_balance) },
-      { label: "Total entrées", value: `+${formatCurrencyForPDF(annualReport.total_in)}`, color: "green" },
-      { label: "Total sorties", value: `-${formatCurrencyForPDF(annualReport.total_out)}`, color: "red" },
-      { label: "Solde clôture", value: formatCurrencyForPDF(annualReport.closing_balance), color: "blue" },
-    ]);
-
-    let runningBalance = parseFloat(annualReport.opening_balance);
-    const tableData = annualReport.by_month.map((m) => {
-      const mIn = parseFloat(m.total_in);
-      const mOut = parseFloat(m.total_out);
-      runningBalance += mIn - mOut;
-      return [
-        formatMonthForPDF(m.month),
-        `+${formatCurrencyForPDF(m.total_in)}`,
-        `-${formatCurrencyForPDF(m.total_out)}`,
-        formatCurrencyForPDF(runningBalance),
-      ];
-    });
-
-    y = addTable(doc, y, [["Mois", "Entrées", "Sorties", "Solde cumul"]], tableData, {
-      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
-      highlightColumn: 3,
-    });
+    const y = renderCurrencySections(
+      doc, startY, pageWidth, annualReport.by_currency,
+      (code, opening) => {
+        let running = opening;
+        const body = annualReport.by_month
+          .filter((m) => m.currency === code)
+          .map((m) => {
+            running += parseFloat(m.total_in) - parseFloat(m.total_out);
+            return [
+              formatMonthForPDF(m.month),
+              `${sgn(m.total_in, "+")}${pdfMoney(m.total_in, code)}`,
+              `${sgn(m.total_out, "-")}${pdfMoney(m.total_out, code)}`,
+              pdfMoney(running, code),
+            ];
+          });
+        return { head: [["Mois", "Entrées", "Sorties", "Solde cumul"]], body };
+      },
+      {
+        columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
+        highlightColumn: 3,
+      },
+    );
 
     addSignatureSection(doc, y, pageWidth, ["Caissier", "Responsable"]);
     doc.save(`rapport-annuel-${annualYear}.pdf`);
@@ -339,30 +489,28 @@ export default function CashbookReportsPage() {
       organizationName: organization.name,
     });
 
-    let y = addSummarySection(doc, startY, pageWidth, [
-      { label: "Solde ouverture", value: formatCurrencyForPDF(customReport.opening_balance) },
-      { label: "Total entrées", value: `+${formatCurrencyForPDF(customReport.total_in)}`, color: "green" },
-      { label: "Total sorties", value: `-${formatCurrencyForPDF(customReport.total_out)}`, color: "red" },
-      { label: "Solde clôture", value: formatCurrencyForPDF(customReport.closing_balance), color: "blue" },
-    ]);
-
-    let runningBalance = parseFloat(customReport.opening_balance);
-    const tableData = customReport.by_day.map((day) => {
-      const dayIn = parseFloat(day.total_in);
-      const dayOut = parseFloat(day.total_out);
-      runningBalance += dayIn - dayOut;
-      return [
-        formatDateForPDF(day.day),
-        `+${formatCurrencyForPDF(day.total_in)}`,
-        `-${formatCurrencyForPDF(day.total_out)}`,
-        formatCurrencyForPDF(runningBalance),
-      ];
-    });
-
-    y = addTable(doc, y, [["Date", "Entrées", "Sorties", "Solde cumul"]], tableData, {
-      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
-      highlightColumn: 3,
-    });
+    const y = renderCurrencySections(
+      doc, startY, pageWidth, customReport.by_currency,
+      (code, opening) => {
+        let running = opening;
+        const body = customReport.by_day
+          .filter((day) => day.currency === code)
+          .map((day) => {
+            running += parseFloat(day.total_in) - parseFloat(day.total_out);
+            return [
+              formatDateForPDF(day.day),
+              `${sgn(day.total_in, "+")}${pdfMoney(day.total_in, code)}`,
+              `${sgn(day.total_out, "-")}${pdfMoney(day.total_out, code)}`,
+              pdfMoney(running, code),
+            ];
+          });
+        return { head: [["Date", "Entrées", "Sorties", "Solde cumul"]], body };
+      },
+      {
+        columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
+        highlightColumn: 3,
+      },
+    );
 
     addSignatureSection(doc, y, pageWidth, ["Caissier", "Responsable"]);
     doc.save(`rapport-personnalise-${customDateFrom}-${customDateTo}.pdf`);
@@ -440,69 +588,8 @@ export default function CashbookReportsPage() {
             </div>
           ) : dailyReport ? (
             <>
-              {/* Summary Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-gray-500">
-                      Solde d&apos;ouverture
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold">
-                      {formatPrice(dailyReport.opening_balance)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-green-600">
-                      Total entrées
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold text-green-600">
-                      +{formatPrice(dailyReport.total_in)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-red-600">
-                      Total sorties
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold text-red-600">
-                      -{formatPrice(dailyReport.total_out)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-purple-600">
-                      Net
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className={`text-lg font-bold ${parseFloat(dailyReport.net) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {formatPrice(dailyReport.net)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-blue-600">
-                      Solde de clôture
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold text-blue-600">
-                      {formatPrice(dailyReport.closing_balance)}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              {/* Synthèse par devise */}
+              {renderReportSummaryCards(dailyReport.by_currency)}
 
               {/* By Type */}
               {dailyReport.by_type.length > 0 && (
@@ -515,6 +602,7 @@ export default function CashbookReportsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Type</TableHead>
+                          <TableHead>Devise</TableHead>
                           <TableHead>Direction</TableHead>
                           <TableHead className="text-right">Nombre</TableHead>
                           <TableHead className="text-right">Total</TableHead>
@@ -526,6 +614,7 @@ export default function CashbookReportsPage() {
                             <TableCell className="font-medium">
                               {MOVEMENT_TYPE_LABELS[item.movement_type] || item.movement_type}
                             </TableCell>
+                            <TableCell className="font-medium text-gray-600">{item.currency}</TableCell>
                             <TableCell>
                               <Badge
                                 className={
@@ -543,7 +632,7 @@ export default function CashbookReportsPage() {
                                 }`}
                             >
                               {item.direction === "in" ? "+" : "-"}
-                              {formatPrice(item.total)}
+                              {amountOnly(item.total, item.currency)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -610,10 +699,10 @@ export default function CashbookReportsPage() {
                                 }`}
                             >
                               {m.direction === "in" ? "+" : "-"}
-                              {formatPrice(m.amount)}
+                              {money(m.amount, m.currency)}
                             </TableCell>
                             <TableCell className="text-right text-sm text-gray-600">
-                              {formatPrice(m.balance_after)}
+                              {money(m.balance_after, m.currency)}
                             </TableCell>
                           </TableRow>
                         ))
@@ -666,69 +755,8 @@ export default function CashbookReportsPage() {
             </div>
           ) : monthlyReport ? (
             <>
-              {/* Summary Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-gray-500">
-                      Solde d&apos;ouverture
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-lg font-bold">
-                      {formatPrice(monthlyReport.opening_balance)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-green-600">
-                      Total entrées
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold text-green-600">
-                      +{formatPrice(monthlyReport.total_in)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-red-600">
-                      Total sorties
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold text-red-600">
-                      -{formatPrice(monthlyReport.total_out)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-purple-600">
-                      Net
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className={`text-lg font-bold ${parseFloat(monthlyReport.net) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {formatPrice(monthlyReport.net)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-blue-600">
-                      Solde de clôture
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold text-blue-600">
-                      {formatPrice(monthlyReport.closing_balance)}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              {/* Synthèse par devise */}
+              {renderReportSummaryCards(monthlyReport.by_currency)}
 
               {/* Daily Breakdown */}
               <Card>
@@ -740,6 +768,7 @@ export default function CashbookReportsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>
+                        <TableHead>Devise</TableHead>
                         <TableHead className="text-right">Entrées</TableHead>
                         <TableHead className="text-right">Sorties</TableHead>
                         <TableHead className="text-right">Solde cumul</TableHead>
@@ -747,18 +776,24 @@ export default function CashbookReportsPage() {
                     </TableHeader>
                     <TableBody>
                       {(() => {
-                        let runningBalance = parseFloat(monthlyReport.opening_balance);
+                        // Solde cumulé PAR DEVISE (jamais mélangé), amorcé sur
+                        // l'ouverture de chaque devise.
+                        const running: Record<string, number> = {};
+                        (monthlyReport.by_currency || []).forEach((r) => {
+                          running[r.currency] = parseFloat(r.opening_balance);
+                        });
                         return monthlyReport.by_day.map((day, i) => {
-                          const dayIn = parseFloat(day.total_in);
-                          const dayOut = parseFloat(day.total_out);
-                          runningBalance += dayIn - dayOut;
+                          const cur = day.currency;
+                          if (running[cur] === undefined) running[cur] = 0;
+                          running[cur] += parseFloat(day.total_in) - parseFloat(day.total_out);
                           return (
                             <TableRow key={i}>
                               <TableCell className="font-medium">{formatDayShort(day.day)}</TableCell>
-                              <TableCell className="text-right text-green-600">+{formatPrice(day.total_in)}</TableCell>
-                              <TableCell className="text-right text-red-600">-{formatPrice(day.total_out)}</TableCell>
+                              <TableCell className="text-gray-600">{cur}</TableCell>
+                              <TableCell className="text-right text-green-600">{sgn(day.total_in, "+")}{amountOnly(day.total_in, cur)}</TableCell>
+                              <TableCell className="text-right text-red-600">{sgn(day.total_out, "-")}{amountOnly(day.total_out, cur)}</TableCell>
                               <TableCell className="text-right font-semibold text-blue-600">
-                                {formatPrice(runningBalance)}
+                                {amountOnly(running[cur], cur)}
                               </TableCell>
                             </TableRow>
                           );
@@ -766,7 +801,7 @@ export default function CashbookReportsPage() {
                       })()}
                       {monthlyReport.by_day.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8 text-gray-500">
+                          <TableCell colSpan={5} className="text-center py-8 text-gray-500">
                             Aucun mouvement ce mois
                           </TableCell>
                         </TableRow>
@@ -807,50 +842,8 @@ export default function CashbookReportsPage() {
             </div>
           ) : annualReport ? (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-gray-500">Solde d&apos;ouverture</CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold">{formatPrice(annualReport.opening_balance)}</div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-green-600">Total entrées</CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold text-green-600">+{formatPrice(annualReport.total_in)}</div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-red-600">Total sorties</CardTitle>
-                  </CardHeader>
-                  <CardContent >
-                    <div className="text-lg font-bold text-red-600">-{formatPrice(annualReport.total_out)}</div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-purple-600">Net</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className={`text-lg font-bold ${parseFloat(annualReport.net) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {formatPrice(annualReport.net)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-blue-600">Solde de clôture</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-lg font-bold text-blue-600">{formatPrice(annualReport.closing_balance)}</div>
-                  </CardContent>
-                </Card>
-              </div>
+              {/* Synthèse par devise */}
+              {renderReportSummaryCards(annualReport.by_currency)}
 
               <Card>
                 <CardHeader>
@@ -861,6 +854,7 @@ export default function CashbookReportsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Mois</TableHead>
+                        <TableHead>Devise</TableHead>
                         <TableHead className="text-right">Entrées</TableHead>
                         <TableHead className="text-right">Sorties</TableHead>
                         <TableHead className="text-right">Solde cumul</TableHead>
@@ -868,18 +862,22 @@ export default function CashbookReportsPage() {
                     </TableHeader>
                     <TableBody>
                       {(() => {
-                        let runningBalance = parseFloat(annualReport.opening_balance);
+                        const running: Record<string, number> = {};
+                        (annualReport.by_currency || []).forEach((r) => {
+                          running[r.currency] = parseFloat(r.opening_balance);
+                        });
                         return annualReport.by_month.map((m, i) => {
-                          const mIn = parseFloat(m.total_in);
-                          const mOut = parseFloat(m.total_out);
-                          runningBalance += mIn - mOut;
+                          const cur = m.currency;
+                          if (running[cur] === undefined) running[cur] = 0;
+                          running[cur] += parseFloat(m.total_in) - parseFloat(m.total_out);
                           return (
                             <TableRow key={i}>
                               <TableCell className="font-medium">{formatMonthShort(m.month)}</TableCell>
-                              <TableCell className="text-right text-green-600">+{formatPrice(m.total_in)}</TableCell>
-                              <TableCell className="text-right text-red-600">-{formatPrice(m.total_out)}</TableCell>
+                              <TableCell className="text-gray-600">{cur}</TableCell>
+                              <TableCell className="text-right text-green-600">{sgn(m.total_in, "+")}{amountOnly(m.total_in, cur)}</TableCell>
+                              <TableCell className="text-right text-red-600">{sgn(m.total_out, "-")}{amountOnly(m.total_out, cur)}</TableCell>
                               <TableCell className="text-right font-semibold text-blue-600">
-                                {formatPrice(runningBalance)}
+                                {amountOnly(running[cur], cur)}
                               </TableCell>
                             </TableRow>
                           );
@@ -887,7 +885,7 @@ export default function CashbookReportsPage() {
                       })()}
                       {annualReport.by_month.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8 text-gray-500">Aucun mouvement cette année</TableCell>
+                          <TableCell colSpan={5} className="text-center py-8 text-gray-500">Aucun mouvement cette année</TableCell>
                         </TableRow>
                       )}
                     </TableBody>
@@ -935,50 +933,8 @@ export default function CashbookReportsPage() {
             </div>
           ) : customReport ? (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-gray-500">Solde d&apos;ouverture</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-lg font-bold">{formatPrice(customReport.opening_balance)}</div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-green-600">Total entrées</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-lg font-bold text-green-600">+{formatPrice(customReport.total_in)}</div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-red-600">Total sorties</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-lg font-bold text-red-600">-{formatPrice(customReport.total_out)}</div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-purple-600">Net</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className={`text-lg font-bold ${parseFloat(customReport.net) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {formatPrice(customReport.net)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="gap-0">
-                  <CardHeader>
-                    <CardTitle className="text-xs font-medium text-blue-600">Solde de clôture</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-lg font-bold text-blue-600">{formatPrice(customReport.closing_balance)}</div>
-                  </CardContent>
-                </Card>
-              </div>
+              {/* Synthèse par devise */}
+              {renderReportSummaryCards(customReport.by_currency)}
 
               <Card>
                 <CardHeader>
@@ -989,6 +945,7 @@ export default function CashbookReportsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>
+                        <TableHead>Devise</TableHead>
                         <TableHead className="text-right">Entrées</TableHead>
                         <TableHead className="text-right">Sorties</TableHead>
                         <TableHead className="text-right">Solde cumul</TableHead>
@@ -996,18 +953,22 @@ export default function CashbookReportsPage() {
                     </TableHeader>
                     <TableBody>
                       {(() => {
-                        let runningBalance = parseFloat(customReport.opening_balance);
+                        const running: Record<string, number> = {};
+                        (customReport.by_currency || []).forEach((r) => {
+                          running[r.currency] = parseFloat(r.opening_balance);
+                        });
                         return customReport.by_day.map((day, i) => {
-                          const dayIn = parseFloat(day.total_in);
-                          const dayOut = parseFloat(day.total_out);
-                          runningBalance += dayIn - dayOut;
+                          const cur = day.currency;
+                          if (running[cur] === undefined) running[cur] = 0;
+                          running[cur] += parseFloat(day.total_in) - parseFloat(day.total_out);
                           return (
                             <TableRow key={i}>
                               <TableCell className="font-medium">{formatDayShort(day.day)}</TableCell>
-                              <TableCell className="text-right text-green-600">+{formatPrice(day.total_in)}</TableCell>
-                              <TableCell className="text-right text-red-600">-{formatPrice(day.total_out)}</TableCell>
+                              <TableCell className="text-gray-600">{cur}</TableCell>
+                              <TableCell className="text-right text-green-600">{sgn(day.total_in, "+")}{amountOnly(day.total_in, cur)}</TableCell>
+                              <TableCell className="text-right text-red-600">{sgn(day.total_out, "-")}{amountOnly(day.total_out, cur)}</TableCell>
                               <TableCell className="text-right font-semibold text-blue-600">
-                                {formatPrice(runningBalance)}
+                                {amountOnly(running[cur], cur)}
                               </TableCell>
                             </TableRow>
                           );
@@ -1015,7 +976,7 @@ export default function CashbookReportsPage() {
                       })()}
                       {customReport.by_day.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8 text-gray-500">Aucun mouvement sur cette période</TableCell>
+                          <TableCell colSpan={5} className="text-center py-8 text-gray-500">Aucun mouvement sur cette période</TableCell>
                         </TableRow>
                       )}
                     </TableBody>

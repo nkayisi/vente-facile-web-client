@@ -926,13 +926,22 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          {/* Solde caisse */}
+          {/* Solde caisse — le chiffre principal est l'équivalent converti en
+              devise principale ; le détail par devise montre le tiroir réel
+              (40 USD et 46 000 CDF coexistent, ils ne s'additionnent pas). */}
           <Card className="py-1">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-500">Solde caisse</p>
                   <StatValue value={formatPrice(parseFloat(summary.cashbook.current_balance))} />
+                  {(summary.cashbook.balance_by_currency?.length ?? 0) > 1 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {summary.cashbook.balance_by_currency!
+                        .map((b) => `${formatNumber(parseFloat(b.balance))} ${b.currency}`)
+                        .join(" · ")}
+                    </p>
+                  )}
                   <p className="text-sm text-gray-500 mt-1">
                     Flux net: {formatPrice(parseFloat(summary.cashbook.net_flow))}
                   </p>

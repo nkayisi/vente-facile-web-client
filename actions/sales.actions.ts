@@ -981,7 +981,9 @@ export async function markReceiptPrinted(
 ): Promise<ApiResponse<Sale>> {
   try {
     const response = await axios.post(
-      `${API_BASE_URL}/sales/${saleId}/mark_receipt_printed/`,
+      // Le backend expose l'action en `mark-receipt-printed` (tirets, cf.
+      // url_path). Utiliser des underscores renvoyait un 404 → toast d'erreur.
+      `${API_BASE_URL}/sales/${saleId}/mark-receipt-printed/`,
       {},
       { headers: getHeaders(accessToken, organizationId) }
     );

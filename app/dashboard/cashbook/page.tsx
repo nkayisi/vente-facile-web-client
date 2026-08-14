@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -21,13 +21,17 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatDateTime } from "@/lib/format";
-import { StatValue } from "@/components/shared/StatValue";
+import { formatDateTime } from "@/lib/format";
+import { createMoneyHelpers } from "@/lib/currency";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
   getUserOrganizations,
   Organization,
 } from "@/actions/organization.actions";
+import {
+  getOrganizationCurrencies,
+  OrganizationCurrency,
+} from "@/actions/settings.actions";
 import {
   getCashBalance,
   getCashMovements,
@@ -37,6 +41,7 @@ import {
   createIncomeCategory,
   CashBalance,
   CashMovement,
+  CurrencyBalance,
   CreateCashMovementData,
   IncomeCategory,
   CashMovementFilters,
@@ -106,6 +111,46 @@ export default function CashbookPage() {
   const [balance, setBalance] = useState<CashBalance | null>(null);
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
+
+  // Formatage par devise : chaque montant est affiché avec le symbole et le
+  // nombre de décimales de SA devise (CDF = 0, USD/EUR = 2). Jamais de mélange.
+  const { symbolOf, money, amountOnly, convMoney, rateOf, primaryCode } = useMemo(
+    () => createMoneyHelpers(orgCurrencies, defaultCurrency),
+    [orgCurrencies, defaultCurrency]
+  );
+
+  // Rend, dans une carte, une ligne « DEVISE : montant » par devise en caisse.
+  // `pick` extrait la valeur voulue (solde, entrées, sorties, net) de chaque devise.
+  const renderCurrencyLines = (
+    pick: (c: CurrencyBalance) => string,
+    opts?: { sign?: string; className?: string; colorBySign?: boolean }
+  ) => {
+    const rows = balance?.by_currency ?? [];
+    if (rows.length === 0) {
+      return <div className="text-xl font-bold">{amountOnly(0, defaultCurrency.code)} {defaultCurrency.code}</div>;
+    }
+    return (
+      <div className="space-y-1">
+        {rows.map((cb) => {
+          const val = pick(cb);
+          const cls = opts?.colorBySign
+            ? parseFloat(val) >= 0 ? "text-green-600" : "text-red-600"
+            : opts?.className ?? "";
+          // Pas de signe sur un montant nul (évite « -0 » / « +0 »).
+          const sign = opts?.sign && (parseFloat(val) || 0) !== 0 ? opts.sign : "";
+          return (
+            <div key={cb.currency} className="flex items-baseline justify-between gap-2">
+              <span className="text-xs font-medium text-gray-400">{cb.currency}</span>
+              <span className={`text-lg font-bold ${cls}`}>
+                {sign}{amountOnly(val, cb.currency)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -118,6 +163,7 @@ export default function CashbookPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [directionFilter, setDirectionFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [currencyFilter, setCurrencyFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -142,12 +188,20 @@ export default function CashbookPage() {
   const [cancelTarget, setCancelTarget] = useState<CashMovement | null>(null);
   const [cancelReason, setCancelReason] = useState("");
 
+  // Devise de l'entrée en cours de saisie (repli : devise principale).
+  const movementCurrency = createForm.currency || primaryCode;
+
   useEffect(() => {
     async function fetchOrganization() {
       if (session?.accessToken) {
         const result = await getUserOrganizations(session.accessToken);
         if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
+          const org = result.data[0];
+          setOrganization(org);
+          const ccyRes = await getOrganizationCurrencies(session.accessToken, org.id);
+          if (ccyRes.success && ccyRes.data) {
+            setOrgCurrencies(Array.isArray(ccyRes.data) ? ccyRes.data : []);
+          }
         }
       }
     }
@@ -159,7 +213,7 @@ export default function CashbookPage() {
       fetchData();
       loadIncomeCategories();
     }
-  }, [organization, session?.accessToken, directionFilter, typeFilter, dateFrom, dateTo, currentPage]);
+  }, [organization, session?.accessToken, directionFilter, typeFilter, currencyFilter, dateFrom, dateTo, currentPage]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -177,6 +231,7 @@ export default function CashbookPage() {
       const filters: CashMovementFilters = {
         direction: directionFilter !== "all" ? directionFilter : undefined,
         movement_type: typeFilter !== "all" ? typeFilter : undefined,
+        currency: currencyFilter !== "all" ? currencyFilter : undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         search: searchQuery || undefined,
@@ -210,6 +265,7 @@ export default function CashbookPage() {
       const filters: CashMovementFilters = {
         direction: directionFilter !== "all" ? directionFilter : undefined,
         movement_type: typeFilter !== "all" ? typeFilter : undefined,
+        currency: currencyFilter !== "all" ? currencyFilter : undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         search: searchQuery || undefined,
@@ -253,6 +309,7 @@ export default function CashbookPage() {
       direction: "in",
       movement_type: "other_in",
       amount: "",
+      currency: primaryCode,
       description: "",
       movement_date: new Date().toISOString(),
       notes: "",
@@ -388,7 +445,7 @@ export default function CashbookPage() {
         </div>
       </div>
 
-      {/* Balance Cards */}
+      {/* Balance Cards — 4 métriques, chacune ventilée PAR DEVISE (tiroir réel) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="gap-0">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -400,7 +457,7 @@ export default function CashbookPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <StatValue value={balance ? formatPrice(balance.balance) : formatPrice(0)} />
+            {renderCurrencyLines((c) => c.balance)}
           </CardContent>
         </Card>
 
@@ -414,7 +471,7 @@ export default function CashbookPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <StatValue value={`+${balance ? formatPrice(balance.today_in) : formatPrice(0)}`} color="text-green-600" />
+            {renderCurrencyLines((c) => c.today_in, { sign: "+", className: "text-green-600" })}
           </CardContent>
         </Card>
 
@@ -428,7 +485,7 @@ export default function CashbookPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <StatValue value={`-${balance ? formatPrice(balance.today_out) : formatPrice(0)}`} color="text-red-600" />
+            {renderCurrencyLines((c) => c.today_out, { sign: "-", className: "text-red-600" })}
           </CardContent>
         </Card>
 
@@ -442,10 +499,7 @@ export default function CashbookPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <StatValue
-              value={balance ? formatPrice(balance.today_net) : formatPrice(0)}
-              color={balance && parseFloat(balance.today_net) >= 0 ? "text-green-600" : "text-red-600"}
-            />
+            {renderCurrencyLines((c) => c.today_net, { colorBySign: true })}
           </CardContent>
         </Card>
       </div>
@@ -490,6 +544,24 @@ export default function CashbookPage() {
             <SelectItem value="other_out">Autre sortie</SelectItem>
           </SelectContent>
         </Select>
+        {orgCurrencies.length > 1 && (
+          <Select
+            value={currencyFilter}
+            onValueChange={(v) => handleFilterChange(setCurrencyFilter, v)}
+          >
+            <SelectTrigger className="w-full sm:w-[140px]">
+              <SelectValue placeholder="Devise" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes devises</SelectItem>
+              {orgCurrencies.map((c) => (
+                <SelectItem key={c.currency_code} value={c.currency_code}>
+                  {c.currency_code}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Input
           type="date"
           value={dateFrom}
@@ -578,10 +650,10 @@ export default function CashbookPage() {
                         }`}
                     >
                       {m.direction === "in" ? "+" : "-"}
-                      {formatPrice(m.amount)}
+                      {money(m.amount, m.currency)}
                     </TableCell>
                     <TableCell className="text-right text-sm text-gray-600 hidden md:table-cell">
-                      {formatPrice(m.balance_after)}
+                      {money(m.balance_after, m.currency)}
                     </TableCell>
                     <TableCell className="text-sm text-gray-500 hidden lg:table-cell">
                       {m.created_by_name}
@@ -715,7 +787,44 @@ export default function CashbookPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label>Montant ({defaultCurrency.symbol}) *</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Montant ({symbolOf(movementCurrency)}) *</Label>
+                {/* Devise de l'entrée : c'est ce qui entre PHYSIQUEMENT au
+                    tiroir. Chaque devise se cumule séparément — on ne convertit
+                    pas. Le taux est résolu côté serveur. */}
+                {orgCurrencies.length > 1 && (
+                  <div className="flex gap-1">
+                    {orgCurrencies.map((c) => {
+                      const isActive = movementCurrency === c.currency_code;
+                      return (
+                        <button
+                          key={c.currency_code}
+                          type="button"
+                          onClick={() => {
+                            const amt = parseFloat(createForm.amount) || 0;
+                            const converted =
+                              amt > 0
+                                ? convMoney(amt, movementCurrency, c.currency_code).toString()
+                                : createForm.amount;
+                            setCreateForm({
+                              ...createForm,
+                              currency: c.currency_code,
+                              amount: converted,
+                            });
+                          }}
+                          className={`px-2 py-1 rounded-md border text-xs font-semibold transition-colors ${
+                            isActive
+                              ? "border-green-500 bg-green-50 text-green-700"
+                              : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                          }`}
+                        >
+                          {c.currency_code}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <Input
                 type="number"
                 min="0"
@@ -726,6 +835,18 @@ export default function CashbookPage() {
                 }
                 placeholder="0.00"
               />
+              {movementCurrency !== primaryCode && parseFloat(createForm.amount) > 0 && (
+                <p className="text-xs text-gray-500">
+                  ={" "}
+                  {money(
+                    convMoney(parseFloat(createForm.amount), movementCurrency, primaryCode),
+                    primaryCode
+                  )}{" "}
+                  (1 {movementCurrency} ={" "}
+                  {amountOnly(rateOf(movementCurrency) / rateOf(primaryCode), primaryCode)}{" "}
+                  {symbolOf(primaryCode)})
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Description *</Label>

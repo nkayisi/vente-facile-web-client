@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -18,12 +18,17 @@ import {
   Settings,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { createMoneyHelpers } from "@/lib/currency";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
   getUserOrganizations,
   Organization,
 } from "@/actions/organization.actions";
+import {
+  getOrganizationCurrencies,
+  OrganizationCurrency,
+} from "@/actions/settings.actions";
 import {
   getExpenses,
   createExpense,
@@ -34,8 +39,10 @@ import {
   cancelExpense,
   getExpenseCategories,
   createExpenseCategory,
+  getExpenseStats,
   Expense,
   ExpenseCategory,
+  ExpenseStats,
   CreateExpenseData,
 } from "@/actions/cashbook.actions";
 import { usePermissions } from "@/components/auth/permissions-provider";
@@ -98,6 +105,15 @@ export default function ExpensesPage() {
   // Data
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
+  const [stats, setStats] = useState<ExpenseStats | null>(null);
+
+  // Chaque dépense est affichée dans SA devise (symbole + décimales propres).
+  // Les totaux sont ventilés par devise, jamais additionnés entre elles.
+  const { symbolOf, money, amountOnly, convMoney, rateOf, primaryCode } = useMemo(
+    () => createMoneyHelpers(orgCurrencies, defaultCurrency),
+    [orgCurrencies, defaultCurrency]
+  );
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -110,6 +126,7 @@ export default function ExpensesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [currencyFilter, setCurrencyFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -141,12 +158,20 @@ export default function ExpensesPage() {
   const [cancelTarget, setCancelTarget] = useState<Expense | null>(null);
   const [cancelReason, setCancelReason] = useState("");
 
+  // Devise de la dépense en cours de saisie (repli : devise principale).
+  const expenseCurrency = createForm.currency || primaryCode;
+
   useEffect(() => {
     async function fetchOrganization() {
       if (session?.accessToken) {
         const result = await getUserOrganizations(session.accessToken);
         if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
+          const org = result.data[0];
+          setOrganization(org);
+          const ccyRes = await getOrganizationCurrencies(session.accessToken, org.id);
+          if (ccyRes.success && ccyRes.data) {
+            setOrgCurrencies(Array.isArray(ccyRes.data) ? ccyRes.data : []);
+          }
         }
       }
     }
@@ -157,7 +182,7 @@ export default function ExpensesPage() {
     if (organization && session?.accessToken) {
       fetchData();
     }
-  }, [organization, session?.accessToken, statusFilter, categoryFilter, dateFrom, dateTo]);
+  }, [organization, session?.accessToken, statusFilter, categoryFilter, currencyFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -170,10 +195,11 @@ export default function ExpensesPage() {
     if (!session?.accessToken || !organization) return;
     setIsLoading(true);
     try {
-      const [expensesRes, categoriesRes] = await Promise.all([
+      const [expensesRes, categoriesRes, statsRes] = await Promise.all([
         getExpenses(session.accessToken, organization.id, {
           status: statusFilter !== "all" ? statusFilter : undefined,
           category: categoryFilter !== "all" ? categoryFilter : undefined,
+          currency: currencyFilter !== "all" ? currencyFilter : undefined,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
           search: searchQuery || undefined,
@@ -181,6 +207,10 @@ export default function ExpensesPage() {
           page_size: pageSize,
         }),
         getExpenseCategories(session.accessToken, organization.id),
+        getExpenseStats(session.accessToken, organization.id, {
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        }),
       ]);
 
       if (expensesRes.success && expensesRes.data) {
@@ -191,6 +221,9 @@ export default function ExpensesPage() {
       }
       if (categoriesRes.success && categoriesRes.data) {
         setCategories(categoriesRes.data.results);
+      }
+      if (statsRes.success && statsRes.data) {
+        setStats(statsRes.data);
       }
     } catch {
       toast.error("Erreur lors du chargement");
@@ -205,6 +238,7 @@ export default function ExpensesPage() {
       const res = await getExpenses(session.accessToken, organization.id, {
         status: statusFilter !== "all" ? statusFilter : undefined,
         category: categoryFilter !== "all" ? categoryFilter : undefined,
+        currency: currencyFilter !== "all" ? currencyFilter : undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         search: searchQuery || undefined,
@@ -251,6 +285,7 @@ export default function ExpensesPage() {
           category: "",
           description: "",
           amount: "",
+          currency: primaryCode,
           beneficiary: "",
           expense_date: new Date().toISOString().split("T")[0],
           notes: "",
@@ -430,6 +465,49 @@ export default function ExpensesPage() {
         </div>
       </div>
 
+      {/* Totaux — ventilés par devise (jamais additionnés entre elles) + total
+          converti en devise principale pour la lecture comptable. */}
+      {stats && stats.by_currency?.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card className="py-1">
+            <CardContent className="p-4">
+              <p className="text-sm text-gray-500 mb-2">
+                Total dépensé par devise
+              </p>
+              <div className="space-y-1">
+                {stats.by_currency.map((row) => (
+                  <div
+                    key={row.currency}
+                    className="flex items-baseline justify-between gap-2"
+                  >
+                    <span className="text-xs font-medium text-gray-400">
+                      {row.currency}
+                    </span>
+                    <span className="text-lg font-bold text-orange-600">
+                      {amountOnly(row.total, row.currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="py-1">
+            <CardContent className="p-4">
+              <p className="text-sm text-gray-500 mb-2">
+                Équivalent en {stats.currency}
+              </p>
+              <p className="text-2xl font-bold text-gray-900">
+                {money(stats.total_primary, stats.currency)}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                {stats.count} dépense{stats.count > 1 ? "s" : ""} approuvée
+                {stats.count > 1 ? "s" : ""} ou payée{stats.count > 1 ? "s" : ""}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 max-w-md">
@@ -468,6 +546,21 @@ export default function ExpensesPage() {
             ))}
           </SelectContent>
         </Select>
+        {orgCurrencies.length > 1 && (
+          <Select value={currencyFilter} onValueChange={setCurrencyFilter}>
+            <SelectTrigger className="w-full sm:w-[140px]">
+              <SelectValue placeholder="Devise" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes devises</SelectItem>
+              {orgCurrencies.map((c) => (
+                <SelectItem key={c.currency_code} value={c.currency_code}>
+                  {c.currency_code}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Input
           type="date"
           value={dateFrom}
@@ -536,7 +629,7 @@ export default function ExpensesPage() {
                         {expense.beneficiary || "—"}
                       </TableCell>
                       <TableCell className="text-right font-semibold text-red-600">
-                        {formatPrice(expense.amount)}
+                        {money(expense.amount, expense.currency)}
                       </TableCell>
                       <TableCell>
                         <Badge className={`${statusCfg.color} hover:${statusCfg.color}`}>
@@ -663,7 +756,43 @@ export default function ExpensesPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Montant ({defaultCurrency.symbol}) *</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Montant ({symbolOf(expenseCurrency)}) *</Label>
+                  {/* Devise réellement décaissée. La sortie de caisse en hérite
+                      et le taux est résolu côté serveur. */}
+                  {orgCurrencies.length > 1 && (
+                    <div className="flex gap-1">
+                      {orgCurrencies.map((c) => {
+                        const isActive = expenseCurrency === c.currency_code;
+                        return (
+                          <button
+                            key={c.currency_code}
+                            type="button"
+                            onClick={() => {
+                              const amt = parseFloat(createForm.amount) || 0;
+                              const converted =
+                                amt > 0
+                                  ? convMoney(amt, expenseCurrency, c.currency_code).toString()
+                                  : createForm.amount;
+                              setCreateForm({
+                                ...createForm,
+                                currency: c.currency_code,
+                                amount: converted,
+                              });
+                            }}
+                            className={`px-2 py-1 rounded-md border text-xs font-semibold transition-colors ${
+                              isActive
+                                ? "border-orange-500 bg-orange-50 text-orange-700"
+                                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                            }`}
+                          >
+                            {c.currency_code}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 <Input
                   type="number"
                   min="0"
@@ -674,6 +803,18 @@ export default function ExpensesPage() {
                   }
                   placeholder="0.00"
                 />
+                {expenseCurrency !== primaryCode && parseFloat(createForm.amount) > 0 && (
+                  <p className="text-xs text-gray-500">
+                    ={" "}
+                    {money(
+                      convMoney(parseFloat(createForm.amount), expenseCurrency, primaryCode),
+                      primaryCode
+                    )}{" "}
+                    (1 {expenseCurrency} ={" "}
+                    {amountOnly(rateOf(expenseCurrency) / rateOf(primaryCode), primaryCode)}{" "}
+                    {symbolOf(primaryCode)})
+                  </p>
+                )}
               </div>
             </div>
             <div className="space-y-2">
