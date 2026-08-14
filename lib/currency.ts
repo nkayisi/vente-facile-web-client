@@ -39,6 +39,8 @@ export interface MoneyHelpers {
   money: (amount: string | number, code: string) => string;
   /** Montant formaté SANS symbole (quand le code est déjà affiché à côté). */
   amountOnly: (amount: string | number, code: string) => string;
+  /** Parité lisible entre deux devises : « 1 USD = 2 300 FC ». */
+  rateLabel: (from: string, to: string) => string;
 }
 
 /**
@@ -100,5 +102,15 @@ export function createMoneyHelpers(
     convMoney,
     money: (amount, code) => `${format(amount, code)} ${symbolOf(code)}`,
     amountOnly: format,
+    // Toujours énoncer la parité dans le sens qui donne un nombre lisible.
+    // « 1 CDF = 0,000434 $ » s'affichait « 1 CDF = 0 $ » une fois arrondi aux
+    // 2 décimales de l'USD : on inverse pour dire « 1 USD = 2 300 FC ».
+    rateLabel: (from, to) => {
+      const direct = rateOf(from) / rateOf(to);
+      if (direct >= 1) {
+        return `1 ${from} = ${format(direct, to)} ${symbolOf(to)}`;
+      }
+      return `1 ${to} = ${format(1 / direct, from)} ${symbolOf(from)}`;
+    },
   };
 }

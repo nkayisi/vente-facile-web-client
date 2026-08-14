@@ -47,6 +47,7 @@ import {
   CashMovementFilters,
 } from "@/actions/cashbook.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { CurrencyAmountInput } from "@/components/shared/CurrencyAmountInput";
 import { usePermissions } from "@/components/auth/permissions-provider";
 import { PermissionGate } from "@/components/auth/permission-gate";
 
@@ -115,10 +116,11 @@ export default function CashbookPage() {
 
   // Formatage par devise : chaque montant est affiché avec le symbole et le
   // nombre de décimales de SA devise (CDF = 0, USD/EUR = 2). Jamais de mélange.
-  const { symbolOf, money, amountOnly, convMoney, rateOf, primaryCode } = useMemo(
+  const moneyHelpers = useMemo(
     () => createMoneyHelpers(orgCurrencies, defaultCurrency),
     [orgCurrencies, defaultCurrency]
   );
+  const { money, amountOnly, primaryCode } = moneyHelpers;
 
   // Rend, dans une carte, une ligne « DEVISE : montant » par devise en caisse.
   // `pick` extrait la valeur voulue (solde, entrées, sorties, net) de chaque devise.
@@ -786,68 +788,20 @@ export default function CashbookPage() {
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label>Montant ({symbolOf(movementCurrency)}) *</Label>
-                {/* Devise de l'entrée : c'est ce qui entre PHYSIQUEMENT au
-                    tiroir. Chaque devise se cumule séparément — on ne convertit
-                    pas. Le taux est résolu côté serveur. */}
-                {orgCurrencies.length > 1 && (
-                  <div className="flex gap-1">
-                    {orgCurrencies.map((c) => {
-                      const isActive = movementCurrency === c.currency_code;
-                      return (
-                        <button
-                          key={c.currency_code}
-                          type="button"
-                          onClick={() => {
-                            const amt = parseFloat(createForm.amount) || 0;
-                            const converted =
-                              amt > 0
-                                ? convMoney(amt, movementCurrency, c.currency_code).toString()
-                                : createForm.amount;
-                            setCreateForm({
-                              ...createForm,
-                              currency: c.currency_code,
-                              amount: converted,
-                            });
-                          }}
-                          className={`px-2 py-1 rounded-md border text-xs font-semibold transition-colors ${
-                            isActive
-                              ? "border-green-500 bg-green-50 text-green-700"
-                              : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-                          }`}
-                        >
-                          {c.currency_code}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              <Input
-                type="number"
-                min="0"
-                step="any"
-                value={createForm.amount}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, amount: e.target.value })
-                }
-                placeholder="0.00"
-              />
-              {movementCurrency !== primaryCode && parseFloat(createForm.amount) > 0 && (
-                <p className="text-xs text-gray-500">
-                  ={" "}
-                  {money(
-                    convMoney(parseFloat(createForm.amount), movementCurrency, primaryCode),
-                    primaryCode
-                  )}{" "}
-                  (1 {movementCurrency} ={" "}
-                  {amountOnly(rateOf(movementCurrency) / rateOf(primaryCode), primaryCode)}{" "}
-                  {symbolOf(primaryCode)})
-                </p>
-              )}
-            </div>
+            <CurrencyAmountInput
+              id="movement-amount"
+              label="Montant"
+              amount={createForm.amount}
+              currency={movementCurrency}
+              currencies={orgCurrencies}
+              money={moneyHelpers}
+              onAmountChange={(amount) =>
+                setCreateForm({ ...createForm, amount })
+              }
+              onCurrencyChange={(currency, amount) =>
+                setCreateForm({ ...createForm, currency, amount })
+              }
+            />
             <div className="space-y-2">
               <Label>Description *</Label>
               <Input
