@@ -18,7 +18,7 @@ import {
   Settings,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatNumber } from "@/lib/format";
 import { createMoneyHelpers } from "@/lib/currency";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
@@ -470,7 +470,7 @@ export default function ExpensesPage() {
       {/* Totaux — ventilés par devise (jamais additionnés entre elles) + total
           converti en devise principale pour la lecture comptable. */}
       {stats && stats.by_currency?.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Card className="py-1">
             <CardContent className="p-4">
               <p className="text-sm text-gray-500 mb-2">
@@ -505,6 +505,28 @@ export default function ExpensesPage() {
                 {stats.count} dépense{stats.count > 1 ? "s" : ""} approuvée
                 {stats.count > 1 ? "s" : ""} ou payée{stats.count > 1 ? "s" : ""}
               </p>
+            </CardContent>
+          </Card>
+          <Card className="py-1">
+            <CardContent className="p-4">
+              <p className="text-sm text-gray-500 mb-2">
+                Nombre de dépenses par devise
+              </p>
+              <div className="space-y-1">
+                {stats.by_currency.map((row) => (
+                  <div
+                    key={row.currency}
+                    className="flex items-baseline justify-between gap-2"
+                  >
+                    <span className="text-xs font-medium text-gray-400">
+                      {row.currency}
+                    </span>
+                    <span className="text-lg font-bold text-gray-900 tabular-nums">
+                      {formatNumber(row.count)}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>
