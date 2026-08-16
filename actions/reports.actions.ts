@@ -592,8 +592,12 @@ export interface StockDetail {
   product_sku: string;
   category_name: string | null;
   current_stock: string;
+  /** Stock dans les termes du marchand : « 12 cartons + 3 bouteilles » */
+  stock_display?: string;
   reserved_stock: string;
   available_stock: string;
+  /** Disponible dans les mêmes termes que `stock_display` */
+  available_display?: string;
   min_stock_level: string | null;
   cost_price: string | null;
   stock_value: string;

@@ -25,6 +25,16 @@ export interface InventoryCount {
   quantity_expected: string;
   quantity_counted: string;
   quantity_difference: string;
+  /** Part attendue hors emballage scellé, figée au démarrage de la session */
+  expected_loose_quantity?: string;
+  counted_package_quantity?: string;
+  counted_loose_quantity?: string;
+  /** Contenu d'un conditionnement, `null` pour un produit vendu à l'unité */
+  packaging_factor?: number | null;
+  /** Attendu en clair : « 3 paquets + 1 bouteille » */
+  expected_display?: string;
+  counted_display?: string | null;
+  package_unit_name?: string | null;
   unit_cost: string;
   difference_value: string;
   is_counted: boolean;
@@ -98,6 +108,12 @@ export interface InventoryCountFilters {
 export interface CountItemData {
   id: string;
   quantity_counted: number;
+  /**
+   * Comptage en conditionnements. Quand ils sont fournis, le serveur recompose
+   * `quantity_counted` lui-même : c'est lui qui fait la conversion.
+   */
+  counted_package_quantity?: number;
+  counted_loose_quantity?: number;
   notes?: string;
 }
 

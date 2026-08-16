@@ -44,6 +44,8 @@ export interface Stock {
   product: string;
   product_name: string;
   product_sku: string;
+  /** Photo du produit, absente pour la plupart d'entre eux */
+  product_image?: string | null;
   variant?: string | null;
   variant_name?: string;
   warehouse: string;
@@ -53,6 +55,14 @@ export interface Stock {
   quantity: string;
   reserved_quantity: string;
   available_quantity: string;
+  /** Part du stock hors emballage scellé (produits vendus en gros) */
+  loose_quantity?: string;
+  /** Quantité prête à afficher : « 1 paquet + 10 bouteilles » */
+  stock_display?: string;
+  /** Conditionnements scellés, `null` pour un produit vendu à l'unité */
+  stock_packages?: number | null;
+  stock_loose?: string | null;
+  unit_symbol?: string | null;
   avg_cost: string;
   stock_value?: string;
   last_counted_at?: string;
@@ -80,12 +90,16 @@ export interface StockBatch {
 export type MovementType =
   | "purchase" | "sale" | "return_in" | "return_out"
   | "transfer_in" | "transfer_out" | "adjustment_in" | "adjustment_out"
-  | "damage" | "expired" | "initial" | "production_in" | "production_out";
+  | "damage" | "expired" | "initial" | "production_in" | "production_out"
+  // Produit par le serveur lors de l'ouverture d'un conditionnement. Ne change
+  // pas la quantité totale : il déplace du scellé vers le vrac.
+  | "unpack";
 
 export interface StockMovement {
   id: string;
   product: string;
   product_name: string;
+  product_sku?: string;
   variant?: string | null;
   warehouse: string;
   warehouse_name: string;
@@ -94,6 +108,10 @@ export interface StockMovement {
   movement_type: MovementType;
   movement_type_display: string;
   quantity: string;
+  /** Quantité dans les termes de la saisie : « 10 cartons + 5 bouteilles » */
+  quantity_display?: string;
+  /** Unités par conditionnement au moment du mouvement, null si vente à l'unité */
+  packaging_factor?: number | null;
   unit_cost: string;
   quantity_before: string;
   quantity_after: string;
@@ -117,6 +135,13 @@ export interface StockTransferItem {
   quantity_requested: string;
   quantity_shipped?: string;
   quantity_received?: string;
+  /** Contenants entiers demandés (produits vendus en gros) */
+  package_quantity?: string;
+  /** Unités demandées hors contenant */
+  loose_quantity?: string;
+  packaging_factor?: number | null;
+  /** Demande prête à afficher : « 4 cartons + 3 bouteilles » */
+  requested_display?: string;
   notes?: string;
 }
 
@@ -156,6 +181,14 @@ export interface StockAdjustmentItem {
   quantity_counted: number;
   quantity_expected: number;
   quantity_difference?: number;
+  /** Contenants scellés comptés (produits vendus en gros) */
+  counted_package_quantity?: number | null;
+  /** Unités comptées hors contenant */
+  counted_loose_quantity?: number | null;
+  packaging_factor?: number | null;
+  /** Comptage prêt à afficher : « 3 cartons + 2 bouteilles » */
+  counted_display?: string;
+  expected_display?: string;
   unit_cost: number;
   notes?: string;
 }
@@ -216,8 +249,32 @@ export interface CreateStockMovementData {
   warehouse: string;
   batch?: string | null;
   movement_type: MovementType;
-  quantity: number;
+  /**
+   * Quantité en unité de base. Optionnelle si la saisie est faite en
+   * conditionnements (`package_quantity` / `loose_quantity`) : le serveur fait
+   * alors la conversion, seule source de vérité.
+   */
+  quantity?: number;
+  /** Nombre de conditionnements entiers saisis */
+  package_quantity?: number;
+  /** Nombre d'unités saisies hors conditionnement */
+  loose_quantity?: number;
+  /** Prix d'achat d'une unité de détail */
   unit_cost?: number;
+  /**
+   * Prix d'achat d'un conditionnement entier. Peut coexister avec `unit_cost` :
+   * le serveur en tire un coût unitaire pondéré par les quantités saisies.
+   */
+  package_unit_cost?: number;
+  /**
+   * Reporte les prix saisis sur la fiche produit. Sans ce drapeau, les prix ne
+   * valorisent que ce mouvement.
+   */
+  update_product_prices?: boolean;
+  /** Nouveau prix de vente au détail, envoyé seulement si le report est demandé */
+  selling_price?: number;
+  /** Nouveau prix de vente du conditionnement, même condition */
+  wholesale_price?: number;
   notes?: string;
   location?: string;
   expiry_date?: string;
@@ -231,7 +288,15 @@ export interface CreateStockTransferData {
     product: string;
     variant?: string | null;
     batch?: string | null;
-    quantity_requested: number;
+    /**
+     * Quantité en unité de détail. Optionnelle quand la demande est saisie en
+     * contenants : le serveur fait la conversion, seule source de vérité.
+     */
+    quantity_requested?: number;
+    /** Contenants entiers demandés */
+    package_quantity?: number;
+    /** Unités demandées hors contenant */
+    loose_quantity?: number;
     notes?: string;
   }[];
 }
@@ -244,9 +309,19 @@ export interface CreateStockAdjustmentData {
     product: string;
     variant?: string | null;
     batch?: string | null;
-    quantity_counted: number;
+    /**
+     * Quantité comptée en unité de détail. Optionnelle quand le comptage est
+     * saisi en contenants : le serveur recompose le total.
+     */
+    quantity_counted?: number;
+    /** Contenants scellés comptés */
+    counted_package_quantity?: number;
+    /** Unités comptées hors contenant */
+    counted_loose_quantity?: number;
     quantity_expected: number;
-    unit_cost: number;
+    unit_cost?: number;
+    /** Coût d'un contenant entier ; converti en coût unitaire par le serveur */
+    package_unit_cost?: number;
     notes?: string;
   }[];
 }
@@ -868,7 +943,17 @@ export async function receiveStockTransfer(
   accessToken: string,
   organizationId: string,
   transferId: string,
-  items?: { id: string; quantity_received: number }[]
+  /**
+   * Quantités réellement déchargées. Pour un produit vendu en gros, le
+   * magasinier compte en contenants : `package_quantity` / `loose_quantity`
+   * priment alors sur `quantity_received`, que le serveur recompose.
+   */
+  items?: {
+    id: string;
+    quantity_received?: number;
+    package_quantity?: number;
+    loose_quantity?: number;
+  }[]
 ): Promise<ApiResponse<{ status: string }>> {
   try {
     const response = await axios.post(

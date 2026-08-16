@@ -467,7 +467,7 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Totaux — ventilés par devise (jamais additionnés entre elles) + total
+      {/* Totaux - ventilés par devise (jamais additionnés entre elles) + total
           converti en devise principale pour la lecture comptable. */}
       {stats && stats.by_currency?.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -650,7 +650,7 @@ export default function ExpensesPage() {
                         {expense.description}
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">
-                        {expense.beneficiary || "—"}
+                        {expense.beneficiary || "-"}
                       </TableCell>
                       <TableCell className="text-right font-semibold text-red-600">
                         {money(expense.amount, expense.currency)}

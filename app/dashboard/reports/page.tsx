@@ -708,10 +708,14 @@ export default function ReportsPage() {
     ]);
 
     // Tableau des stocks (complet)
+    // Le stock est imprimé dans les termes du marchand (« 12 cartons + 3
+    // bouteilles »), avec le total en unités juste à côté : le premier sert au
+    // comptoir, le second au réassort.
     const stockData = stockDetails.map(s => [
       s.product_name,
       s.product_sku,
       s.category_name || "-",
+      s.stock_display?.trim() || formatNumberForPDF(s.current_stock, 0),
       formatNumberForPDF(s.current_stock, 0),
       formatNumberForPDF(s.available_stock, 0),
       formatCurrencyForPDF(s.stock_value),
@@ -719,17 +723,18 @@ export default function ReportsPage() {
     ]);
 
     addTable(doc, currentY,
-      [["Produit", "SKU", "Catégorie", "Stock", "Dispo", "Valeur", "Statut"]],
+      [["Produit", "SKU", "Catégorie", "Stock", "Total", "Dispo", "Valeur", "Statut"]],
       stockData,
       {
         columnStyles: {
-          0: { cellWidth: 40 },
-          1: { cellWidth: 25 },
-          2: { cellWidth: 30 },
-          3: { halign: 'right', cellWidth: 18 },
-          4: { halign: 'right', cellWidth: 18 },
-          5: { halign: 'right', cellWidth: 28 },
-          6: { halign: 'center', cellWidth: 18 },
+          0: { cellWidth: 34 },
+          1: { cellWidth: 22 },
+          2: { cellWidth: 24 },
+          3: { cellWidth: 34 },
+          4: { halign: 'right', cellWidth: 16 },
+          5: { halign: 'right', cellWidth: 16 },
+          6: { halign: 'right', cellWidth: 26 },
+          7: { halign: 'center', cellWidth: 16 },
         },
         useAlternateRowColors: true,
       }
@@ -775,13 +780,14 @@ export default function ReportsPage() {
       Produit: s.product_name,
       SKU: s.product_sku,
       Catégorie: s.category_name || "",
+      "Stock détaillé": s.stock_display || "",
       "Stock actuel": parseFloat(s.current_stock),
       "Stock disponible": parseFloat(s.available_stock),
       "Valeur stock": parseFloat(s.stock_value),
       Statut: s.status === "out_of_stock" ? "Rupture" : s.status === "low_stock" ? "Bas" : "OK",
     }));
     exportToCSV(data, `stock-${new Date().toISOString().split("T")[0]}`,
-      ["Produit", "SKU", "Catégorie", "Stock actuel", "Stock disponible", "Valeur stock", "Statut"]);
+      ["Produit", "SKU", "Catégorie", "Stock détaillé", "Stock actuel", "Stock disponible", "Valeur stock", "Statut"]);
   };
 
   const exportProfitsCSV = () => {
@@ -926,7 +932,7 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          {/* Solde caisse — le chiffre principal est l'équivalent converti en
+          {/* Solde caisse - le chiffre principal est l'équivalent converti en
               devise principale ; le détail par devise montre le tiroir réel
               (40 USD et 46 000 CDF coexistent, ils ne s'additionnent pas). */}
           <Card className="py-1">
@@ -1773,8 +1779,19 @@ export default function ReportsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">{s.category_name || "-"}</TableCell>
-                      <TableCell className="text-right font-medium">{parseFloat(s.current_stock).toFixed(0)}</TableCell>
-                      <TableCell className="text-right">{parseFloat(s.available_stock).toFixed(0)}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        <span className="block">
+                          {s.stock_display?.trim() || parseFloat(s.current_stock).toFixed(0)}
+                        </span>
+                        {s.stock_display?.includes("+") && (
+                          <span className="text-xs font-normal text-gray-500">
+                            {parseFloat(s.current_stock).toFixed(0)} au total
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {s.available_display?.trim() || parseFloat(s.available_stock).toFixed(0)}
+                      </TableCell>
                       <TableCell className="text-right">{formatPrice(parseFloat(s.stock_value))}</TableCell>
                       <TableCell>
                         <Badge
@@ -1961,7 +1978,7 @@ export default function ReportsPage() {
                 <SelectContent>
                   {members.map((m) => (
                     <SelectItem key={m.user_id} value={m.user_id}>
-                      {m.user_name} — {m.role_display}
+                      {m.user_name} - {m.role_display}
                     </SelectItem>
                   ))}
                 </SelectContent>

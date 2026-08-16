@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { formatPrice } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -96,6 +95,11 @@ import { formatApiErrorBody } from "@/lib/api/drf-error";
 import { cn } from "@/lib/utils";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
+import {
+    RetailPriceCell,
+    WholesalePriceCell,
+    StockCell,
+} from "@/components/products/product-cells";
 
 export default function ProductsPage() {
     const { data: session } = useSession();
@@ -434,7 +438,7 @@ export default function ProductsPage() {
                 header: "Catégorie",
                 className: "min-w-[120px]",
                 cell: (product) => (
-                    <span className="text-muted-foreground">{product.category_name?.trim() || "—"}</span>
+                    <span className="text-muted-foreground">{product.category_name?.trim() || "-"}</span>
                 ),
             },
             {
@@ -442,36 +446,26 @@ export default function ProductsPage() {
                 header: "Marque",
                 className: "min-w-[100px]",
                 cell: (product) => (
-                    <span className="text-muted-foreground">{product.brand_name?.trim() || "—"}</span>
+                    <span className="text-muted-foreground">{product.brand_name?.trim() || "-"}</span>
                 ),
             },
             {
                 id: "price",
-                header: "Prix",
+                header: "Prix détail",
                 className: "text-right tabular-nums",
-                cell: (product) => (
-                    <div className="flex flex-col items-end gap-0.5 tabular-nums">
-                        <span className="font-medium text-foreground">{formatPrice(product.selling_price)}</span>
-                        <span className="text-xs text-muted-foreground">{formatPrice(product.cost_price)}</span>
-                    </div>
-                ),
+                cell: (product) => <RetailPriceCell product={product} />,
+            },
+            {
+                id: "wholesale_price",
+                header: "Prix gros",
+                className: "text-right tabular-nums",
+                cell: (product) => <WholesalePriceCell product={product} />,
             },
             {
                 id: "stock",
                 header: "Stock",
                 className: "text-right tabular-nums",
-                cell: (product) => (
-                    <span className="tabular-nums text-muted-foreground">
-                        {product.track_inventory ? (
-                            <>
-                                {product.stock_quantity ?? 0}
-                                {product.unit_symbol ? ` ${product.unit_symbol}` : ""}
-                            </>
-                        ) : (
-                            "—"
-                        )}
-                    </span>
-                ),
+                cell: (product) => <StockCell product={product} />,
             },
             {
                 id: "status",
@@ -942,6 +936,11 @@ function ImportDialog({
                                     <li>Ne modifiez pas les en-têtes ni la structure</li>
                                     <li>Importez le fichier complété ici</li>
                                 </ol>
+                                <p className="mt-3 text-orange-700">
+                                    Nouveau : les prix de gros et de détail ont chacun leur
+                                    colonne, et une colonne « Mode de vente » dit comment vous
+                                    vendez le produit. Vos anciens fichiers restent acceptés.
+                                </p>
                             </div>
 
                             {/* Download template button */}

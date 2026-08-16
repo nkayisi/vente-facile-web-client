@@ -13,7 +13,7 @@
  *
  * Migrer un type domaine existant vers ces types générés :
  *
- *   // avant — type redéfini à la main dans actions/products.actions.ts
+ *   // avant - type redéfini à la main dans actions/products.actions.ts
  *   export interface Product { id: string; name: string; ... }
  *
  *   // après

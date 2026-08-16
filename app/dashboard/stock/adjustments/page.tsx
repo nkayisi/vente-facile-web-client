@@ -55,6 +55,8 @@ import { formatPrice, formatDate } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
+import { getPackaging, formatPackaged } from "@/lib/packaging";
+import { PackagedQuantityInput } from "@/components/stock/packaged-quantity-input";
 import {
   getStockAdjustments,
   createStockAdjustment,
@@ -121,12 +123,25 @@ export default function AdjustmentsPage() {
   });
 
   // Item being added
-  const [newItem, setNewItem] = useState({
+  const [newItem, setNewItem] = useState<{
+    product: string;
+    quantity_counted: number;
+    quantity_expected: number;
+    unit_cost: number;
+    counted_package_quantity?: number;
+    counted_loose_quantity?: number;
+  }>({
     product: "",
     quantity_counted: 0,
     quantity_expected: 0,
     unit_cost: 0,
   });
+
+  /**
+   * Conditionnement du produit en cours de saisie. Un produit vendu par
+   * contenant se compte comme il est rangé : « 3 cartons + 2 bouteilles ».
+   */
+  const newItemPackaging = getPackaging(products.find(p => p.id === newItem.product));
 
   // Fetch data
   useEffect(() => {
@@ -256,13 +271,29 @@ export default function AdjustmentsPage() {
     const stock = warehouseStocks.find(s => s.product === newItem.product);
     const expectedQty = stock ? parseFloat(stock.quantity) : 0;
 
+    const packaging = getPackaging(product);
+    const packages = newItem.counted_package_quantity ?? 0;
+    const loose = newItem.counted_loose_quantity ?? 0;
+
+    if (packaging && packages <= 0 && loose <= 0) {
+      toast.error("Indiquez la quantité comptée");
+      return;
+    }
+
     setFormData({
       ...formData,
       items: [
         ...formData.items,
         {
           product: newItem.product,
-          quantity_counted: newItem.quantity_counted,
+          // Produit vendu par contenant : on transmet la saisie telle quelle,
+          // le serveur recompose le total. Sinon, quantité simple d'origine.
+          ...(packaging
+            ? {
+                counted_package_quantity: packages,
+                counted_loose_quantity: loose,
+              }
+            : { quantity_counted: newItem.quantity_counted }),
           quantity_expected: expectedQty,
           unit_cost: parseFloat(product.cost_price) || 0,
         },
@@ -566,7 +597,7 @@ export default function AdjustmentsPage() {
                       ? createWarehouseSearchHandler(session.accessToken, organization.id)
                       : async () => []
                   }
-                  emptyLabel="—"
+                  emptyLabel="-"
                   placeholder="Sélectionner un entrepôt"
                   searchPlaceholder="Rechercher un entrepôt..."
                   disabled={!session?.accessToken || !organization?.id}
@@ -619,26 +650,63 @@ export default function AdjustmentsPage() {
                         ...newItem,
                         product: value,
                         quantity_expected: stock ? parseFloat(stock.quantity) : 0,
+                        counted_package_quantity: undefined,
+                        counted_loose_quantity: undefined,
                       });
                     }}
                     placeholder="Sélectionner un produit"
                     searchPlaceholder="Rechercher un produit..."
                     className="flex-1"
                   />
-                  <Input
-                    type="number"
-                    placeholder="Compté"
-                    value={newItem.quantity_counted || ""}
-                    onChange={e =>
-                      setNewItem({ ...newItem, quantity_counted: parseInt(e.target.value) || 0 })
-                    }
-                    className="w-24"
-                    min="0"
-                  />
+                  {!newItemPackaging && (
+                    <Input
+                      type="number"
+                      placeholder="Compté"
+                      value={newItem.quantity_counted || ""}
+                      onChange={e =>
+                        setNewItem({ ...newItem, quantity_counted: parseInt(e.target.value) || 0 })
+                      }
+                      className="w-24"
+                      min="0"
+                    />
+                  )}
                   <Button type="button" variant="outline" onClick={addItem}>
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
+
+                {/* Comptage en contenants : « 3 cartons + 2 bouteilles » */}
+                {newItemPackaging && (
+                  <div className="rounded-lg border p-3">
+                    {(() => {
+                      const stock = warehouseStocks.find(s => s.product === newItem.product);
+                      const expected = stock ? parseFloat(stock.quantity) : 0;
+                      const expectedLoose = stock ? parseFloat(stock.loose_quantity || "0") : 0;
+                      return (
+                        <p className="mb-3 text-xs text-gray-500">
+                          En stock d&apos;après le système :{" "}
+                          <span className="font-medium text-gray-700">
+                            {formatPackaged(newItemPackaging, expected, expectedLoose)}
+                          </span>
+                        </p>
+                      );
+                    })()}
+                    <PackagedQuantityInput
+                      packaging={newItemPackaging}
+                      packages={newItem.counted_package_quantity}
+                      loose={newItem.counted_loose_quantity}
+                      onChange={next =>
+                        setNewItem({
+                          ...newItem,
+                          counted_package_quantity: next.packages,
+                          counted_loose_quantity: next.loose,
+                        })
+                      }
+                      verb="comptez"
+                      idPrefix="counted"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -647,14 +715,35 @@ export default function AdjustmentsPage() {
               <div className="border rounded-lg divide-y">
                 {formData.items.map((item, index) => {
                   const product = products.find(p => p.id === item.product);
-                  const diff = item.quantity_counted - item.quantity_expected;
+                  const packaging = getPackaging(product);
+                  // Le total n'est recomposé ici que pour l'aperçu : c'est le
+                  // serveur qui fait foi sur la quantité enregistrée.
+                  const counted = packaging
+                    ? (item.counted_package_quantity ?? 0) * packaging.factor +
+                      (item.counted_loose_quantity ?? 0)
+                    : (item.quantity_counted ?? 0);
+                  const diff = counted - item.quantity_expected;
                   return (
                     <div key={index} className="flex items-center justify-between p-3">
                       <div className="flex-1">
                         <p className="font-medium text-sm">{product?.name}</p>
                         <div className="flex items-center gap-4 text-xs text-gray-500 mt-1">
-                          <span>Attendu: {item.quantity_expected}</span>
-                          <span>Compté: {item.quantity_counted}</span>
+                          <span>
+                            Attendu:{" "}
+                            {packaging
+                              ? formatPackaged(packaging, item.quantity_expected)
+                              : item.quantity_expected}
+                          </span>
+                          <span>
+                            Compté:{" "}
+                            {packaging
+                              ? formatPackaged(
+                                  packaging,
+                                  counted,
+                                  item.counted_loose_quantity ?? 0
+                                )
+                              : counted}
+                          </span>
                           <span
                             className={
                               diff > 0

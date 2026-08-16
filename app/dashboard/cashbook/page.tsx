@@ -447,7 +447,7 @@ export default function CashbookPage() {
         </div>
       </div>
 
-      {/* Balance Cards — 4 métriques, chacune ventilée PAR DEVISE (tiroir réel) */}
+      {/* Balance Cards - 4 métriques, chacune ventilée PAR DEVISE (tiroir réel) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="gap-0">
           <CardHeader className="flex flex-row items-center justify-between">

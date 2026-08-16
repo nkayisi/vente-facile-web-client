@@ -130,7 +130,7 @@ export default function AdminSubscriptionDetailPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-semibold">Abonnement — {sub.plan_name}</h1>
+            <h1 className="text-2xl font-semibold">Abonnement - {sub.plan_name}</h1>
             <p className="text-muted-foreground">{sub.organization_name}</p>
           </div>
         </div>
@@ -262,7 +262,7 @@ export default function AdminSubscriptionDetailPage() {
             <div className="p-3 bg-muted rounded-lg text-sm">
               <p className="font-medium">{sub.organization_name}</p>
               <p className="text-muted-foreground">
-                {sub.plan_name} — expire le {new Date(sub.current_period_end).toLocaleDateString()}
+                {sub.plan_name} - expire le {new Date(sub.current_period_end).toLocaleDateString()}
               </p>
             </div>
             <div className="space-y-2">

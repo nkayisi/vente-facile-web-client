@@ -115,7 +115,11 @@ export default function InventoryDetailPage() {
   const [isPageChanging, setIsPageChanging] = useState(false);
 
   // Local edits for counting
-  const [editedCounts, setEditedCounts] = useState<Record<string, { quantity: string; notes: string }>>({});
+  // `quantity` porte la part à l'unité ; `packages` le nombre de
+  // conditionnements comptés (produits vendus en gros uniquement).
+  const [editedCounts, setEditedCounts] = useState<
+    Record<string, { quantity: string; packages?: string; notes: string }>
+  >({});
   const [countOriginals, setCountOriginals] = useState<Record<string, InventoryCount>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
@@ -239,7 +243,24 @@ export default function InventoryDetailPage() {
   const handleCountChange = (countId: string, value: string) => {
     setEditedCounts((prev) => ({
       ...prev,
-      [countId]: { quantity: value, notes: prev[countId]?.notes || "" },
+      [countId]: {
+        quantity: value,
+        packages: prev[countId]?.packages,
+        notes: prev[countId]?.notes || "",
+      },
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  /** Nombre de conditionnements comptés sur une ligne. */
+  const handlePackagesChange = (countId: string, value: string) => {
+    setEditedCounts((prev) => ({
+      ...prev,
+      [countId]: {
+        quantity: prev[countId]?.quantity ?? "",
+        packages: value,
+        notes: prev[countId]?.notes || "",
+      },
     }));
     setHasUnsavedChanges(true);
   };
@@ -254,17 +275,42 @@ export default function InventoryDetailPage() {
   };
 
   const buildCountPayload = useCallback(
-    (countId: string, edited: { quantity: string; notes: string }): CountItemData | null => {
+    (
+      countId: string,
+      edited: { quantity: string; packages?: string; notes: string }
+    ): CountItemData | null => {
       const original = countOriginals[countId];
       if (!original) return null;
 
       const quantityRaw = edited.quantity?.trim() ?? "";
+      const packagesRaw = edited.packages?.trim() ?? "";
       const notesRaw = edited.notes ?? "";
       const originalNotes = original.notes || "";
       const quantityChanged = quantityRaw !== "";
+      const packagesChanged = packagesRaw !== "";
       const notesChanged = notesRaw !== originalNotes;
 
-      if (!quantityChanged && !notesChanged) return null;
+      if (!quantityChanged && !packagesChanged && !notesChanged) return null;
+
+      // Produit vendu en gros : on transmet les deux parts telles que
+      // saisies. C'est le serveur qui recompose la quantité de base.
+      if (original.packaging_factor) {
+        const packages = packagesChanged
+          ? parseFloat(packagesRaw)
+          : parseFloat(original.counted_package_quantity || "0");
+        const loose = quantityChanged
+          ? parseFloat(quantityRaw)
+          : parseFloat(original.counted_loose_quantity || "0");
+        if (Number.isNaN(packages) || Number.isNaN(loose)) return null;
+
+        return {
+          id: countId,
+          quantity_counted: 0,
+          counted_package_quantity: packages,
+          counted_loose_quantity: loose,
+          notes: notesRaw || undefined,
+        };
+      }
 
       const quantityCounted = quantityChanged
         ? parseFloat(quantityRaw)
@@ -495,8 +541,16 @@ export default function InventoryDetailPage() {
         body: (items as InventoryCount[]).map((item) => [
           item.product_name,
           item.product_sku || "-",
-          formatNumberForPDF(item.quantity_expected, 0),
-          item.is_counted ? formatNumberForPDF(item.quantity_counted, 0) : "___________",
+          // Le compteur voit des cartons dans le rayon : la feuille doit les
+          // annoncer dans les mêmes termes, sinon il recompte de tête.
+          item.packaging_factor && item.expected_display
+            ? item.expected_display
+            : formatNumberForPDF(item.quantity_expected, 0),
+          item.is_counted
+            ? (item.packaging_factor && item.counted_display
+                ? item.counted_display
+                : formatNumberForPDF(item.quantity_counted, 0))
+            : "___________",
           item.is_counted ? (parseFloat(item.quantity_difference) > 0 ? "+" : "") + formatNumberForPDF(item.quantity_difference, 0) : "-",
           item.notes || "",
         ]),
@@ -648,8 +702,12 @@ export default function InventoryDetailPage() {
           item.product_name,
           item.product_sku || "-",
           item.product_category_name || "-",
-          formatNumberForPDF(item.quantity_expected, 0),
-          formatNumberForPDF(item.quantity_counted, 0),
+          item.packaging_factor && item.expected_display
+            ? item.expected_display
+            : formatNumberForPDF(item.quantity_expected, 0),
+          item.packaging_factor && item.counted_display
+            ? item.counted_display
+            : formatNumberForPDF(item.quantity_counted, 0),
           (parseFloat(item.quantity_difference) > 0 ? "+" : "") + formatNumberForPDF(item.quantity_difference, 0),
           formatCurrencyForPDF(item.difference_value),
         ]),
@@ -1069,23 +1127,69 @@ export default function InventoryDetailPage() {
                           {count.product_category_name || "-"}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
-                          {formatDecimal(count.quantity_expected)}
-                          {count.unit_name && <span className="text-gray-400 ml-1">{count.unit_name}</span>}
+                          {/* Le compteur doit lire « 3 paquets + 1 bouteille »,
+                              pas « 37 » : c'est ce qu'il a sous les yeux. */}
+                          {count.packaging_factor && count.expected_display ? (
+                            count.expected_display
+                          ) : (
+                            <>
+                              {formatDecimal(count.quantity_expected)}
+                              {count.unit_name && <span className="text-gray-400 ml-1">{count.unit_name}</span>}
+                            </>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           {isEditable ? (
-                            <Input
-                              type="number"
-                              min="0"
-                              step="1"
-                              className="w-24 text-right ml-auto"
-                              placeholder="0"
-                              value={edited?.quantity ?? (count.is_counted ? parseFloat(count.quantity_counted).toString() : "")}
-                              onChange={(e) => handleCountChange(count.id, e.target.value)}
-                            />
+                            count.packaging_factor ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  className="w-16 text-right"
+                                  placeholder="0"
+                                  value={
+                                    edited?.packages ??
+                                    (count.is_counted
+                                      ? parseFloat(count.counted_package_quantity || "0").toString()
+                                      : "")
+                                  }
+                                  onChange={(e) => handlePackagesChange(count.id, e.target.value)}
+                                  aria-label={`Nombre de ${count.package_unit_name || "conditionnements"}`}
+                                />
+                                <span className="text-xs text-gray-400">+</span>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  className="w-16 text-right"
+                                  placeholder="0"
+                                  value={
+                                    edited?.quantity ??
+                                    (count.is_counted
+                                      ? parseFloat(count.counted_loose_quantity || "0").toString()
+                                      : "")
+                                  }
+                                  onChange={(e) => handleCountChange(count.id, e.target.value)}
+                                  aria-label={`Nombre de ${count.unit_name || "unités"}`}
+                                />
+                              </div>
+                            ) : (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                className="w-24 text-right ml-auto"
+                                placeholder="0"
+                                value={edited?.quantity ?? (count.is_counted ? parseFloat(count.quantity_counted).toString() : "")}
+                                onChange={(e) => handleCountChange(count.id, e.target.value)}
+                              />
+                            )
                           ) : (
                             <span className={`font-mono text-sm ${count.is_counted ? "font-semibold" : "text-gray-400"}`}>
-                              {count.is_counted ? formatDecimal(count.quantity_counted) : "-"}
+                              {count.is_counted
+                                ? count.counted_display || formatDecimal(count.quantity_counted)
+                                : "-"}
                             </span>
                           )}
                         </TableCell>

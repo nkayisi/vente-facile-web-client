@@ -66,6 +66,15 @@ export interface ProductVariant {
   effective_price?: string;
 }
 
+/**
+ * Forme sous laquelle un produit est vendu.
+ * `retail_only` est le comportement historique de tous les produits existants.
+ */
+export type SellingMode =
+  | "retail_only"
+  | "wholesale_only"
+  | "wholesale_and_retail";
+
 export interface Product {
   id: string;
   name: string;
@@ -80,9 +89,27 @@ export interface Product {
   unit?: string | null;
   unit_name?: string;
   unit_symbol?: string;
+  /** Forme sous laquelle le produit est vendu */
+  selling_mode?: SellingMode;
+  /** Unité de gros (paquet, carton, casier…) */
+  packaging_unit?: string | null;
+  packaging_unit_name?: string;
+  packaging_unit_symbol?: string;
+  /** Nombre d'unités de détail dans un conditionnement */
+  units_per_package?: number | null;
+  allow_auto_unpacking?: boolean;
+  /** Phrase de confirmation calculée par le backend */
+  packaging_summary?: string | null;
   cost_price: string;
   selling_price: string;
+  /**
+   * Prix d'un conditionnement entier lorsque `selling_mode` n'est pas
+   * `retail_only`. En vente au détail seule, conserve son sens historique de
+   * prix de gros indicatif à la pièce.
+   */
   wholesale_price?: string | null;
+  /** Prix d'achat d'un contenant entier (confort de saisie) */
+  package_cost_price?: string | null;
   tax_rate: string;
   is_taxable: boolean;
   price_with_tax?: string;
@@ -112,12 +139,25 @@ export interface Product {
   stock_location?: string | null;
   /** Nom de l'entrepôt du stock affiché */
   warehouse_name?: string | null;
+  /**
+   * Conditionnements scellés disponibles. `null` hors périmètre d'un entrepôt
+   * unique : le nombre de paquets n'est pas dérivable d'un stock multi-entrepôts.
+   * Ne jamais traiter `null` comme `0`.
+   */
+  stock_packages?: number | null;
+  /** Unités hors emballage scellé, `null` dans les mêmes conditions */
+  stock_loose?: string | null;
+  /** Stock prêt à afficher : « 1 paquet + 10 bouteilles » */
+  stock_display?: string | null;
   stock_by_warehouse?: Array<{
     warehouse_id: string;
     warehouse_name: string;
     quantity: string;
     available: string;
     reserved: string;
+    display?: string;
+    packages?: number;
+    loose?: string;
   }>;
   created_at?: string;
   updated_at?: string;
@@ -131,9 +171,14 @@ export interface CreateProductData {
   category?: string | null;
   brand?: string | null;
   unit?: string | null;
+  selling_mode?: SellingMode;
+  packaging_unit?: string | null;
+  units_per_package?: number | null;
+  allow_auto_unpacking?: boolean;
   cost_price: number;
   selling_price: number;
   wholesale_price?: number | null;
+  package_cost_price?: number | null;
   tax_rate?: number;
   is_taxable?: boolean;
   track_inventory?: boolean;
@@ -340,6 +385,53 @@ export async function createProduct(
     return {
       success: false,
       message: formatAxiosErrorMessage(error, "Erreur lors de la création du produit"),
+      errors: body as ApiResponse<Product>["errors"],
+    };
+  }
+}
+
+/**
+ * Envoie la photo d'un produit.
+ *
+ * Séparée de la création : celle-ci transmet du JSON, or un fichier exige un
+ * envoi multipart. Appeler cette action juste après avoir créé le produit
+ * évite de basculer toute la création en multipart pour un champ facultatif.
+ */
+export async function uploadProductImage(
+  accessToken: string,
+  organizationId: string,
+  productId: string,
+  image: File
+): Promise<ApiResponse<Product>> {
+  try {
+    const formData = new FormData();
+    formData.append("image", image);
+
+    const response = await axios.patch(
+      `${API_BASE_URL}/products/${productId}/`,
+      formData,
+      {
+        headers: {
+          ...getHeaders(accessToken, organizationId),
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+
+    revalidatePath("/dashboard/products");
+    revalidatePath(`/dashboard/products/${productId}`);
+
+    return {
+      success: true,
+      message: "Photo enregistrée",
+      data: response.data,
+    };
+  } catch (error: unknown) {
+    const body = getErrorBody(error);
+    console.error("[Products] Upload image error:", body || (error as Error)?.message);
+    return {
+      success: false,
+      message: formatAxiosErrorMessage(error, "La photo n'a pas pu être enregistrée"),
       errors: body as ApiResponse<Product>["errors"],
     };
   }

@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   AlertTriangle,
+  ArrowLeft,
   Banknote,
   Building2,
   Check,
@@ -41,6 +42,7 @@ import {
   Minus,
   Package,
   MapPin,
+  Pencil,
   Phone,
   Tag,
   Plus,
@@ -66,6 +68,9 @@ import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { StatValue } from "@/components/shared/StatValue";
+import { ProductThumb } from "@/components/products/product-thumb";
+import { PackagedSelection, QuantityPicker } from "@/components/sales/quantity-picker";
+import { pluralizeUnit } from "@/lib/units";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
   assignPdfToPrintWindow,
@@ -85,16 +90,201 @@ function clampSaleDiscountPercent(value: number): number {
 
 interface CartItem {
   product: Product;
+  /**
+   * Quantité totale en unité de détail - miroir exact du champ backend.
+   * Pour un produit vendu en gros, elle vaut
+   * `packageQuantity × contenu + part vendue à l'unité`.
+   */
   quantity: number;
+  /** Conditionnements entiers sur cette ligne (0 pour une vente à l'unité) */
+  packageQuantity: number;
   unit_price: number;
   discount_percentage: number;
+}
+
+/** Contenu d'un conditionnement, ou `null` si le produit se vend à l'unité. */
+function packagingFactorOf(product: Product): number | null {
+  if (!product.selling_mode || product.selling_mode === "retail_only") return null;
+  return product.units_per_package || null;
+}
+
+/** Part de la ligne vendue à l'unité - dérivée, jamais stockée. */
+function looseQuantityOf(item: CartItem): number {
+  const factor = packagingFactorOf(item.product);
+  if (!factor || !item.packageQuantity) return item.quantity;
+  return item.quantity - item.packageQuantity * factor;
+}
+
+
+/**
+ * Bouton d'édition de la quantité d'une ligne vendue en gros.
+ *
+ * Il n'édite rien lui-même : il sert d'ancre au même sélecteur que l'ajout,
+ * pour que modifier une ligne et la créer soient un seul geste appris une fois.
+ * Les produits à l'unité conservent le compteur plus / moins.
+ */
+function PackagedQuantityTrigger({
+  item,
+  onClick,
+  open,
+  className,
+  ...anchorProps
+}: Omit<React.ComponentProps<"button">, "onClick"> & {
+  item: CartItem;
+  onClick: () => void;
+  open: boolean;
+}) {
+  const packLabel = item.product.packaging_unit_symbol || "pqt";
+  const unitLabel = item.product.unit_symbol || "u";
+  const loose = looseQuantityOf(item);
+
+  return (
+    <button
+      // `PopoverAnchor asChild` pose sa ref ici : sans ce passe-plat, le
+      // popover n'a pas d'ancre et ne s'affiche nulle part sur desktop.
+      {...anchorProps}
+      type="button"
+      data-qty-anchor
+      onClick={onClick}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-label={`Modifier la quantité de ${item.product.name}`}
+      className={cn(
+        "flex h-10 items-center gap-2 rounded-lg border px-2.5 text-sm font-semibold tabular-nums outline-none transition-[background-color,border-color,transform] focus-visible:ring-2 focus-visible:ring-orange-500 active:scale-[0.96]",
+        open
+          ? "border-orange-400 bg-orange-50 text-slate-900"
+          : "border-slate-200 bg-white text-slate-900 hover:border-orange-300 hover:bg-orange-50/50",
+        className
+      )}
+    >
+      {item.packageQuantity > 0 ? (
+        <span>
+          {item.packageQuantity}
+          <span className="ml-0.5 text-xs font-medium text-slate-500">{packLabel}</span>
+        </span>
+      ) : null}
+      {item.packageQuantity > 0 && loose > 0 ? (
+        <span className="text-slate-300">+</span>
+      ) : null}
+      {loose > 0 || item.packageQuantity === 0 ? (
+        <span>
+          {loose}
+          <span className="ml-0.5 text-xs font-medium text-slate-500">{unitLabel}</span>
+        </span>
+      ) : null}
+      <Pencil className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+    </button>
+  );
+}
+
+/**
+ * Édition d'une ligne du panier : quantité et remise, par le même sélecteur
+ * que l'ajout.
+ *
+ * Les produits vendus à l'unité gardent les boutons moins / plus autour du
+ * libellé, où l'ajustement de 1 ne demande aucune réflexion. Les produits
+ * vendus en gros n'en ont pas : « plus un » y serait ambigu, une unité ou un
+ * conditionnement.
+ */
+function CartLineQuantityEditor({
+  item,
+  surface,
+  openKey,
+  onOpenKeyChange,
+  maxBase,
+  looseAvailable,
+  maxDiscountPercent,
+  onConfirm,
+  onRemove,
+  onStep,
+}: {
+  item: CartItem;
+  surface: "d" | "m";
+  openKey: string | null;
+  onOpenKeyChange: (key: string | null) => void;
+  maxBase: number | null;
+  looseAvailable: number | null;
+  maxDiscountPercent: number;
+  onConfirm: (selection: PackagedSelection) => void;
+  onRemove: () => void;
+  onStep: (delta: number) => void;
+}) {
+  const key = `${surface}:${item.product.id}`;
+  const isOpen = openKey === key;
+  const packaged = packagingFactorOf(item.product) !== null;
+
+  return (
+    <div className="flex items-center gap-2">
+      {!packaged ? (
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-10 w-10 shrink-0 transition-transform active:scale-[0.96]"
+          onClick={() => onStep(-1)}
+          aria-label="Retirer une unité"
+        >
+          <Minus className="h-4 w-4" />
+        </Button>
+      ) : null}
+
+      <QuantityPicker
+        product={item.product}
+        open={isOpen}
+        onOpenChange={(next) => onOpenKeyChange(next ? key : null)}
+        initial={{ packages: item.packageQuantity, loose: looseQuantityOf(item) }}
+        maxBase={maxBase}
+        looseAvailable={looseAvailable}
+        discountPercent={item.discount_percentage}
+        maxDiscountPercent={maxDiscountPercent}
+        onConfirm={onConfirm}
+        onRemove={onRemove}
+        submitLabel="Mettre à jour"
+      >
+        <PackagedQuantityTrigger
+          item={item}
+          open={isOpen}
+          onClick={() => onOpenKeyChange(isOpen ? null : key)}
+        />
+      </QuantityPicker>
+
+      {!packaged ? (
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-10 w-10 shrink-0 transition-transform active:scale-[0.96]"
+          onClick={() => onStep(1)}
+          aria-label="Ajouter une unité"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Libellé lisible d'une ligne : « 2 paquets + 3 bouteilles ». */
+function describeCartLine(item: CartItem): string {
+  const factor = packagingFactorOf(item.product);
+  const retail = item.product.unit_name || "unité";
+  if (!factor) return `${item.quantity} ${pluralizeUnit(retail, item.quantity)}`;
+
+  const pack = item.product.packaging_unit_name || "conditionnement";
+  const loose = looseQuantityOf(item);
+  const parts: string[] = [];
+  if (item.packageQuantity > 0) {
+    parts.push(`${item.packageQuantity} ${pluralizeUnit(pack, item.packageQuantity)}`);
+  }
+  if (loose > 0 || parts.length === 0) {
+    parts.push(`${loose} ${pluralizeUnit(retail, loose)}`);
+  }
+  return parts.join(" + ");
 }
 
 export default function POSPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const qtyInputRef = useRef<HTMLInputElement>(null);
+  const justAddedTimerRef = useRef<number | null>(null);
   const { currency: defaultCurrency } = useCurrency();
 
   // State
@@ -113,8 +303,14 @@ export default function POSPage() {
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
-  const [qtyPopoverProductId, setQtyPopoverProductId] = useState<string | null>(null);
-  const [qtyDraft, setQtyDraft] = useState("1");
+  // Produit dont le sélecteur de quantité est ouvert depuis la grille.
+  const [qtyPickerProductId, setQtyPickerProductId] = useState<string | null>(null);
+  // Ligne de panier dont le sélecteur est ouvert (édition), par id produit.
+  const [editingLineProductId, setEditingLineProductId] = useState<string | null>(null);
+  // Ligne qui vient d'être ajoutée : sert au retour visuel bref sur la carte.
+  const [justAddedProductId, setJustAddedProductId] = useState<string | null>(null);
+  // Confirmation avant de quitter la caisse avec un panier non vide.
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
 
   // Payment dialog
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
@@ -128,7 +324,7 @@ export default function POSPage() {
 
   // Multi-currency state
   const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
-  // Devise de la facture (devise de la vente) — défaut = devise principale.
+  // Devise de la facture (devise de la vente) - défaut = devise principale.
   const [invoiceCurrency, setInvoiceCurrency] = useState<string>("");
   // Devise de la monnaie rendue (choix caissier).
   const [changeCurrency, setChangeCurrency] = useState<string>("");
@@ -303,10 +499,50 @@ export default function POSPage() {
     return getMaxAddableQty(product) > 0;
   };
 
-  // Add product to cart (quantity = 1 par clic sur la carte, ou saisie manuelle via le popover)
-  const addToCart = (product: Product, addQty: number = 1) => {
-    const qty = Math.floor(Number(addQty));
-    if (!Number.isFinite(qty) || qty < 1) {
+  /**
+   * Sortie de la caisse vers la liste des caisses.
+   *
+   * Destination fixe plutôt que `router.back()` : l'historique peut venir
+   * d'un encaissement ou d'un rechargement, et la liste des caisses est le
+   * parent réel de cet écran (c'est déjà là que la page redirige quand aucune
+   * session n'est ouverte). Le panier vit en mémoire : partir sans prévenir le
+   * perdrait, d'où la confirmation dès qu'il contient quelque chose.
+   */
+  const leavePos = () => {
+    if (cart.length > 0) {
+      setShowLeaveDialog(true);
+      return;
+    }
+    router.push("/dashboard/sales/registers");
+  };
+
+  /** Retour visuel bref sur la carte qui vient d'alimenter le panier. */
+  const flashAdded = (productId: string) => {
+    if (justAddedTimerRef.current) window.clearTimeout(justAddedTimerRef.current);
+    setJustAddedProductId(productId);
+    justAddedTimerRef.current = window.setTimeout(() => setJustAddedProductId(null), 700);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (justAddedTimerRef.current) window.clearTimeout(justAddedTimerRef.current);
+    };
+  }, []);
+
+  /**
+   * Ajoute une saisie « X conditionnements + Y unités » au panier.
+   *
+   * Les deux parts restent distinctes jusqu'au serveur : lui seul décide
+   * d'ouvrir un conditionnement. La quantité totale n'est qu'un miroir local
+   * de `PackagingService.to_base`.
+   */
+  const addToCart = (product: Product, selection: PackagedSelection) => {
+    const factor = packagingFactorOf(product);
+    const packages = factor ? Math.max(0, Math.floor(selection.packages)) : 0;
+    const loose = Math.max(0, Math.floor(selection.loose));
+    const qty = factor ? packages * factor + loose : loose;
+
+    if (qty < 1) {
       toast.error("Quantité invalide");
       return;
     }
@@ -334,7 +570,12 @@ export default function POSPage() {
 
     if (existingIndex >= 0) {
       const newCart = [...cart];
-      newCart[existingIndex].quantity += qty;
+      const line = newCart[existingIndex];
+      newCart[existingIndex] = {
+        ...line,
+        quantity: line.quantity + qty,
+        packageQuantity: line.packageQuantity + packages,
+      };
       setCart(newCart);
     } else {
       setCart([
@@ -342,35 +583,86 @@ export default function POSPage() {
         {
           product,
           quantity: qty,
-          unit_price: parseFloat(product.selling_price),
+          packageQuantity: packages,
+          unit_price: parseFloat(product.selling_price || "0"),
           discount_percentage: 0,
         },
       ]);
     }
 
+    flashAdded(product.id);
     setSearchQuery("");
     setSearchResults([]);
   };
 
-  const commitCustomQuantity = (product: Product) => {
-    const raw = qtyDraft.trim();
-    const n = parseInt(raw, 10);
-    if (!Number.isFinite(n) || n < 1) {
-      toast.error("Indiquez un nombre entier d’au moins 1");
+  /**
+   * Remplace la saisie d'une ligne existante par « X conditionnements +
+   * Y unités ». Le sélecteur a déjà borné la valeur au stock ; ce garde-fou
+   * couvre le cas où le panier a bougé pendant que la feuille était ouverte.
+   */
+  const setCartLineSelection = (index: number, selection: PackagedSelection) => {
+    const item = cart[index];
+    if (!item) return;
+
+    const factor = packagingFactorOf(item.product);
+    const packages = factor ? Math.max(0, Math.floor(selection.packages)) : 0;
+    const loose = Math.max(0, Math.floor(selection.loose));
+    const nextQuantity = factor ? packages * factor + loose : loose;
+
+    if (nextQuantity < 1) {
+      toast.error("La ligne doit contenir au moins une unité");
       return;
     }
-    const max = getMaxAddableQty(product);
-    if (max <= 0) {
-      toast.warning(`Stock insuffisant pour "${product.name}"`);
-      setQtyPopoverProductId(null);
+
+    const available = getAvailableStock(item.product);
+    if (
+      item.product.track_inventory &&
+      !item.product.allow_negative_stock &&
+      nextQuantity > available
+    ) {
+      toast.warning(
+        `Stock insuffisant pour « ${item.product.name} ». Disponible : ${
+          item.product.stock_display || available
+        }.`,
+        { duration: 4000 }
+      );
       return;
     }
-    const q = Math.min(n, max);
-    if (q < n) {
-      toast.warning(`Quantité ramenée à ${q} (stock disponible)`);
-    }
-    addToCart(product, q);
-    setQtyPopoverProductId(null);
+
+    const newCart = [...cart];
+    newCart[index] = {
+      ...item,
+      packageQuantity: packages,
+      quantity: nextQuantity,
+      discount_percentage:
+        selection.discountPercentage === undefined
+          ? item.discount_percentage
+          : clampSaleDiscountPercent(selection.discountPercentage),
+    };
+    setCart(newCart);
+  };
+
+  /**
+   * Unités de détail encore ajoutables, `null` quand rien ne les borne
+   * (produit non suivi, ou entrepôt qui tolère le stock négatif).
+   */
+  const addableBase = (product: Product): number | null => {
+    if (!product.track_inventory || product.allow_negative_stock) return null;
+    return Math.max(0, getRemainingStock(product));
+  };
+
+  /**
+   * Unités déjà hors emballage scellé, diminuées de ce que le panier consomme
+   * déjà. `null` quand le partage n'est pas dérivable (multi-entrepôts) : le
+   * serveur reste seul juge, on n'invente pas un zéro bloquant.
+   */
+  const addableLoose = (product: Product, ignoreCartLine = false): number | null => {
+    if (product.stock_loose === null || product.stock_loose === undefined) return null;
+    const stockLoose = parseFloat(product.stock_loose) || 0;
+    if (ignoreCartLine) return stockLoose;
+    const line = cart.find(item => item.product.id === product.id);
+    const used = line ? looseQuantityOf(line) : 0;
+    return Math.max(0, stockLoose - used);
   };
 
   // Update cart item quantity
@@ -401,49 +693,10 @@ export default function POSPage() {
     setCart(newCart);
   };
 
-  /** Définit la quantité d’une ligne panier (saisie manuelle), avec plafond stock. */
-  const setCartLineQuantity = (
-    index: number,
-    raw: string,
-    inputEl?: HTMLInputElement
-  ) => {
-    const item = cart[index];
-    if (!item) return;
-    const n = parseInt(raw.trim(), 10);
-    if (!Number.isFinite(n) || n < 1) {
-      toast.error("Quantité invalide (entier ≥ 1)");
-      if (inputEl) inputEl.value = String(item.quantity);
-      return;
-    }
-    const newCart = [...cart];
-    if (item.product.track_inventory && !item.product.allow_negative_stock) {
-      const available = getAvailableStock(item.product);
-      if (n > available) {
-        toast.warning(
-          `Stock insuffisant pour "${item.product.name}". Maximum: ${available}`,
-          { duration: 4000 }
-        );
-        newCart[index] = { ...item, quantity: available };
-        setCart(newCart);
-        if (inputEl) inputEl.value = String(available);
-        return;
-      }
-    }
-    newCart[index] = { ...item, quantity: n };
-    setCart(newCart);
-  };
-
   // Remove item from cart
   const removeFromCart = (index: number) => {
     const newCart = [...cart];
     newCart.splice(index, 1);
-    setCart(newCart);
-  };
-
-  // Update item discount
-  const updateItemDiscount = (index: number, discount: number) => {
-    const newCart = [...cart];
-    newCart[index].discount_percentage = clampSaleDiscountPercent(discount);
     setCart(newCart);
   };
 
@@ -455,14 +708,32 @@ export default function POSPage() {
   const MONEY_EPS = 1e-6;
 
   // Calculate totals
+  /**
+   * Montant brut d'une ligne, miroir de `SaleItem.save()` côté serveur.
+   *
+   * Le prix d'un conditionnement n'est pas le prix unitaire multiplié par son
+   * contenu : c'est justement l'intérêt commercial du gros. Une ligne mixte
+   * additionne donc les deux tarifs. Le backend reste l'autorité : ce calcul
+   * ne sert qu'à l'affichage avant validation.
+   */
+  const lineGross = (item: CartItem) => {
+    const factor = packagingFactorOf(item.product);
+    if (!factor || item.packageQuantity <= 0) {
+      return r2(item.quantity * item.unit_price);
+    }
+    const packagePrice = parseFloat(item.product.wholesale_price || "0");
+    return r2(
+      item.packageQuantity * packagePrice + looseQuantityOf(item) * item.unit_price
+    );
+  };
+
   const calculateSubtotal = () => {
-    return cart.reduce((sum, item) => sum + r2(item.quantity * item.unit_price), 0);
+    return cart.reduce((sum, item) => sum + lineGross(item), 0);
   };
 
   const calculateItemDiscount = () => {
     return cart.reduce((sum, item) => {
-      const itemTotal = r2(item.quantity * item.unit_price);
-      return sum + r2(itemTotal * item.discount_percentage / 100);
+      return sum + r2(lineGross(item) * item.discount_percentage / 100);
     }, 0);
   };
 
@@ -479,14 +750,14 @@ export default function POSPage() {
     const parts: string[] = [];
     if (product.stock_location?.trim()) parts.push(product.stock_location.trim());
     if (product.warehouse_name?.trim()) parts.push(product.warehouse_name.trim());
-    return parts.length > 0 ? parts.join(" · ") : "—";
+    return parts.length > 0 ? parts.join(" · ") : "-";
   };
 
   const calculateTax = () => {
     return cart.reduce((sum, item) => {
       if (!item.product.is_taxable) return sum;
 
-      const itemTotal = r2(item.quantity * item.unit_price);
+      const itemTotal = lineGross(item);
       const itemDiscount = r2(itemTotal * item.discount_percentage / 100);
       const itemAfterDiscount = r2(itemTotal - itemDiscount);
 
@@ -558,7 +829,22 @@ export default function POSPage() {
     let subtotal = 0, itemDiscount = 0, tax = 0;
     for (const item of cart) {
       const unit = convMoney(item.unit_price, primaryCode(), cur);
-      const line = roundMoney(item.quantity * unit, cur);
+      // Vente en gros : le tarif du conditionnement s'applique à la part
+      // vendue en emballages entiers, converti dans la devise de facture.
+      const factor = packagingFactorOf(item.product);
+      const line =
+        factor && item.packageQuantity > 0
+          ? roundMoney(
+              item.packageQuantity *
+                convMoney(
+                  parseFloat(item.product.wholesale_price || "0"),
+                  primaryCode(),
+                  cur
+                ) +
+                looseQuantityOf(item) * unit,
+              cur
+            )
+          : roundMoney(item.quantity * unit, cur);
       const disc = roundMoney(line * item.discount_percentage / 100, cur);
       subtotal += line;
       itemDiscount += disc;
@@ -589,7 +875,7 @@ export default function POSPage() {
     return convMoney(over, saleCurrency(), changeCurrency || saleCurrency());
   };
 
-  // Règlement unique (grille de moyens de paiement — un seul règlement).
+  // Règlement unique (grille de moyens de paiement - un seul règlement).
   const newTenderId = () => Math.random().toString(36).slice(2);
   // Patch du règlement courant (le seul de la liste).
   const patchPayment = (patch: Partial<Tender>) =>
@@ -709,12 +995,31 @@ export default function POSPage() {
     try {
       // Prix unitaires convertis dans la devise de la facture (le backend
       // recalcule les totaux à partir de ces prix, en devise de vente).
-      const items: CreateSaleItemData[] = cart.map(item => ({
-        product: item.product.id,
-        unit_price: convMoney(item.unit_price, primaryCode(), invCur),
-        quantity: item.quantity,
-        discount_percentage: r2(item.discount_percentage),
-      }));
+      const items: CreateSaleItemData[] = cart.map(item => {
+        const base: CreateSaleItemData = {
+          product: item.product.id,
+          unit_price: convMoney(item.unit_price, primaryCode(), invCur),
+          discount_percentage: r2(item.discount_percentage),
+        };
+
+        // Produit vendu en gros : on envoie la saisie du caissier (paquets et
+        // unités) plutôt qu'un total calculé ici. Le serveur fait la conversion
+        // et reste seul juge de la quantité enregistrée.
+        const factor = packagingFactorOf(item.product);
+        if (factor) {
+          return {
+            ...base,
+            package_quantity: item.packageQuantity,
+            loose_quantity: looseQuantityOf(item),
+            package_unit_price: convMoney(
+              parseFloat(item.product.wholesale_price || "0"),
+              primaryCode(),
+              invCur
+            ),
+          };
+        }
+        return { ...base, quantity: item.quantity };
+      });
 
       // Un CreatePaymentData par règlement (montant remis dans sa devise).
       const payments: CreatePaymentData[] = validTenders.map(t => ({
@@ -776,13 +1081,49 @@ export default function POSPage() {
             date: new Date().toLocaleString("fr-CD"),
             customerName: selectedCustomer?.name,
             customerPhone: selectedCustomer?.phone || undefined,
-            items: cart.map(item => ({
-              name: item.product.name,
-              quantity: item.quantity,
-              unit_price: item.unit_price,
-              discount_percentage: item.discount_percentage,
-              total: r2(item.quantity * item.unit_price * (1 - item.discount_percentage / 100)),
-            })),
+            // Lignes reprises de la réponse du serveur, qui fait autorité sur
+            // les montants. Une ligne mixte est imprimée en deux sous-lignes
+            // lisibles pour le client : « 2 paquets » puis « 3 bouteilles ».
+            items: (saleAuthoritative.items || []).flatMap(line => {
+              const discount = parseFloat(line.discount_percentage) || 0;
+              const packages = parseFloat(line.package_quantity || "0") || 0;
+              const loose = parseFloat(line.loose_quantity || "0") || 0;
+              const packagePrice = parseFloat(line.package_unit_price || "0") || 0;
+              const unitPrice = parseFloat(line.unit_price) || 0;
+              const net = (amount: number) => r2(amount * (1 - discount / 100));
+
+              if (packages > 0 && line.packaging_factor) {
+                const packWord = pluralizeUnit(
+                  line.package_unit_name || "paquet",
+                  packages
+                );
+                const rows = [{
+                  name: `${line.product_name} (${packWord})`,
+                  quantity: packages,
+                  unit_price: packagePrice,
+                  discount_percentage: discount,
+                  total: net(packages * packagePrice),
+                }];
+                if (loose > 0) {
+                  rows.push({
+                    name: `${line.product_name} (${pluralizeUnit(line.unit_name || "unité", loose)})`,
+                    quantity: loose,
+                    unit_price: unitPrice,
+                    discount_percentage: discount,
+                    total: net(loose * unitPrice),
+                  });
+                }
+                return rows;
+              }
+
+              return [{
+                name: line.product_name,
+                quantity: parseFloat(line.quantity) || 0,
+                unit_price: unitPrice,
+                discount_percentage: discount,
+                total: parseFloat(line.total) || 0,
+              }];
+            }),
             subtotal: calculateSubtotal(),
             taxAmount: calculateTax(),
             // discount_amount inclut déjà la part loyauté (calculée par le backend).
@@ -846,11 +1187,20 @@ export default function POSPage() {
         toast.success(`Vente ${result.data.reference} créée avec succès`, {
           description:
             pdfOutcome === "opened"
-              ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
-              : "Reçu téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+              ? "PDF ouvert et enregistré - utilisez Thermer ou Partager pour imprimer."
+              : "Reçu téléchargé - l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
         });
 
-        // Mark receipt as printed — on attend la réponse pour pouvoir signaler
+        // Emballages ouverts automatiquement : le caissier est informé après
+        // coup, sans modale ni clic supplémentaire. L'opération a déjà eu lieu.
+        for (const notice of saleAuthoritative.unpacking_notices || []) {
+          toast.warning(notice.product_name, {
+            description: notice.message,
+            duration: 6000,
+          });
+        }
+
+        // Mark receipt as printed - on attend la réponse pour pouvoir signaler
         // une éventuelle erreur (le statut DB doit refléter la réalité).
         try {
           const printedRes = await markReceiptPrinted(session.accessToken, organization.id, result.data.id);
@@ -924,7 +1274,7 @@ export default function POSPage() {
     }
   };
 
-  /** PDF proforma uniquement — aucun appel API vente, pas de mouvement de stock. */
+  /** PDF proforma uniquement - aucun appel API vente, pas de mouvement de stock. */
   const handleGenerateProforma = () => {
     const total = calculateTotal();
     if (cart.length === 0) {
@@ -962,6 +1312,9 @@ export default function POSPage() {
         items: cart.map(item => ({
           name: item.product.name,
           quantity: item.quantity,
+          quantity_label: packagingFactorOf(item.product)
+            ? describeCartLine(item)
+            : undefined,
           unit_price: item.unit_price,
           discount_percentage: item.discount_percentage,
           total: r2(item.quantity * item.unit_price * (1 - item.discount_percentage / 100)),
@@ -989,8 +1342,8 @@ export default function POSPage() {
       toast.success(`Proforma ${ref}`, {
         description:
           pdfOutcome === "opened"
-            ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
-            : "PDF téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+            ? "PDF ouvert et enregistré - utilisez Thermer ou Partager pour imprimer."
+            : "PDF téléchargé - l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
       });
 
       setCart([]);
@@ -1107,23 +1460,6 @@ export default function POSPage() {
     };
   }, []);
 
-  // Fermer la saisie quantité (superposition carte) avec Échap + focus champ quantité
-  useEffect(() => {
-    if (!qtyPopoverProductId) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setQtyPopoverProductId(null);
-    };
-    window.addEventListener("keydown", onKey);
-    const t = window.setTimeout(() => {
-      qtyInputRef.current?.focus();
-      qtyInputRef.current?.select();
-    }, 50);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.clearTimeout(t);
-    };
-  }, [qtyPopoverProductId]);
-
   // Produits affichés : résultats de recherche backend ou produits initiaux
   const displayedProducts = searchQuery.trim() ? searchResults : products;
 
@@ -1150,7 +1486,17 @@ export default function POSPage() {
       {/* Products Section */}
       <div className="flex-1 flex flex-col min-h-0 pb-20 lg:pb-0">
         {/* Search Bar */}
-        <div className="mb-4 flex gap-4 items-center justify-between">
+        <div className="mb-4 flex gap-2 items-center justify-between lg:gap-4">
+          {/* Sortie de caisse : premier élément de la ligne, donc premier au clavier */}
+          <Button
+            variant="outline"
+            className="h-12 shrink-0 bg-white px-3 text-gray-700 transition-transform hover:bg-gray-50 active:scale-[0.96] sm:px-4"
+            onClick={leavePos}
+            aria-label="Revenir à la liste des caisses"
+          >
+            <ArrowLeft className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Retour</span>
+          </Button>
           <div className="w-full relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
             <Input
@@ -1210,7 +1556,6 @@ export default function POSPage() {
               {(searchQuery.trim() ? displayedProducts : products.slice(0, 20)).map(product => {
                 const isLocked = lockedProductIds.has(product.id);
                 const canAdd = canAddProductToCart(product);
-                const maxAdd = getMaxAddableQty(product);
                 const stockDepleted =
                   product.track_inventory &&
                   !product.allow_negative_stock &&
@@ -1225,9 +1570,31 @@ export default function POSPage() {
                   getRemainingStock(product) <= 0;
                 const locationLabel = getProductLocationLabel(product);
 
-                const stockOverlayLabel = product.track_inventory
-                  ? `${formatNumber(stockQty)}${product.unit_symbol ? ` ${product.unit_symbol}` : ""}`
-                  : "—";
+                // Le stock d'un produit vendu en gros doit se lire « 1 pqt + 10 btl »,
+                // jamais « 22 » : le caissier raisonne en emballages, pas en unités.
+                const stockOverlayLabel = !product.track_inventory
+                  ? "-"
+                  : packagingFactorOf(product) && product.stock_packages !== null &&
+                    product.stock_packages !== undefined
+                    ? `${product.stock_packages} ${product.packaging_unit_symbol || "pqt"}` +
+                      (parseFloat(product.stock_loose || "0") > 0
+                        ? ` + ${formatNumber(parseFloat(product.stock_loose || "0"))} ${product.unit_symbol || ""}`.trimEnd()
+                        : "")
+                    : `${formatNumber(stockQty)}${product.unit_symbol ? ` ${product.unit_symbol}` : ""}`;
+
+                // Prix affichés par canal. Un produit vendu en gros seul n'a pas
+                // de prix de détail : afficher le sien donnerait « 0 FC ».
+                const packageLabel =
+                  product.packaging_unit_symbol || product.packaging_unit_name || "pqt";
+                const wholesalePrice = parseFloat(product.wholesale_price || "0");
+                const isPackageOnlyProduct = product.selling_mode === "wholesale_only";
+                const mainPriceLabel = isPackageOnlyProduct
+                  ? `${formatPrice(wholesalePrice)} / ${packageLabel}`
+                  : formatPrice(parseFloat(product.selling_price));
+                const secondaryPriceLabel =
+                  !isPackageOnlyProduct && packagingFactorOf(product) && wholesalePrice > 0
+                    ? `${formatPrice(wholesalePrice)} / ${packageLabel}`
+                    : null;
 
                 const cardVisual = (
                   <CardContent className="flex h-full min-h-[88px] gap-2.5 p-2.5">
@@ -1248,7 +1615,7 @@ export default function POSPage() {
                         </div>
                       )}
 
-                      {/* Badge stock — superposé sur l'image */}
+                      {/* Badge stock - superposé sur l'image */}
                       <div
                         className={cn(
                           "absolute inset-x-0 bottom-0 flex items-center justify-center gap-0.5 px-1 py-0.5 text-[10px] font-bold leading-none tabular-nums shadow-sm backdrop-blur-[2px]",
@@ -1279,7 +1646,7 @@ export default function POSPage() {
                       ) : null}
                     </div>
 
-                    {/* Infos — disposition horizontale optimisée */}
+                    {/* Infos - disposition horizontale optimisée */}
                     <div className="flex min-w-0 flex-1 flex-col justify-between gap-0.5">
                       <div className="flex items-start justify-between gap-2">
                         <h3
@@ -1291,14 +1658,21 @@ export default function POSPage() {
                         >
                           {product.name}
                         </h3>
-                        <p
-                          className={cn(
-                            "shrink-0 text-right text-[12px] font-bold leading-tight tabular-nums",
-                            isLocked ? "text-red-600" : "text-orange-600"
+                        <div className="shrink-0 text-right">
+                          <p
+                            className={cn(
+                              "text-[12px] font-bold leading-tight tabular-nums",
+                              isLocked ? "text-red-600" : "text-orange-600"
+                            )}
+                          >
+                            {mainPriceLabel}
+                          </p>
+                          {secondaryPriceLabel && (
+                            <p className="text-[10px] leading-tight tabular-nums text-slate-500">
+                              {secondaryPriceLabel}
+                            </p>
                           )}
-                        >
-                          {formatPrice(parseFloat(product.selling_price))}
-                        </p>
+                        </div>
                       </div>
 
                       <div className="min-w-0 space-y-0.5">
@@ -1327,14 +1701,16 @@ export default function POSPage() {
                   </CardContent>
                 );
 
-                const isQtyOpen = qtyPopoverProductId === product.id;
+                const isQtyOpen = qtyPickerProductId === product.id;
+                const justAdded = justAddedProductId === product.id;
 
                 return (
                   <Card
                     key={product.id}
                     className={cn(
-                      "relative flex h-full flex-col py-0 transition-[box-shadow,transform] duration-150",
-                      isQtyOpen ? "z-10 overflow-hidden" : "overflow-hidden",
+                      "relative flex h-full flex-col overflow-hidden py-0 transition-[box-shadow,transform] duration-150",
+                      isQtyOpen && "z-10",
+                      justAdded && "ring-2 ring-emerald-500",
                       isLocked
                         ? "border-red-300 bg-red-50 opacity-60"
                         : stockDepleted
@@ -1343,94 +1719,32 @@ export default function POSPage() {
                     )}
                   >
                     {canAdd ? (
-                      <>
+                      <QuantityPicker
+                        product={product}
+                        open={isQtyOpen}
+                        onOpenChange={(next) =>
+                          setQtyPickerProductId(next ? product.id : null)
+                        }
+                        maxBase={addableBase(product)}
+                        looseAvailable={addableLoose(product)}
+                        onConfirm={(selection) => addToCart(product, selection)}
+                      >
                         <button
                           type="button"
-                          onClick={() => {
-                            setQtyPopoverProductId(product.id);
-                            setQtyDraft("1");
-                          }}
-                          className="block w-full cursor-pointer rounded-lg text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 hover:bg-gray-50/80"
+                          data-qty-anchor
+                          onClick={() =>
+                            setQtyPickerProductId(isQtyOpen ? null : product.id)
+                          }
+                          aria-haspopup="dialog"
+                          aria-expanded={isQtyOpen}
+                          className={cn(
+                            "block w-full cursor-pointer rounded-lg text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 hover:bg-gray-50/80",
+                            isQtyOpen && "bg-orange-50/60"
+                          )}
                         >
                           {cardVisual}
                         </button>
-                        {isQtyOpen ? (
-                          <div
-                            className="absolute inset-0 z-20 flex h-full max-h-full w-full max-w-full flex-col overflow-hidden rounded-lg bg-white p-3 animate-in fade-in zoom-in-95 duration-150"
-                            role="dialog"
-                            aria-modal="true"
-                            aria-labelledby={`qty-overlay-title-${product.id}`}
-                            onPointerDown={(e) => e.stopPropagation()}
-                          >
-                            <div className="flex shrink-0 items-center gap-1">
-                              <p
-                                id={`qty-overlay-title-${product.id}`}
-                                className="min-w-0 flex-1 truncate text-[11px] font-semibold leading-tight text-slate-900"
-                                title={product.name}
-                              >
-                                {product.name}
-                              </p>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 shrink-0 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                                onClick={() => setQtyPopoverProductId(null)}
-                                aria-label="Fermer"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-
-                            <div className="flex min-h-0 flex-1 flex-col justify-center gap-1 pt-0.5">
-                              <Label
-                                htmlFor={`qty-${product.id}`}
-                                className="shrink-0 text-[10px] font-medium leading-none text-slate-600"
-                              >
-                                Quantité
-                                {product.track_inventory && !isLocked ? (
-                                  <span className="text-slate-400">
-                                    {" "}
-                                    · max {formatNumber(maxAdd >= 9999 ? stockQty : maxAdd)}
-                                  </span>
-                                ) : null}
-                              </Label>
-                              <div className="flex shrink-0 items-stretch gap-1.5">
-                                <Input
-                                  ref={qtyInputRef}
-                                  id={`qty-${product.id}`}
-                                  type="number"
-                                  inputMode="numeric"
-                                  min={1}
-                                  max={maxAdd >= 9999 ? undefined : maxAdd}
-                                  value={qtyDraft}
-                                  onChange={(e) => setQtyDraft(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      commitCustomQuantity(product);
-                                    }
-                                  }}
-                                  className="h-9 min-h-0 min-w-0 flex-1 border border-orange-300 bg-orange-50/60 px-1 text-center text-base font-bold tabular-nums text-slate-900 focus-visible:border-orange-500 focus-visible:ring-1 focus-visible:ring-orange-500/40"
-                                  autoComplete="off"
-                                  title={
-                                    product.track_inventory && !product.allow_negative_stock
-                                      ? `Maximum ${maxAdd}`
-                                      : undefined
-                                  }
-                                />
-                                <Button
-                                  type="button"
-                                  className="h-9 min-h-0 shrink-0 rounded-md bg-orange-500 px-3 text-sm font-bold text-white hover:bg-orange-600"
-                                  onClick={() => commitCustomQuantity(product)}
-                                >
-                                  OK
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-                      </>
+                      </QuantityPicker>
                     ) : (
                       <div className="cursor-not-allowed">{cardVisual}</div>
                     )}
@@ -1536,10 +1850,22 @@ export default function POSPage() {
                 const overStock = item.product.track_inventory && !item.product.allow_negative_stock && item.quantity > stockAvailable;
                 return (
                   <div key={item.product.id} className={`rounded-lg p-3 ${overStock ? 'bg-red-50 border border-red-200' : 'bg-gray-50'}`}>
-                    <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-start justify-between mb-2 gap-2">
+                      <ProductThumb
+                        src={item.product.image}
+                        alt={item.product.name}
+                        size="sm"
+                      />
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-sm text-gray-900 truncate">{item.product.name}</h4>
-                        <p className="text-xs text-gray-500">{formatPrice(item.unit_price)} × {item.quantity}</p>
+                        <p className="flex items-center gap-1.5 text-xs text-gray-500">
+                          <span className="truncate">{describeCartLine(item)}</span>
+                          {item.discount_percentage > 0 ? (
+                            <span className="shrink-0 rounded bg-orange-100 px-1 py-px text-[10px] font-bold tabular-nums text-orange-700">
+                              -{item.discount_percentage} %
+                            </span>
+                          ) : null}
+                        </p>
                         {overStock && (
                           <p className="text-xs text-red-600 font-medium flex items-center gap-1 mt-1">
                             <AlertTriangle className="h-3 w-3" />
@@ -1552,38 +1878,31 @@ export default function POSPage() {
                       </Button>
                     </div>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => updateQuantity(index, -1)}>
-                          <Minus className="h-4 w-4" />
-                        </Button>
-                        <Input
-                          key={`m-cart-qty-${item.product.id}-${item.quantity}`}
-                          type="number"
-                          min={1}
-                          defaultValue={item.quantity}
-                          onBlur={(e) => setCartLineQuantity(index, e.currentTarget.value, e.currentTarget)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              (e.currentTarget as HTMLInputElement).blur();
-                            }
-                          }}
-                          className="h-8 w-14 border-gray-200 text-center text-sm font-medium tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                          aria-label="Quantité"
-                        />
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => updateQuantity(index, 1)}>
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <CartLineQuantityEditor
+                        item={item}
+                        surface="m"
+                        openKey={editingLineProductId}
+                        onOpenKeyChange={setEditingLineProductId}
+                        maxBase={
+                          item.product.track_inventory && !item.product.allow_negative_stock
+                            ? getAvailableStock(item.product)
+                            : null
+                        }
+                        looseAvailable={addableLoose(item.product, true)}
+                        maxDiscountPercent={MAX_SALE_DISCOUNT_PERCENT}
+                        onConfirm={(selection) => setCartLineSelection(index, selection)}
+                        onRemove={() => removeFromCart(index)}
+                        onStep={(delta) => updateQuantity(index, delta)}
+                      />
                       <p className="font-bold text-gray-900">
-                        {formatPrice(item.quantity * item.unit_price * (1 - item.discount_percentage / 100))}
+                        {formatPrice(lineGross(item) * (1 - item.discount_percentage / 100))}
                       </p>
                     </div>
                   </div>
                 );
               })}
             </div>
-            {/* Mobile Cart Footer — compact pour laisser max. de place aux lignes */}
+            {/* Mobile Cart Footer - compact pour laisser max. de place aux lignes */}
             <div className="shrink-0 border-t px-3 py-2.5 space-y-2">
               <div className="flex items-center gap-2">
                 <Banknote className="h-4 w-4 shrink-0 text-gray-400" />
@@ -1612,7 +1931,7 @@ export default function POSPage() {
                     cart.length === 0
                       ? "Ajoutez d'abord un produit au panier."
                       : total < 0
-                        ? "Le total est négatif — réduisez les remises."
+                        ? "Le total est négatif - réduisez les remises."
                         : "Générer une facture proforma (sans vente ni stock)"
                   }
                   className="h-10 min-w-0 px-2 text-sm font-medium"
@@ -1632,7 +1951,7 @@ export default function POSPage() {
                     cart.length === 0
                       ? "Ajoutez d'abord un produit au panier."
                       : total < 0
-                        ? "Le total est négatif — réduisez les remises."
+                        ? "Le total est négatif - réduisez les remises."
                         : `Encaisser ${formatPrice(total)}`
                   }
                   className="h-10 min-w-0 bg-orange-500 px-2 text-sm font-medium hover:bg-orange-600"
@@ -1651,7 +1970,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Cart Section - Desktop — min-h-0 pour que la liste scroll et prenne tout l’espace vertical */}
+      {/* Cart Section - Desktop - min-h-0 pour que la liste scroll et prenne tout l’espace vertical */}
       <div className="hidden min-h-0 w-96 shrink-0 flex-col rounded-lg bg-white shadow-lg lg:flex">
         {/* Cart Header */}
         <div className="shrink-0 border-b px-3 py-2.5">
@@ -1698,13 +2017,23 @@ export default function POSPage() {
               const overStock = item.product.track_inventory && !item.product.allow_negative_stock && item.quantity > stockAvailable;
               return (
                 <div key={item.product.id} className={`rounded-lg p-3 ${overStock ? 'bg-red-50 border border-red-200' : 'bg-gray-50'}`}>
-                  <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-start justify-between mb-2 gap-2">
+                    <ProductThumb
+                      src={item.product.image}
+                      alt={item.product.name}
+                      size="sm"
+                    />
                     <div className="flex-1 min-w-0">
                       <h4 className="font-medium text-sm text-gray-900 truncate">
                         {item.product.name}
                       </h4>
-                      <p className="text-xs text-gray-500">
-                        {formatPrice(item.unit_price)} × {item.quantity}
+                      <p className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <span className="truncate">{describeCartLine(item)}</span>
+                        {item.discount_percentage > 0 ? (
+                          <span className="shrink-0 rounded bg-orange-100 px-1 py-px text-[10px] font-bold tabular-nums text-orange-700">
+                            -{item.discount_percentage} %
+                          </span>
+                        ) : null}
                       </p>
                       {overStock && (
                         <p className="text-xs text-red-600 font-medium flex items-center gap-1 mt-1">
@@ -1724,41 +2053,24 @@ export default function POSPage() {
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => updateQuantity(index, -1)}
-                      >
-                        <Minus className="h-4 w-4" />
-                      </Button>
-                      <Input
-                        key={`cart-qty-${item.product.id}-${item.quantity}`}
-                        type="number"
-                        min={1}
-                        defaultValue={item.quantity}
-                        onBlur={(e) => setCartLineQuantity(index, e.currentTarget.value, e.currentTarget)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            (e.currentTarget as HTMLInputElement).blur();
-                          }
-                        }}
-                        className="h-8 w-14 border-gray-200 text-center text-sm font-medium tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                        aria-label="Quantité"
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => updateQuantity(index, 1)}
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    <CartLineQuantityEditor
+                      item={item}
+                      surface="d"
+                      openKey={editingLineProductId}
+                      onOpenKeyChange={setEditingLineProductId}
+                      maxBase={
+                        item.product.track_inventory && !item.product.allow_negative_stock
+                          ? getAvailableStock(item.product)
+                          : null
+                      }
+                      looseAvailable={addableLoose(item.product, true)}
+                      maxDiscountPercent={MAX_SALE_DISCOUNT_PERCENT}
+                      onConfirm={(selection) => setCartLineSelection(index, selection)}
+                      onRemove={() => removeFromCart(index)}
+                      onStep={(delta) => updateQuantity(index, delta)}
+                    />
                     <p className="font-bold text-gray-900">
-                      {formatPrice(item.quantity * item.unit_price * (1 - item.discount_percentage / 100))}
+                      {formatPrice(lineGross(item) * (1 - item.discount_percentage / 100))}
                     </p>
                   </div>
                 </div>
@@ -1767,7 +2079,7 @@ export default function POSPage() {
           )}
         </div>
 
-        {/* Cart Footer — compact : une rangée d’actions + totaux resserrés */}
+        {/* Cart Footer - compact : une rangée d’actions + totaux resserrés */}
         <div className="shrink-0 space-y-2 border-t px-3 py-2.5">
           {/* Global Discount */}
           <div className="flex items-center gap-2">
@@ -1816,7 +2128,7 @@ export default function POSPage() {
             </div>
           </div>
 
-          {/* Paiement / proforma — une ligne, hauteur réduite */}
+          {/* Paiement / proforma - une ligne, hauteur réduite */}
           <div className="grid grid-cols-2 gap-2">
             <Button
               variant="outline"
@@ -1825,7 +2137,7 @@ export default function POSPage() {
                 cart.length === 0
                   ? "Ajoutez d'abord un produit au panier."
                   : total < 0
-                    ? "Le total est négatif — réduisez les remises."
+                    ? "Le total est négatif - réduisez les remises."
                     : "Générer une facture proforma (sans vente ni stock)"
               }
               className="h-10 min-w-0 px-2 text-sm font-medium"
@@ -1845,7 +2157,7 @@ export default function POSPage() {
                 cart.length === 0
                   ? "Ajoutez d'abord un produit au panier."
                   : total < 0
-                    ? "Le total est négatif — réduisez les remises."
+                    ? "Le total est négatif - réduisez les remises."
                     : `Encaisser ${formatPrice(total)}`
               }
               className="h-10 min-w-0 bg-orange-500 px-2 text-sm font-medium hover:bg-orange-600"
@@ -1864,7 +2176,7 @@ export default function POSPage() {
         if (isProcessing) {
           // L'utilisateur tente de fermer le dialog pendant un submit en
           // cours (Esc, clic backdrop, ou fermeture forcée). On bloque la
-          // fermeture et on l'informe explicitement — sinon il pense que
+          // fermeture et on l'informe explicitement : sinon il pense que
           // la vente n'a pas été créée et risque de doubler.
           if (!open) {
             toast.info(
@@ -1974,7 +2286,7 @@ export default function POSPage() {
                 <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                   <p className="text-sm text-amber-800 font-medium flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 shrink-0" />
-                    Vente à crédit — un client est obligatoire
+                    Vente à crédit - un client est obligatoire
                   </p>
                   {!selectedCustomer && (
                     <Button
@@ -2216,7 +2528,7 @@ export default function POSPage() {
                 )}
               </div>
 
-              {/* Total payé + monnaie/crédit — exprimés dans la devise ENCAISSÉE */}
+              {/* Total payé + monnaie/crédit - exprimés dans la devise ENCAISSÉE */}
               <div className="p-3 bg-gray-50 rounded-xl space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Total payé</span>
@@ -2332,7 +2644,7 @@ export default function POSPage() {
           <DialogHeader>
             <DialogTitle>Fermer la session de caisse</DialogTitle>
             <DialogDescription>
-              Caisse: {currentSession?.register_name} — Ouverte par {currentSession?.opened_by_name}
+              Caisse: {currentSession?.register_name} - Ouverte par {currentSession?.opened_by_name}
             </DialogDescription>
           </DialogHeader>
 
@@ -2377,6 +2689,43 @@ export default function POSPage() {
                 <LogOut className="h-4 w-4 mr-2" />
               )}
               Fermer la session
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sortie de caisse avec un panier en cours */}
+      <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Quitter la caisse ?</DialogTitle>
+            <DialogDescription>
+              La session de caisse reste ouverte : vous pourrez y revenir depuis la
+              liste des caisses.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <AlertTriangle className="mt-px h-4 w-4 shrink-0 text-amber-600" />
+            <p className="text-sm leading-snug text-amber-800">
+              Le panier en cours ({cart.length} article{cart.length > 1 ? "s" : ""}
+              {" "}pour {formatPrice(total)}) sera perdu.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLeaveDialog(false)}>
+              Rester à la caisse
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setShowLeaveDialog(false);
+                router.push("/dashboard/sales/registers");
+              }}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Quitter sans encaisser
             </Button>
           </DialogFooter>
         </DialogContent>

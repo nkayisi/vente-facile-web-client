@@ -27,6 +27,7 @@ import { formatPrice, formatNumber } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { ProductThumb } from "@/components/products/product-thumb";
 import {
   getStocks,
   getLowStock,
@@ -357,9 +358,18 @@ export default function StocksPage() {
                   return (
                     <tr key={stock.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium text-gray-900">{stock.product_name}</p>
-                          <p className="text-xs text-gray-500">{stock.product_sku}</p>
+                        <div className="flex items-center gap-3">
+                          <ProductThumb
+                            src={stock.product_image}
+                            alt={stock.product_name}
+                            size="sm"
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-gray-900">
+                              {stock.product_name}
+                            </p>
+                            <p className="text-xs text-gray-500">{stock.product_sku}</p>
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -367,7 +377,7 @@ export default function StocksPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="font-medium">
-                          {parseFloat(stock.quantity).toFixed(0)}
+                          {stock.stock_display || parseFloat(stock.quantity).toFixed(0)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -416,10 +426,19 @@ export default function StocksPage() {
               return (
                 <Card key={stock.id} className="p-0">
                   <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h3 className="font-medium text-gray-900">{stock.product_name}</h3>
-                        <p className="text-xs text-gray-500">{stock.product_sku}</p>
+                    <div className="flex items-start justify-between mb-3 gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <ProductThumb
+                          src={stock.product_image}
+                          alt={stock.product_name}
+                          size="md"
+                        />
+                        <div className="min-w-0">
+                          <h3 className="truncate font-medium text-gray-900">
+                            {stock.product_name}
+                          </h3>
+                          <p className="text-xs text-gray-500">{stock.product_sku}</p>
+                        </div>
                       </div>
                       <Badge className={status.color}>{status.label}</Badge>
                     </div>
@@ -431,7 +450,9 @@ export default function StocksPage() {
 
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
-                        <StatValue value={parseFloat(stock.quantity).toFixed(0)} />
+                        <StatValue
+                          value={stock.stock_display || parseFloat(stock.quantity).toFixed(0)}
+                        />
                         <p className="text-xs text-gray-500">Total</p>
                       </div>
                       <div>

@@ -3,7 +3,16 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -37,28 +46,36 @@ import {
   ArrowDownLeft,
   Filter,
   Warehouse as WarehouseIcon,
-  Calendar,
   Package,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatDateTime } from "@/lib/format";
+import { PermissionGate } from "@/components/auth/permission-gate";
+import { ChannelPriceBlock } from "@/components/products/channel-price-block";
+import { useCurrency } from "@/components/providers/currency-provider";
+import { blendedUnitCost } from "@/lib/pricing";
+import { formatPrice, formatDateTime, formatDecimal } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
 import {
   getStockMovements,
   createStockMovement,
-  getWarehouses,
   getLocationsByWarehouse,
   StockMovement,
-  Warehouse,
   StockLocation,
   MovementType,
   CreateStockMovementData,
 } from "@/actions/stock.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 
-const MOVEMENT_TYPES: { value: MovementType; label: string; direction: "in" | "out" }[] = [
+const MOVEMENT_TYPES: {
+  value: MovementType;
+  label: string;
+  direction: "in" | "out";
+  /** Faux pour les types produits par le système, jamais saisis à la main */
+  selectable?: boolean;
+}[] = [
   { value: "purchase", label: "Achat", direction: "in" },
   { value: "sale", label: "Vente", direction: "out" },
   { value: "return_in", label: "Retour client", direction: "in" },
@@ -70,7 +87,15 @@ const MOVEMENT_TYPES: { value: MovementType; label: string; direction: "in" | "o
   { value: "damage", label: "Dommage/Perte", direction: "out" },
   { value: "expired", label: "Périmé", direction: "out" },
   { value: "initial", label: "Stock initial", direction: "in" },
+  // Produit par le système lors de l'ouverture d'un conditionnement : il figure
+  // dans l'historique mais ne se saisit pas (le serveur le refuse).
+  { value: "unpack", label: "Déconditionnement", direction: "in", selectable: false },
 ];
+
+/** Types réellement proposés dans le formulaire de création. */
+const SELECTABLE_MOVEMENT_TYPES = MOVEMENT_TYPES.filter(
+  type => type.selectable !== false
+);
 
 /** Entrées de stock où le coût unitaire sert à la valorisation (approvisionnement, etc.) */
 const STOCK_IN_TYPES_WITH_COST: MovementType[] = [
@@ -81,19 +106,34 @@ const STOCK_IN_TYPES_WITH_COST: MovementType[] = [
   "adjustment_in",
 ];
 
+const EMPTY_FORM: CreateStockMovementData = {
+  product: "",
+  warehouse: "",
+  movement_type: "initial",
+  quantity: 0,
+  notes: "",
+  location: "",
+  expiry_date: "",
+};
+
 export default function MovementsPage() {
   const { data: session } = useSession();
   const router = useRouter();
+  const { currency: defaultCurrency } = useCurrency();
+  const currencySymbol = defaultCurrency.symbol;
 
   // State
   const [isLoading, setIsLoading] = useState(true);
+  /** Rechargement du tableau seul : la page reste affichée, les lignes deviennent des squelettes */
+  const [isFetching, setIsFetching] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [movements, setMovements] = useState<StockMovement[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [locations, setLocations] = useState<StockLocation[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  /** Requête réellement envoyée : sans délai, chaque frappe déclencherait un appel */
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
 
@@ -102,23 +142,25 @@ export default function MovementsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [hasNext, setHasNext] = useState(false);
   const [hasPrevious, setHasPrevious] = useState(false);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(20);
 
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form state
-  const [formData, setFormData] = useState<CreateStockMovementData>({
-    product: "",
-    warehouse: "",
-    movement_type: "initial",
-    quantity: 0,
-    unit_cost: 0,
-    notes: "",
-    location: "",
-    expiry_date: "",
-  });
+  const [formData, setFormData] = useState<CreateStockMovementData>(EMPTY_FORM);
+  /**
+   * Prix de vente affichés dans les blocs canal. Ils servent toujours au calcul
+   * de la marge ; ils ne partent au serveur que si la case ci-dessous est
+   * cochée. Séparés de `formData` pour cette raison : ce ne sont pas des
+   * données du mouvement.
+   */
+  const [sellingPrices, setSellingPrices] = useState<{
+    selling_price: number | null;
+    wholesale_price: number | null;
+  }>({ selling_price: null, wholesale_price: null });
+  const [updateProductPrices, setUpdateProductPrices] = useState(false);
 
   // Charger les emplacements quand l'entrepôt change
   useEffect(() => {
@@ -163,31 +205,69 @@ export default function MovementsPage() {
     [session?.accessToken, organization]
   );
 
-  // Pré-remplir unit_cost quand le produit change
+  /**
+   * Reprend les quatre prix de la fiche produit.
+   *
+   * Le marchand n'a ainsi rien à ressaisir pour un réapprovisionnement au même
+   * prix, et voit sa marge immédiatement. Les prix restent modifiables : un
+   * fournisseur change ses tarifs.
+   *
+   * Le remplissage se fait **à chaque changement de produit**, sans garde du
+   * type « ne rien faire si un prix est déjà là » : dans un modale resté
+   * ouvert, cette garde laissait en place le prix du produit précédent.
+   */
+  const prefillPrices = useCallback((product: Product) => {
+    const isPackaged =
+      product.selling_mode &&
+      product.selling_mode !== "retail_only" &&
+      (product.units_per_package ?? 0) >= 2;
+
+    setFormData(prev => ({
+      ...prev,
+      unit_cost: product.cost_price ? parseFloat(product.cost_price) : undefined,
+      package_unit_cost:
+        isPackaged && product.package_cost_price
+          ? parseFloat(product.package_cost_price)
+          : undefined,
+    }));
+
+    setSellingPrices({
+      selling_price: product.selling_price ? parseFloat(product.selling_price) : null,
+      wholesale_price:
+        isPackaged && product.wholesale_price
+          ? parseFloat(product.wholesale_price)
+          : null,
+    });
+
+    // Une case restée cochée écraserait les prix du produit suivant.
+    setUpdateProductPrices(false);
+  }, []);
+
+  // Pré-remplir les prix quand le produit change
   useEffect(() => {
     if (formData.product) {
       const product = products.find(p => p.id === formData.product);
       if (product) {
         setSelectedProduct(product);
-        if (product.cost_price && formData.unit_cost === 0) {
-          setFormData(prev => ({ ...prev, unit_cost: parseFloat(product.cost_price) }));
-        }
+        prefillPrices(product);
       } else if (session?.accessToken && organization) {
         // Produit sélectionné via recherche mais pas encore dans le cache local
         getProduct(session.accessToken, organization.id, formData.product).then(result => {
           if (result.success && result.data) {
             setSelectedProduct(result.data);
             setProducts(prev => [...prev, result.data!]);
-            if (result.data.cost_price && formData.unit_cost === 0) {
-              setFormData(prev => ({ ...prev, unit_cost: parseFloat(result.data!.cost_price) }));
-            }
+            prefillPrices(result.data);
           }
         });
       }
     } else {
       setSelectedProduct(null);
     }
-  }, [formData.product, products, session?.accessToken, organization]);
+    // `products` est volontairement hors des dépendances : la liste grossit à
+    // chaque recherche, et le préremplissage doit suivre le produit choisi, pas
+    // le cache.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.product, session?.accessToken, organization, prefillPrices]);
 
   // Fetch data
   useEffect(() => {
@@ -199,19 +279,17 @@ export default function MovementsPage() {
         if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
           const org = orgResult.data[0];
           setOrganization(org);
-
-          // Fetch warehouses
-          const warehousesResult = await getWarehouses(session.accessToken, org.id);
-          if (warehousesResult.success && warehousesResult.data) {
-            setWarehouses(warehousesResult.data);
-          }
-
-          // Fetch movements
-          await fetchMovements(org.id);
+          // Les entrepôts ne sont pas préchargés : les deux sélecteurs de la page
+          // les cherchent à la demande via `createWarehouseSearchHandler`.
+          // Les mouvements sont chargés par l'effet des filtres, une fois
+          // l'organisation connue : les charger ici aussi doublerait l'appel.
+        } else {
+          setIsFetching(false);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
         toast.error("Erreur lors du chargement des données");
+        setIsFetching(false);
       } finally {
         setIsLoading(false);
       }
@@ -229,16 +307,23 @@ export default function MovementsPage() {
     const filters: any = { page: currentPage, page_size: pageSize };
     if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
     if (selectedType !== "all") filters.movement_type = selectedType;
-    if (searchQuery) filters.search = searchQuery;
+    if (debouncedSearch) filters.search = debouncedSearch;
 
-    const result = await getStockMovements(session.accessToken, id, filters);
-    if (result.success && result.data) {
-      setMovements(result.data.results);
-      setTotalCount(result.data.count);
-      setHasNext(result.data.next !== null);
-      setHasPrevious(result.data.previous !== null);
+    setIsFetching(true);
+    try {
+      const result = await getStockMovements(session.accessToken, id, filters);
+      if (result.success && result.data) {
+        setMovements(result.data.results);
+        setTotalCount(result.data.count);
+        setHasNext(result.data.next !== null);
+        setHasPrevious(result.data.previous !== null);
+      } else {
+        toast.error(result.message || "Erreur lors du chargement des mouvements");
+      }
+    } finally {
+      setIsFetching(false);
     }
-  }, [session?.accessToken, organization, currentPage, pageSize, selectedWarehouse, selectedType, searchQuery]);
+  }, [session?.accessToken, organization, currentPage, pageSize, selectedWarehouse, selectedType, debouncedSearch]);
 
   // Refetch when filters or page change
   useEffect(() => {
@@ -247,33 +332,122 @@ export default function MovementsPage() {
     }
   }, [organization, fetchMovements]);
 
-  // Reset to page 1 when filters change
-  const handleFilterChange = (setter: (value: string) => void, value: string) => {
-    setter(value);
+  // La recherche part une fois la frappe retombée, pas à chaque caractère
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Un filtre qui change repart de la première page : rester en page 5 d'un
+  // résultat qui n'en compte plus que 2 afficherait un tableau vide.
+  useEffect(() => {
     setCurrentPage(1);
-  };
+  }, [debouncedSearch, selectedWarehouse, selectedType, pageSize]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
+  const hasActiveFilters =
+    selectedWarehouse !== "all" || selectedType !== "all" || searchQuery.trim() !== "";
 
-  /** Marge si on valorise l'entrée au coût saisi, comparée au PV catalogue du produit */
-  const replenishmentMarginPreview = useMemo(() => {
-    if (!selectedProduct || !STOCK_IN_TYPES_WITH_COST.includes(formData.movement_type)) {
-      return null;
+  const resetFilters = () => {
+    setSearchQuery("");
+    setSelectedWarehouse("all");
+    setSelectedType("all");
+  };
+
+  /** Bornes affichées dans le pied du tableau : « 21 à 40 sur 137 » */
+  const rangeStart = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(currentPage * pageSize, totalCount);
+
+  /** Vrai pour une entrée de stock : elle seule porte des prix. */
+  const isStockIn = STOCK_IN_TYPES_WITH_COST.includes(formData.movement_type);
+
+  /**
+   * Conditionnement du produit sélectionné. `null` pour un produit vendu à
+   * l'unité, qui conserve alors la saisie simple d'origine.
+   */
+  const packagingFactor =
+    selectedProduct?.selling_mode &&
+    selectedProduct.selling_mode !== "retail_only" &&
+    selectedProduct.units_per_package
+      ? selectedProduct.units_per_package
+      : null;
+
+  /**
+   * Produit vendu uniquement en gros : il entre et sort par contenant entier.
+   * Lui proposer une saisie au détail n'aurait pas de sens, un contenant ne
+   * s'ouvrant jamais pour ce mode.
+   */
+  const isPackageOnly =
+    !!packagingFactor && selectedProduct?.selling_mode === "wholesale_only";
+
+  const packageWord = selectedProduct?.packaging_unit_name || "conditionnement";
+  const retailWord = selectedProduct?.unit_name || "unité";
+  const pluralize = (word: string) => (/[sx]$/i.test(word) ? word : `${word}s`);
+  const packageWordPlural = pluralize(packageWord);
+  const retailWordPlural = pluralize(retailWord);
+
+  /** Récapitulatif de la conversion, affiché avant validation. */
+  const conversionSummary = useMemo(() => {
+    if (!packagingFactor) return null;
+    const packages = formData.package_quantity ?? 0;
+    const loose = formData.loose_quantity ?? 0;
+    if (packages <= 0 && loose <= 0) return null;
+
+    const total = packages * packagingFactor + loose;
+    const parts: string[] = [];
+    if (packages > 0) {
+      parts.push(`${packages} ${packages > 1 ? packageWordPlural : packageWord}`);
     }
-    const sellingPrice = parseFloat(selectedProduct.selling_price || "0");
-    const unitCost = formData.unit_cost ?? 0;
-    if (!(sellingPrice > 0) || !(unitCost > 0)) {
-      return null;
+    if (loose > 0) {
+      parts.push(`${loose} ${loose > 1 ? retailWordPlural : retailWord}`);
     }
-    const grossMargin = sellingPrice - unitCost;
-    const marginRateOnSelling =
-      sellingPrice > 0 ? (grossMargin / sellingPrice) * 100 : 0;
-    return {
-      grossMargin,
-      marginRateOnSelling,
-      isNegativeOrZero: grossMargin <= 0,
-    };
-  }, [selectedProduct, formData.movement_type, formData.unit_cost]);
+    const verb = ["purchase", "initial", "return_in", "transfer_in", "adjustment_in", "production_in"].includes(
+      formData.movement_type
+    )
+      ? "ajoutez"
+      : "retirez";
+    return `Vous ${verb} ${parts.join(" + ")} = ${total} ${
+      total > 1 ? retailWordPlural : retailWord
+    }.`;
+  }, [
+    packagingFactor,
+    formData.package_quantity,
+    formData.loose_quantity,
+    formData.movement_type,
+    packageWord,
+    packageWordPlural,
+    retailWord,
+    retailWordPlural,
+  ]);
+
+  /**
+   * Coût unitaire réellement enregistré quand les deux canaux sont servis à des
+   * prix différents. C'est la seule valeur que le marchand ne peut pas
+   * recalculer de tête avant de valider. Le serveur refait le calcul, cet
+   * affichage n'est qu'une prévision.
+   */
+  const blendedCostPreview = useMemo(() => {
+    if (!isStockIn || !packagingFactor) return null;
+    const packages = formData.package_quantity ?? 0;
+    const loose = formData.loose_quantity ?? 0;
+    if (packages <= 0 || loose <= 0) return null;
+    if (!formData.package_unit_cost || !formData.unit_cost) return null;
+
+    return blendedUnitCost({
+      packageQuantity: packages,
+      packageCost: formData.package_unit_cost,
+      looseQuantity: loose,
+      looseCost: formData.unit_cost,
+      factor: packagingFactor,
+    });
+  }, [
+    isStockIn,
+    packagingFactor,
+    formData.package_quantity,
+    formData.loose_quantity,
+    formData.package_unit_cost,
+    formData.unit_cost,
+  ]);
 
   const locationSelectOptions = useMemo(
     () => [
@@ -303,24 +477,70 @@ export default function MovementsPage() {
       return;
     }
 
+    if (packagingFactor) {
+      const packages = formData.package_quantity ?? 0;
+      const loose = formData.loose_quantity ?? 0;
+      if (packages <= 0 && (isPackageOnly || loose <= 0)) {
+        toast.error(
+          isPackageOnly
+            ? `Indiquez un nombre de ${packageWordPlural}`
+            : `Indiquez un nombre de ${packageWordPlural} ou de ${retailWordPlural}`
+        );
+        return;
+      }
+    } else if (!formData.quantity) {
+      toast.error("Veuillez indiquer une quantité");
+      return;
+    }
+
     setIsSubmitting(true);
 
+    // Le serveur convertit la saisie en unité de base : on ne lui envoie que ce
+    // qui a réellement été saisi, jamais un total calculé côté navigateur.
+    const payload: CreateStockMovementData = packagingFactor
+      ? {
+          ...formData,
+          quantity: undefined,
+          package_quantity: formData.package_quantity ?? 0,
+          // Produit vendu en gros seul : la case au détail n'est pas affichée,
+          // une valeur restée d'un produit précédent ne doit pas partir.
+          loose_quantity: isPackageOnly ? 0 : (formData.loose_quantity ?? 0),
+          unit_cost: isPackageOnly ? undefined : formData.unit_cost,
+        }
+      : { ...formData, package_quantity: undefined, loose_quantity: undefined, package_unit_cost: undefined };
+
+    // Une sortie de stock n'a pas de prix d'achat à déclarer : sa valeur est
+    // déterminée par les lots consommés.
+    if (!isStockIn) {
+      payload.unit_cost = undefined;
+      payload.package_unit_cost = undefined;
+    }
+
+    // Les prix de vente ne partent que si le marchand a demandé le report : le
+    // reste du temps, ils n'ont servi qu'à afficher la marge.
+    if (updateProductPrices) {
+      payload.update_product_prices = true;
+      if (!isPackageOnly && sellingPrices.selling_price) {
+        payload.selling_price = sellingPrices.selling_price;
+      }
+      if (packagingFactor && sellingPrices.wholesale_price) {
+        payload.wholesale_price = sellingPrices.wholesale_price;
+      }
+    }
+
     try {
-      const result = await createStockMovement(session.accessToken, organization.id, formData);
+      const result = await createStockMovement(session.accessToken, organization.id, payload);
       if (result.success) {
-        toast.success("Mouvement créé avec succès");
+        toast.success(
+          updateProductPrices
+            ? "Mouvement créé et prix de la fiche produit mis à jour"
+            : "Mouvement créé avec succès"
+        );
         setShowCreateDialog(false);
         fetchMovements();
-        setFormData({
-          product: "",
-          warehouse: "",
-          movement_type: "initial",
-          quantity: 0,
-          unit_cost: 0,
-          notes: "",
-          location: "",
-          expiry_date: "",
-        });
+        setFormData(EMPTY_FORM);
+        setSellingPrices({ selling_price: null, wholesale_price: null });
+        setUpdateProductPrices(false);
       } else {
         toast.error(result.message || "Erreur lors de la création");
       }
@@ -331,19 +551,30 @@ export default function MovementsPage() {
     }
   };
 
-  // Get movement badge color
+  /** Couleur, icône et sens d'un type de mouvement, pour le badge du tableau */
   const getMovementBadge = (type: MovementType) => {
     const movement = MOVEMENT_TYPES.find(m => m.value === type);
-    if (!movement) return { color: "bg-gray-100 text-gray-700", icon: Package };
+    if (!movement) {
+      return {
+        color: "bg-gray-100 text-gray-700 hover:bg-gray-100",
+        icon: Package,
+        direction: null as "in" | "out" | null,
+      };
+    }
 
     if (movement.direction === "in") {
-      return { color: "bg-green-100 text-green-700", icon: ArrowDownLeft };
+      return {
+        color: "bg-green-100 text-green-700 hover:bg-green-100",
+        icon: ArrowDownLeft,
+        direction: "in" as const,
+      };
     }
-    return { color: "bg-red-100 text-red-700", icon: ArrowUpRight };
+    return {
+      color: "bg-red-100 text-red-700 hover:bg-red-100",
+      icon: ArrowUpRight,
+      direction: "out" as const,
+    };
   };
-
-  // Format date
-
 
   if (isLoading) {
     return (
@@ -364,7 +595,7 @@ export default function MovementsPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Mouvements de stock</h1>
             <p className="text-sm text-gray-500 mt-1">
-              Historique de tous les mouvements ({totalCount} au total)
+              Historique des entrées et sorties de stock
             </p>
           </div>
         </div>
@@ -378,17 +609,17 @@ export default function MovementsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between">
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
         <div className="relative flex-1 max-w-lg">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
-            placeholder="Rechercher..."
+            placeholder="Rechercher un produit, un code ou une note..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="pl-9"
           />
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <SearchableSelectAsyncWithEmpty
             value={selectedWarehouse === "all" ? null : selectedWarehouse}
             onValueChange={value => setSelectedWarehouse(value ?? "all")}
@@ -418,11 +649,23 @@ export default function MovementsPage() {
               ))}
             </SelectContent>
           </Select>
+
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={resetFilters}
+              className="text-gray-500"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Réinitialiser
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Movements List */}
-      {movements.length === 0 ? (
+      {/* Historique */}
+      {!isFetching && movements.length === 0 && !hasActiveFilters ? (
         <Card className="p-0">
           <CardContent className="p-8 text-center">
             <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -440,88 +683,204 @@ export default function MovementsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {movements.map(movement => {
-            const badge = getMovementBadge(movement.movement_type);
-            const Icon = badge.icon;
-            const qty = parseFloat(movement.quantity);
-
-            return (
-              <Card key={movement.id} className="p-0">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-4">
-                    {/* Icon */}
-                    <div className={`p-2 rounded-lg ${badge.color}`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-medium text-gray-900 truncate">
-                          {movement.product_name}
-                        </h3>
-                        <Badge className={badge.color}>{movement.movement_type_display}</Badge>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <WarehouseIcon className="h-3 w-3" />
-                          {movement.warehouse_name}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {formatDateTime(movement.created_at)}
-                        </span>
-                        {movement.created_by_name && (
-                          <span>Par: {movement.created_by_name}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Quantity */}
-                    <div className="text-right">
-                      <p
-                        className={`text-lg font-bold ${qty > 0 ? "text-green-600" : "text-red-600"
-                          }`}
-                      >
-                        {qty > 0 ? "+" : ""}
-                        {qty.toFixed(0)}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {parseFloat(movement.quantity_before).toFixed(0)} →{" "}
-                        {parseFloat(movement.quantity_after).toFixed(0)}
-                      </p>
-                    </div>
-                  </div>
-
-                  {movement.notes && (
-                    <p className="mt-3 text-sm text-gray-500 bg-gray-50 p-2 rounded">
-                      {movement.notes}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="mt-6">
-              <DataPagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={setCurrentPage}
-                hasNext={hasNext}
-                hasPrevious={hasPrevious}
-              />
+        <Card className="gap-2.5">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base">
+                Historique{" "}
+                <span className="font-normal text-gray-500">({totalCount})</span>
+              </CardTitle>
+              {isFetching && (
+                <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+              )}
             </div>
-          )}
-        </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">Date</TableHead>
+                    <TableHead>Produit</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="hidden md:table-cell">Entrepôt</TableHead>
+                    <TableHead className="hidden xl:table-cell">Par</TableHead>
+                    <TableHead className="text-right">Quantité</TableHead>
+                    <TableHead className="text-right hidden lg:table-cell whitespace-nowrap">
+                      Stock (avant → après)
+                    </TableHead>
+                    <TableHead className="text-right hidden xl:table-cell">
+                      Valeur
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isFetching && movements.length === 0 ? (
+                    Array.from({ length: 6 }).map((_, index) => (
+                      <TableRow key={`skeleton-${index}`}>
+                        <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-24 rounded-full" /></TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          <Skeleton className="h-4 w-24" />
+                        </TableCell>
+                        <TableCell className="hidden xl:table-cell">
+                          <Skeleton className="h-4 w-20" />
+                        </TableCell>
+                        <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                        <TableCell className="hidden lg:table-cell">
+                          <Skeleton className="h-4 w-20 ml-auto" />
+                        </TableCell>
+                        <TableCell className="hidden xl:table-cell">
+                          <Skeleton className="h-4 w-20 ml-auto" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : movements.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="py-12 text-center">
+                        <p className="text-sm text-gray-500">
+                          Aucun mouvement ne correspond à votre recherche
+                        </p>
+                        <Button
+                          variant="link"
+                          onClick={resetFilters}
+                          className="text-orange-600"
+                        >
+                          Réinitialiser les filtres
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    movements.map(movement => {
+                      const badge = getMovementBadge(movement.movement_type);
+                      const Icon = badge.icon;
+                      const qty = parseFloat(movement.quantity);
+                      // Un déconditionnement laisse le total inchangé : ni signe,
+                      // ni couleur d'entrée ou de sortie, seul le partage change.
+                      const sign = qty > 0 ? "+" : qty < 0 ? "-" : "";
+                      const quantityColor =
+                        qty > 0
+                          ? "text-green-600"
+                          : qty < 0
+                            ? "text-red-600"
+                            : "text-gray-600";
+                      const unitCost = parseFloat(movement.unit_cost || "0");
+                      const movementValue = Math.abs(qty) * unitCost;
+
+                      return (
+                        <TableRow key={movement.id}>
+                          <TableCell className="whitespace-nowrap text-sm text-gray-600">
+                            {formatDateTime(movement.created_at)}
+                          </TableCell>
+
+                          <TableCell className="max-w-[260px]">
+                            <div
+                              className="truncate text-sm font-medium text-gray-900"
+                              title={movement.product_name}
+                            >
+                              {movement.product_name}
+                            </div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+                              {movement.product_sku && (
+                                <span className="font-mono">{movement.product_sku}</span>
+                              )}
+                              <span className="flex items-center gap-1 md:hidden">
+                                <WarehouseIcon className="h-3 w-3" />
+                                {movement.warehouse_name}
+                              </span>
+                            </div>
+                            {movement.notes && (
+                              <p
+                                className="mt-0.5 truncate text-xs text-gray-400"
+                                title={movement.notes}
+                              >
+                                {movement.notes}
+                              </p>
+                            )}
+                          </TableCell>
+
+                          <TableCell>
+                            <Badge className={`${badge.color} whitespace-nowrap`}>
+                              <Icon className="h-3 w-3 mr-1" />
+                              {movement.movement_type_display}
+                            </Badge>
+                          </TableCell>
+
+                          <TableCell className="hidden md:table-cell text-sm text-gray-600">
+                            {movement.warehouse_name}
+                          </TableCell>
+
+                          <TableCell className="hidden xl:table-cell text-sm text-gray-500">
+                            {movement.created_by_name || "-"}
+                          </TableCell>
+
+                          <TableCell
+                            className={`text-right whitespace-nowrap font-semibold tabular-nums ${quantityColor}`}
+                          >
+                            {sign}
+                            {movement.quantity_display ||
+                              formatDecimal(Math.abs(qty))}
+                          </TableCell>
+
+                          <TableCell className="hidden lg:table-cell text-right text-sm text-gray-500 tabular-nums whitespace-nowrap">
+                            {formatDecimal(movement.quantity_before)} →{" "}
+                            {formatDecimal(movement.quantity_after)}
+                          </TableCell>
+
+                          <TableCell className="hidden xl:table-cell text-right text-sm text-gray-600 tabular-nums">
+                            {unitCost > 0 ? formatPrice(movementValue) : "-"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Pied de tableau : bornes affichées, taille de page et pagination */}
+            {totalCount > 0 && (
+              <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3 text-sm text-gray-500">
+                  <span className="whitespace-nowrap">
+                    {rangeStart} à {rangeEnd} sur {totalCount}
+                  </span>
+                  <Select
+                    value={String(pageSize)}
+                    onValueChange={value => setPageSize(Number(value))}
+                  >
+                    <SelectTrigger className="h-8 w-[120px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[20, 50, 100].map(size => (
+                        <SelectItem key={size} value={String(size)}>
+                          {size} par page
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {totalPages > 1 && (
+                  <DataPagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    hasNext={hasNext}
+                    hasPrevious={hasPrevious}
+                  />
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Create Movement Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="flex max-h-[min(90vh,calc(100dvh-1rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
+        <DialogContent className="flex max-h-[min(90vh,calc(100dvh-1rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
           <DialogHeader className="shrink-0 space-y-1.5 px-6 pt-6 pb-3 pr-12 text-left">
             <DialogTitle>Nouveau mouvement de stock</DialogTitle>
             <DialogDescription>
@@ -558,7 +917,7 @@ export default function MovementsPage() {
                       ? createWarehouseSearchHandler(session.accessToken, organization.id)
                       : async () => []
                   }
-                  emptyLabel="—"
+                  emptyLabel="-"
                   placeholder="Sélectionner un entrepôt"
                   searchPlaceholder="Rechercher un entrepôt..."
                   disabled={!session?.accessToken || !organization?.id}
@@ -577,7 +936,7 @@ export default function MovementsPage() {
                     <SelectValue placeholder="Sélectionner le type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {MOVEMENT_TYPES.map(type => (
+                    {SELECTABLE_MOVEMENT_TYPES.map(type => (
                       <SelectItem key={type.value} value={type.value}>
                         {type.label}
                       </SelectItem>
@@ -587,51 +946,139 @@ export default function MovementsPage() {
               </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantité *</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  value={formData.quantity}
-                  onChange={e => setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })}
-                  min="0"
-                  step="1"
-                  required
+              {/* Un bloc par canal : chacun porte sa quantité, ses deux prix et
+                  sa marge. Le marchand lit « 2 cartons à 6 000 » d'un seul
+                  tenant, au lieu de rapprocher une quantité et un prix rangés
+                  dans deux zones différentes. */}
+              {!isPackageOnly && (
+                <ChannelPriceBlock
+                  channel="retail"
+                  title={`Au détail · ${retailWord}`}
+                  currencySymbol={currencySymbol}
+                  costLabel={`Prix d'achat d'une ${retailWord}`}
+                  sellingLabel={`Prix de vente d'une ${retailWord}`}
+                  costPrice={isStockIn ? formData.unit_cost ?? null : null}
+                  sellingPrice={sellingPrices.selling_price}
+                  onCostChange={value =>
+                    setFormData({ ...formData, unit_cost: value ?? undefined })
+                  }
+                  onSellingChange={value =>
+                    setSellingPrices(prev => ({ ...prev, selling_price: value }))
+                  }
+                  disabled={!isStockIn}
+                  quantitySlot={
+                    <div className="space-y-1.5">
+                      <Label htmlFor="loose_quantity">
+                        {packagingFactor
+                          ? `Nombre de ${retailWordPlural} à l'unité`
+                          : "Quantité *"}
+                      </Label>
+                      <Input
+                        id="loose_quantity"
+                        type="number"
+                        value={
+                          packagingFactor
+                            ? formData.loose_quantity ?? ""
+                            : formData.quantity ?? ""
+                        }
+                        onChange={e => {
+                          const value = e.target.value ? parseFloat(e.target.value) : undefined;
+                          setFormData(
+                            packagingFactor
+                              ? { ...formData, loose_quantity: value }
+                              : { ...formData, quantity: value ?? 0 }
+                          );
+                        }}
+                        min="0"
+                        step="1"
+                        placeholder="0"
+                      />
+                    </div>
+                  }
                 />
-              </div>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="unit_cost">Coût unitaire</Label>
-                <Input
-                  id="unit_cost"
-                  type="number"
-                  value={formData.unit_cost}
-                  onChange={e => setFormData({ ...formData, unit_cost: parseFloat(e.target.value) || 0 })}
-                  min="0"
-                  step="any"
+              {packagingFactor && (
+                <ChannelPriceBlock
+                  channel="wholesale"
+                  title={`En gros · ${packageWord}`}
+                  conversionHint={`1 ${packageWord} = ${packagingFactor} ${retailWordPlural}`}
+                  currencySymbol={currencySymbol}
+                  costLabel={`Prix d'achat d'un ${packageWord}`}
+                  sellingLabel={`Prix de vente d'un ${packageWord}`}
+                  costPrice={isStockIn ? formData.package_unit_cost ?? null : null}
+                  sellingPrice={sellingPrices.wholesale_price}
+                  onCostChange={value =>
+                    setFormData({ ...formData, package_unit_cost: value ?? undefined })
+                  }
+                  onSellingChange={value =>
+                    setSellingPrices(prev => ({ ...prev, wholesale_price: value }))
+                  }
+                  disabled={!isStockIn}
+                  quantitySlot={
+                    <div className="space-y-1.5">
+                      <Label htmlFor="package_quantity">
+                        Nombre de {packageWordPlural}
+                      </Label>
+                      <Input
+                        id="package_quantity"
+                        type="number"
+                        value={formData.package_quantity ?? ""}
+                        onChange={e => setFormData({
+                          ...formData,
+                          package_quantity: e.target.value ? parseFloat(e.target.value) : undefined,
+                        })}
+                        min="0"
+                        step="1"
+                        placeholder="0"
+                      />
+                    </div>
+                  }
                 />
-              </div>
-              </div>
+              )}
 
-              {replenishmentMarginPreview && (
-              <div
-                className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border px-2.5 py-1.5 text-xs ${
-                  replenishmentMarginPreview.isNegativeOrZero
-                    ? "border-red-200 bg-red-50 text-red-800"
-                    : "border-emerald-200/70 bg-emerald-50/70 text-emerald-900"
-                }`}
-              >
-                <span className="text-muted-foreground">Marge sur PV</span>
-                <span className="font-semibold tabular-nums">
-                  {replenishmentMarginPreview.marginRateOnSelling.toFixed(1)} %
-                </span>
-                <span className="text-muted-foreground">·</span>
-                <span className="tabular-nums">{formatPrice(replenishmentMarginPreview.grossMargin)}</span>
-                {replenishmentMarginPreview.isNegativeOrZero && (
-                  <span className="font-medium text-red-700">Coût ≥ PV</span>
-                )}
-              </div>
+              {/* Récapitulatif de la conversion, avant validation */}
+              {conversionSummary && (
+                <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
+                  {conversionSummary}
+                  {blendedCostPreview !== null && (
+                    <>
+                      {" "}
+                      Valorisées à {formatPrice(blendedCostPreview, currencySymbol)} la{" "}
+                      {retailWord}.
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Report des prix sur la fiche produit : jamais coché d'avance,
+                  un achat à prix exceptionnel ne doit pas retarifer le
+                  catalogue à l'insu du marchand. */}
+              {isStockIn && selectedProduct && (
+                <PermissionGate permission="products.edit">
+                  <label
+                    htmlFor="update_product_prices"
+                    className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer"
+                  >
+                    <input
+                      id="update_product_prices"
+                      type="checkbox"
+                      checked={updateProductPrices}
+                      onChange={e => setUpdateProductPrices(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-orange-500"
+                    />
+                    <span className="text-sm">
+                      <span className="font-medium text-gray-900">
+                        Mettre à jour les prix de la fiche produit
+                      </span>
+                      <span className="mt-0.5 block text-xs text-gray-500">
+                        Les prix de vente saisis servent au calcul de la marge.
+                        Cochez pour les enregistrer aussi sur la fiche. Le coût de
+                        ce mouvement est enregistré dans tous les cas.
+                      </span>
+                    </span>
+                  </label>
+                </PermissionGate>
               )}
 
               {/* Champs pour les entrées de stock (lots) */}

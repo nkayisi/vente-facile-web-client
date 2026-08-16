@@ -58,6 +58,7 @@ export interface paths {
         put?: never;
         /**
          * @description Vue pour demander une réinitialisation de mot de passe.
+         *     Génère un token et envoie un email avec le lien de réinitialisation.
          *
          *     POST /auth/password-reset/
          */
@@ -79,6 +80,7 @@ export interface paths {
         put?: never;
         /**
          * @description Vue pour confirmer la réinitialisation de mot de passe.
+         *     Valide le token et applique le nouveau mot de passe.
          *
          *     POST /auth/password-reset/confirm/
          */
@@ -110,6 +112,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/register-with-organization/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Vue pour l'inscription complète avec création de boutique.
+         *     Crée User + Organization + Subscription en une seule étape.
+         *
+         *     POST /auth/register-with-organization/
+         */
+        post: operations["auth_register_with_organization_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/token/": {
         parameters: {
             query?: never;
@@ -120,8 +144,9 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description Takes a set of user credentials and returns an access and refresh JSON web
-         *     token pair to prove the authentication of those credentials.
+         * @description Custom JWT token endpoint that returns user info (including is_staff).
+         *     Replaces the default TokenObtainPairView.
+         *     POST /api/v1/auth/token/
          */
         post: operations["auth_token_create"];
         delete?: never;
@@ -354,6 +379,193 @@ export interface paths {
         patch: operations["brands_partial_update"];
         trace?: never;
     };
+    "/api/v1/cash-movements/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ViewSet pour les mouvements de caisse.
+         *
+         *     Les mouvements liés aux ventes et dépenses sont créés automatiquement.
+         *     Ce ViewSet permet aussi de créer des mouvements manuels
+         *     (apports de fonds, retraits, ajustements, etc.).
+         *
+         *     Filtrage par entrepôt : un mouvement est visible si
+         *     - le membre est ``owner``, OU
+         *     - la vente liée appartient au périmètre du membre, OU
+         *     - la dépense liée appartient au périmètre du membre.
+         */
+        get: operations["cash_movements_list"];
+        put?: never;
+        /**
+         * @description ViewSet pour les mouvements de caisse.
+         *
+         *     Les mouvements liés aux ventes et dépenses sont créés automatiquement.
+         *     Ce ViewSet permet aussi de créer des mouvements manuels
+         *     (apports de fonds, retraits, ajustements, etc.).
+         *
+         *     Filtrage par entrepôt : un mouvement est visible si
+         *     - le membre est ``owner``, OU
+         *     - la vente liée appartient au périmètre du membre, OU
+         *     - la dépense liée appartient au périmètre du membre.
+         */
+        post: operations["cash_movements_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash-movements/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ViewSet pour les mouvements de caisse.
+         *
+         *     Les mouvements liés aux ventes et dépenses sont créés automatiquement.
+         *     Ce ViewSet permet aussi de créer des mouvements manuels
+         *     (apports de fonds, retraits, ajustements, etc.).
+         *
+         *     Filtrage par entrepôt : un mouvement est visible si
+         *     - le membre est ``owner``, OU
+         *     - la vente liée appartient au périmètre du membre, OU
+         *     - la dépense liée appartient au périmètre du membre.
+         */
+        get: operations["cash_movements_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash-movements/{id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Annuler un mouvement de caisse. */
+        post: operations["cash_movements_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash-movements/annual-report/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Rapport annuel avec totaux par mois. */
+        get: operations["cash_movements_annual_report_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash-movements/balance/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Solde actuel de la caisse, ventilé PAR DEVISE (tiroir physique). */
+        get: operations["cash_movements_balance_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash-movements/custom-report/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Rapport personnalisé sur une période donnée. */
+        get: operations["cash_movements_custom_report_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash-movements/daily-report/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Rapport journalier détaillé. */
+        get: operations["cash_movements_daily_report_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash-movements/monthly-report/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Rapport mensuel avec totaux par jour. */
+        get: operations["cash_movements_monthly_report_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash-movements/summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Résumé des mouvements avec totaux par type et direction. */
+        get: operations["cash_movements_summary_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/categories/": {
         parameters: {
             query?: never;
@@ -465,7 +677,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Retourne les produits d'une catégorie. */
+        /** @description Retourne les produits d'une catégorie (scope warehouse appliqué). */
         get: operations["categories_products_retrieve"];
         put?: never;
         post?: never;
@@ -490,98 +702,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/v1/customer-groups/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description ViewSet pour la gestion des groupes de clients.
-         *
-         *     Endpoints:
-         *     - GET /customer-groups/ : Liste des groupes
-         *     - POST /customer-groups/ : Créer un groupe
-         *     - GET /customer-groups/{id}/ : Détail d'un groupe
-         *     - PUT/PATCH /customer-groups/{id}/ : Modifier un groupe
-         *     - DELETE /customer-groups/{id}/ : Supprimer un groupe
-         */
-        get: operations["customer_groups_list"];
-        put?: never;
-        /**
-         * @description ViewSet pour la gestion des groupes de clients.
-         *
-         *     Endpoints:
-         *     - GET /customer-groups/ : Liste des groupes
-         *     - POST /customer-groups/ : Créer un groupe
-         *     - GET /customer-groups/{id}/ : Détail d'un groupe
-         *     - PUT/PATCH /customer-groups/{id}/ : Modifier un groupe
-         *     - DELETE /customer-groups/{id}/ : Supprimer un groupe
-         */
-        post: operations["customer_groups_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/customer-groups/{id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description ViewSet pour la gestion des groupes de clients.
-         *
-         *     Endpoints:
-         *     - GET /customer-groups/ : Liste des groupes
-         *     - POST /customer-groups/ : Créer un groupe
-         *     - GET /customer-groups/{id}/ : Détail d'un groupe
-         *     - PUT/PATCH /customer-groups/{id}/ : Modifier un groupe
-         *     - DELETE /customer-groups/{id}/ : Supprimer un groupe
-         */
-        get: operations["customer_groups_retrieve"];
-        /**
-         * @description ViewSet pour la gestion des groupes de clients.
-         *
-         *     Endpoints:
-         *     - GET /customer-groups/ : Liste des groupes
-         *     - POST /customer-groups/ : Créer un groupe
-         *     - GET /customer-groups/{id}/ : Détail d'un groupe
-         *     - PUT/PATCH /customer-groups/{id}/ : Modifier un groupe
-         *     - DELETE /customer-groups/{id}/ : Supprimer un groupe
-         */
-        put: operations["customer_groups_update"];
-        post?: never;
-        /**
-         * @description ViewSet pour la gestion des groupes de clients.
-         *
-         *     Endpoints:
-         *     - GET /customer-groups/ : Liste des groupes
-         *     - POST /customer-groups/ : Créer un groupe
-         *     - GET /customer-groups/{id}/ : Détail d'un groupe
-         *     - PUT/PATCH /customer-groups/{id}/ : Modifier un groupe
-         *     - DELETE /customer-groups/{id}/ : Supprimer un groupe
-         */
-        delete: operations["customer_groups_destroy"];
-        options?: never;
-        head?: never;
-        /**
-         * @description ViewSet pour la gestion des groupes de clients.
-         *
-         *     Endpoints:
-         *     - GET /customer-groups/ : Liste des groupes
-         *     - POST /customer-groups/ : Créer un groupe
-         *     - GET /customer-groups/{id}/ : Détail d'un groupe
-         *     - PUT/PATCH /customer-groups/{id}/ : Modifier un groupe
-         *     - DELETE /customer-groups/{id}/ : Supprimer un groupe
-         */
-        patch: operations["customer_groups_partial_update"];
         trace?: never;
     };
     "/api/v1/customers/": {
@@ -626,92 +746,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/v1/customers/{customer_pk}/addresses/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description ViewSet pour la gestion des adresses client.
-         *
-         *     Endpoints:
-         *     - GET /customers/{customer_id}/addresses/ : Liste des adresses
-         *     - POST /customers/{customer_id}/addresses/ : Ajouter une adresse
-         *     - PUT/PATCH /customers/{customer_id}/addresses/{id}/ : Modifier
-         *     - DELETE /customers/{customer_id}/addresses/{id}/ : Supprimer
-         */
-        get: operations["customers_addresses_list"];
-        put?: never;
-        /**
-         * @description ViewSet pour la gestion des adresses client.
-         *
-         *     Endpoints:
-         *     - GET /customers/{customer_id}/addresses/ : Liste des adresses
-         *     - POST /customers/{customer_id}/addresses/ : Ajouter une adresse
-         *     - PUT/PATCH /customers/{customer_id}/addresses/{id}/ : Modifier
-         *     - DELETE /customers/{customer_id}/addresses/{id}/ : Supprimer
-         */
-        post: operations["customers_addresses_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/customers/{customer_pk}/addresses/{id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description ViewSet pour la gestion des adresses client.
-         *
-         *     Endpoints:
-         *     - GET /customers/{customer_id}/addresses/ : Liste des adresses
-         *     - POST /customers/{customer_id}/addresses/ : Ajouter une adresse
-         *     - PUT/PATCH /customers/{customer_id}/addresses/{id}/ : Modifier
-         *     - DELETE /customers/{customer_id}/addresses/{id}/ : Supprimer
-         */
-        get: operations["customers_addresses_retrieve"];
-        /**
-         * @description ViewSet pour la gestion des adresses client.
-         *
-         *     Endpoints:
-         *     - GET /customers/{customer_id}/addresses/ : Liste des adresses
-         *     - POST /customers/{customer_id}/addresses/ : Ajouter une adresse
-         *     - PUT/PATCH /customers/{customer_id}/addresses/{id}/ : Modifier
-         *     - DELETE /customers/{customer_id}/addresses/{id}/ : Supprimer
-         */
-        put: operations["customers_addresses_update"];
-        post?: never;
-        /**
-         * @description ViewSet pour la gestion des adresses client.
-         *
-         *     Endpoints:
-         *     - GET /customers/{customer_id}/addresses/ : Liste des adresses
-         *     - POST /customers/{customer_id}/addresses/ : Ajouter une adresse
-         *     - PUT/PATCH /customers/{customer_id}/addresses/{id}/ : Modifier
-         *     - DELETE /customers/{customer_id}/addresses/{id}/ : Supprimer
-         */
-        delete: operations["customers_addresses_destroy"];
-        options?: never;
-        head?: never;
-        /**
-         * @description ViewSet pour la gestion des adresses client.
-         *
-         *     Endpoints:
-         *     - GET /customers/{customer_id}/addresses/ : Liste des adresses
-         *     - POST /customers/{customer_id}/addresses/ : Ajouter une adresse
-         *     - PUT/PATCH /customers/{customer_id}/addresses/{id}/ : Modifier
-         *     - DELETE /customers/{customer_id}/addresses/{id}/ : Supprimer
-         */
-        patch: operations["customers_addresses_partial_update"];
         trace?: never;
     };
     "/api/v1/customers/{id}/": {
@@ -795,8 +829,42 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Ajuste le solde du client. */
+        /** @description Ajustement manuel du solde client. */
         post: operations["customers_adjust_balance_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customers/{id}/record-advance/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Enregistre une avance/acompte du client. */
+        post: operations["customers_record_advance_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customers/{id}/record-payment/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Enregistre un paiement du client (réduit la dette). */
+        post: operations["customers_record_payment_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -812,6 +880,40 @@ export interface paths {
         };
         /** @description Retourne l'historique des ventes du client. */
         get: operations["customers_sales_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customers/{id}/transactions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retourne l'historique des transactions financières du client. */
+        get: operations["customers_transactions_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customers/debt-summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Résumé global des dettes clients. */
+        get: operations["customers_debt_summary_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -861,8 +963,249 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Retourne les clients avec un solde non nul. */
+        /** @description Retourne les clients avec un solde non nul (débiteurs). */
         get: operations["customers_with_balance_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/expense-categories/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description CRUD pour les catégories de dépenses. */
+        get: operations["expense_categories_list"];
+        put?: never;
+        /** @description CRUD pour les catégories de dépenses. */
+        post: operations["expense_categories_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/expense-categories/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description CRUD pour les catégories de dépenses. */
+        get: operations["expense_categories_retrieve"];
+        /** @description CRUD pour les catégories de dépenses. */
+        put: operations["expense_categories_update"];
+        post?: never;
+        /** @description CRUD pour les catégories de dépenses. */
+        delete: operations["expense_categories_destroy"];
+        options?: never;
+        head?: never;
+        /** @description CRUD pour les catégories de dépenses. */
+        patch: operations["expense_categories_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/expenses/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description CRUD pour les dépenses + actions d'approbation et de paiement.
+         *
+         *     Workflow :
+         *     1. Créer une dépense (draft)
+         *     2. Soumettre pour approbation (pending)
+         *     3. Approuver (approved) → crée le mouvement de caisse
+         *     4. Marquer comme payée (paid)
+         *
+         *     Ou directement : créer + payer en une fois (pour les petites dépenses).
+         */
+        get: operations["expenses_list"];
+        put?: never;
+        /**
+         * @description CRUD pour les dépenses + actions d'approbation et de paiement.
+         *
+         *     Workflow :
+         *     1. Créer une dépense (draft)
+         *     2. Soumettre pour approbation (pending)
+         *     3. Approuver (approved) → crée le mouvement de caisse
+         *     4. Marquer comme payée (paid)
+         *
+         *     Ou directement : créer + payer en une fois (pour les petites dépenses).
+         */
+        post: operations["expenses_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/expenses/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description CRUD pour les dépenses + actions d'approbation et de paiement.
+         *
+         *     Workflow :
+         *     1. Créer une dépense (draft)
+         *     2. Soumettre pour approbation (pending)
+         *     3. Approuver (approved) → crée le mouvement de caisse
+         *     4. Marquer comme payée (paid)
+         *
+         *     Ou directement : créer + payer en une fois (pour les petites dépenses).
+         */
+        get: operations["expenses_retrieve"];
+        /**
+         * @description CRUD pour les dépenses + actions d'approbation et de paiement.
+         *
+         *     Workflow :
+         *     1. Créer une dépense (draft)
+         *     2. Soumettre pour approbation (pending)
+         *     3. Approuver (approved) → crée le mouvement de caisse
+         *     4. Marquer comme payée (paid)
+         *
+         *     Ou directement : créer + payer en une fois (pour les petites dépenses).
+         */
+        put: operations["expenses_update"];
+        post?: never;
+        /**
+         * @description CRUD pour les dépenses + actions d'approbation et de paiement.
+         *
+         *     Workflow :
+         *     1. Créer une dépense (draft)
+         *     2. Soumettre pour approbation (pending)
+         *     3. Approuver (approved) → crée le mouvement de caisse
+         *     4. Marquer comme payée (paid)
+         *
+         *     Ou directement : créer + payer en une fois (pour les petites dépenses).
+         */
+        delete: operations["expenses_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description CRUD pour les dépenses + actions d'approbation et de paiement.
+         *
+         *     Workflow :
+         *     1. Créer une dépense (draft)
+         *     2. Soumettre pour approbation (pending)
+         *     3. Approuver (approved) → crée le mouvement de caisse
+         *     4. Marquer comme payée (paid)
+         *
+         *     Ou directement : créer + payer en une fois (pour les petites dépenses).
+         */
+        patch: operations["expenses_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/expenses/{id}/approve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Approuver une dépense et créer le mouvement de caisse. */
+        post: operations["expenses_approve_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/expenses/{id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Annuler une dépense et son mouvement de caisse. */
+        post: operations["expenses_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/expenses/{id}/pay/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Marquer une dépense comme payée.
+         *     Si la dépense est en brouillon ou en attente, elle est automatiquement approuvée.
+         */
+        post: operations["expenses_pay_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/expenses/{id}/reject/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Rejeter une dépense. */
+        post: operations["expenses_reject_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/expenses/{id}/submit/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Soumettre une dépense pour approbation. */
+        post: operations["expenses_submit_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/expenses/stats/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Statistiques des dépenses. */
+        get: operations["expenses_stats_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -997,6 +1340,328 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/income-categories/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description CRUD pour les catégories d'entrées de caisse. */
+        get: operations["income_categories_list"];
+        put?: never;
+        /** @description CRUD pour les catégories d'entrées de caisse. */
+        post: operations["income_categories_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/income-categories/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description CRUD pour les catégories d'entrées de caisse. */
+        get: operations["income_categories_retrieve"];
+        /** @description CRUD pour les catégories d'entrées de caisse. */
+        put: operations["income_categories_update"];
+        post?: never;
+        /** @description CRUD pour les catégories d'entrées de caisse. */
+        delete: operations["income_categories_destroy"];
+        options?: never;
+        head?: never;
+        /** @description CRUD pour les catégories d'entrées de caisse. */
+        patch: operations["income_categories_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ViewSet pour la gestion des sessions d'inventaire.
+         *
+         *     Endpoints:
+         *     - GET    /inventory-sessions/                    : Liste des sessions
+         *     - POST   /inventory-sessions/                    : Créer une session (brouillon)
+         *     - GET    /inventory-sessions/{id}/               : Détail d'une session
+         *     - DELETE /inventory-sessions/{id}/               : Supprimer (brouillon uniquement)
+         *     - POST   /inventory-sessions/{id}/start/         : Démarrer (verrouille le stock, génère les lignes)
+         *     - POST   /inventory-sessions/{id}/count/         : Enregistrer les comptages
+         *     - POST   /inventory-sessions/{id}/submit/        : Soumettre pour révision
+         *     - POST   /inventory-sessions/{id}/validate/      : Valider et appliquer les ajustements
+         *     - POST   /inventory-sessions/{id}/cancel/        : Annuler (déverrouille le stock)
+         *     - GET    /inventory-sessions/{id}/counts/        : Liste des lignes de comptage
+         *     - GET    /inventory-sessions/{id}/print-data/    : Données pour impression
+         */
+        get: operations["inventory_sessions_list"];
+        put?: never;
+        /**
+         * @description ViewSet pour la gestion des sessions d'inventaire.
+         *
+         *     Endpoints:
+         *     - GET    /inventory-sessions/                    : Liste des sessions
+         *     - POST   /inventory-sessions/                    : Créer une session (brouillon)
+         *     - GET    /inventory-sessions/{id}/               : Détail d'une session
+         *     - DELETE /inventory-sessions/{id}/               : Supprimer (brouillon uniquement)
+         *     - POST   /inventory-sessions/{id}/start/         : Démarrer (verrouille le stock, génère les lignes)
+         *     - POST   /inventory-sessions/{id}/count/         : Enregistrer les comptages
+         *     - POST   /inventory-sessions/{id}/submit/        : Soumettre pour révision
+         *     - POST   /inventory-sessions/{id}/validate/      : Valider et appliquer les ajustements
+         *     - POST   /inventory-sessions/{id}/cancel/        : Annuler (déverrouille le stock)
+         *     - GET    /inventory-sessions/{id}/counts/        : Liste des lignes de comptage
+         *     - GET    /inventory-sessions/{id}/print-data/    : Données pour impression
+         */
+        post: operations["inventory_sessions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ViewSet pour la gestion des sessions d'inventaire.
+         *
+         *     Endpoints:
+         *     - GET    /inventory-sessions/                    : Liste des sessions
+         *     - POST   /inventory-sessions/                    : Créer une session (brouillon)
+         *     - GET    /inventory-sessions/{id}/               : Détail d'une session
+         *     - DELETE /inventory-sessions/{id}/               : Supprimer (brouillon uniquement)
+         *     - POST   /inventory-sessions/{id}/start/         : Démarrer (verrouille le stock, génère les lignes)
+         *     - POST   /inventory-sessions/{id}/count/         : Enregistrer les comptages
+         *     - POST   /inventory-sessions/{id}/submit/        : Soumettre pour révision
+         *     - POST   /inventory-sessions/{id}/validate/      : Valider et appliquer les ajustements
+         *     - POST   /inventory-sessions/{id}/cancel/        : Annuler (déverrouille le stock)
+         *     - GET    /inventory-sessions/{id}/counts/        : Liste des lignes de comptage
+         *     - GET    /inventory-sessions/{id}/print-data/    : Données pour impression
+         */
+        get: operations["inventory_sessions_retrieve"];
+        /**
+         * @description ViewSet pour la gestion des sessions d'inventaire.
+         *
+         *     Endpoints:
+         *     - GET    /inventory-sessions/                    : Liste des sessions
+         *     - POST   /inventory-sessions/                    : Créer une session (brouillon)
+         *     - GET    /inventory-sessions/{id}/               : Détail d'une session
+         *     - DELETE /inventory-sessions/{id}/               : Supprimer (brouillon uniquement)
+         *     - POST   /inventory-sessions/{id}/start/         : Démarrer (verrouille le stock, génère les lignes)
+         *     - POST   /inventory-sessions/{id}/count/         : Enregistrer les comptages
+         *     - POST   /inventory-sessions/{id}/submit/        : Soumettre pour révision
+         *     - POST   /inventory-sessions/{id}/validate/      : Valider et appliquer les ajustements
+         *     - POST   /inventory-sessions/{id}/cancel/        : Annuler (déverrouille le stock)
+         *     - GET    /inventory-sessions/{id}/counts/        : Liste des lignes de comptage
+         *     - GET    /inventory-sessions/{id}/print-data/    : Données pour impression
+         */
+        put: operations["inventory_sessions_update"];
+        post?: never;
+        /**
+         * @description ViewSet pour la gestion des sessions d'inventaire.
+         *
+         *     Endpoints:
+         *     - GET    /inventory-sessions/                    : Liste des sessions
+         *     - POST   /inventory-sessions/                    : Créer une session (brouillon)
+         *     - GET    /inventory-sessions/{id}/               : Détail d'une session
+         *     - DELETE /inventory-sessions/{id}/               : Supprimer (brouillon uniquement)
+         *     - POST   /inventory-sessions/{id}/start/         : Démarrer (verrouille le stock, génère les lignes)
+         *     - POST   /inventory-sessions/{id}/count/         : Enregistrer les comptages
+         *     - POST   /inventory-sessions/{id}/submit/        : Soumettre pour révision
+         *     - POST   /inventory-sessions/{id}/validate/      : Valider et appliquer les ajustements
+         *     - POST   /inventory-sessions/{id}/cancel/        : Annuler (déverrouille le stock)
+         *     - GET    /inventory-sessions/{id}/counts/        : Liste des lignes de comptage
+         *     - GET    /inventory-sessions/{id}/print-data/    : Données pour impression
+         */
+        delete: operations["inventory_sessions_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description ViewSet pour la gestion des sessions d'inventaire.
+         *
+         *     Endpoints:
+         *     - GET    /inventory-sessions/                    : Liste des sessions
+         *     - POST   /inventory-sessions/                    : Créer une session (brouillon)
+         *     - GET    /inventory-sessions/{id}/               : Détail d'une session
+         *     - DELETE /inventory-sessions/{id}/               : Supprimer (brouillon uniquement)
+         *     - POST   /inventory-sessions/{id}/start/         : Démarrer (verrouille le stock, génère les lignes)
+         *     - POST   /inventory-sessions/{id}/count/         : Enregistrer les comptages
+         *     - POST   /inventory-sessions/{id}/submit/        : Soumettre pour révision
+         *     - POST   /inventory-sessions/{id}/validate/      : Valider et appliquer les ajustements
+         *     - POST   /inventory-sessions/{id}/cancel/        : Annuler (déverrouille le stock)
+         *     - GET    /inventory-sessions/{id}/counts/        : Liste des lignes de comptage
+         *     - GET    /inventory-sessions/{id}/print-data/    : Données pour impression
+         */
+        patch: operations["inventory_sessions_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/{id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Annule une session d'inventaire et déverrouille le stock. */
+        post: operations["inventory_sessions_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/{id}/count/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Enregistre les comptages pour une ou plusieurs lignes.
+         *
+         *     Body: { "counts": [{ "id": "<count_id>", "quantity_counted": 10, "notes": "" }, ...] }
+         */
+        post: operations["inventory_sessions_count_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/{id}/counts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retourne les lignes de comptage d'une session avec filtres. */
+        get: operations["inventory_sessions_counts_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/{id}/print-data/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Retourne les données formatées pour l'impression de l'inventaire.
+         *     Inclut les informations de la session et toutes les lignes de comptage.
+         */
+        get: operations["inventory_sessions_print_data_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/{id}/start/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Démarre une session d'inventaire :
+         *     1. Verrouille le stock des produits ciblés dans l'entrepôt
+         *     2. Prend un snapshot du stock actuel
+         *     3. Génère les lignes de comptage (InventoryCount)
+         */
+        post: operations["inventory_sessions_start_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/{id}/submit/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Soumet la session pour révision après le comptage. */
+        post: operations["inventory_sessions_submit_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/{id}/validate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Valide la session d'inventaire :
+         *     1. Applique les ajustements de stock pour chaque différence
+         *     2. Crée les mouvements de stock correspondants
+         *     3. Déverrouille le stock
+         */
+        post: operations["inventory_sessions_validate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory-sessions/locked-products/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Retourne les IDs des produits bloqués par des inventaires en cours.
+         *     Utilisé par le frontend pour désactiver ces produits dans le POS.
+         */
+        get: operations["inventory_sessions_locked_products_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invitations/": {
         parameters: {
             query?: never;
@@ -1102,16 +1767,22 @@ export interface paths {
         /**
          * @description ViewSet pour la gestion des membres d'organisation.
          *
+         *     Hiérarchie des rôles :
+         *     - owner (Admin) peut gérer : manager, stock_keeper, cashier
+         *     - manager (Gérant) peut gérer : stock_keeper, cashier
+         *     - stock_keeper et cashier ne peuvent gérer personne
+         *
          *     Endpoints:
          *     - GET /memberships/ : Liste des membres
-         *     - POST /memberships/ : Ajouter un membre (par email)
+         *     - POST /memberships/ : Ajouter un membre existant (par email)
+         *     - POST /memberships/create_user/ : Créer un nouvel utilisateur + l'ajouter
          *     - GET /memberships/{id}/ : Détail d'un membre
-         *     - PUT/PATCH /memberships/{id}/ : Modifier le rôle
+         *     - PUT/PATCH /memberships/{id}/ : Modifier le rôle / activer/désactiver
          *     - DELETE /memberships/{id}/ : Retirer un membre
          */
         get: operations["memberships_list"];
         put?: never;
-        /** @description Ajoute un membre par email. */
+        /** @description Ajoute un membre existant par email. */
         post: operations["memberships_create"];
         delete?: never;
         options?: never;
@@ -1129,11 +1800,17 @@ export interface paths {
         /**
          * @description ViewSet pour la gestion des membres d'organisation.
          *
+         *     Hiérarchie des rôles :
+         *     - owner (Admin) peut gérer : manager, stock_keeper, cashier
+         *     - manager (Gérant) peut gérer : stock_keeper, cashier
+         *     - stock_keeper et cashier ne peuvent gérer personne
+         *
          *     Endpoints:
          *     - GET /memberships/ : Liste des membres
-         *     - POST /memberships/ : Ajouter un membre (par email)
+         *     - POST /memberships/ : Ajouter un membre existant (par email)
+         *     - POST /memberships/create_user/ : Créer un nouvel utilisateur + l'ajouter
          *     - GET /memberships/{id}/ : Détail d'un membre
-         *     - PUT/PATCH /memberships/{id}/ : Modifier le rôle
+         *     - PUT/PATCH /memberships/{id}/ : Modifier le rôle / activer/désactiver
          *     - DELETE /memberships/{id}/ : Retirer un membre
          */
         get: operations["memberships_retrieve"];
@@ -1147,14 +1824,88 @@ export interface paths {
         /**
          * @description ViewSet pour la gestion des membres d'organisation.
          *
+         *     Hiérarchie des rôles :
+         *     - owner (Admin) peut gérer : manager, stock_keeper, cashier
+         *     - manager (Gérant) peut gérer : stock_keeper, cashier
+         *     - stock_keeper et cashier ne peuvent gérer personne
+         *
          *     Endpoints:
          *     - GET /memberships/ : Liste des membres
-         *     - POST /memberships/ : Ajouter un membre (par email)
+         *     - POST /memberships/ : Ajouter un membre existant (par email)
+         *     - POST /memberships/create_user/ : Créer un nouvel utilisateur + l'ajouter
          *     - GET /memberships/{id}/ : Détail d'un membre
-         *     - PUT/PATCH /memberships/{id}/ : Modifier le rôle
+         *     - PUT/PATCH /memberships/{id}/ : Modifier le rôle / activer/désactiver
          *     - DELETE /memberships/{id}/ : Retirer un membre
          */
         patch: operations["memberships_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/memberships/{id}/permissions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET: Retourne les permissions du membre (rôle, extra, effectives).
+         *     PATCH: Met à jour les permissions additionnelles du membre.
+         */
+        get: operations["memberships_permissions_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * @description GET: Retourne les permissions du membre (rôle, extra, effectives).
+         *     PATCH: Met à jour les permissions additionnelles du membre.
+         */
+        patch: operations["memberships_permissions_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/memberships/{id}/reset-password/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Réinitialise le mot de passe d'un membre (admin / gérant selon hiérarchie).
+         *
+         *     Réservé aux rôles qui peuvent gérer le membre cible (owner → tous ;
+         *     gérant → magasinier/caissier). On ne réinitialise pas l'administrateur
+         *     principal ni son propre compte (utiliser « changer mon mot de passe »).
+         */
+        post: operations["memberships_reset_password_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memberships/create-user/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Crée un nouvel utilisateur et l'ajoute à l'organisation.
+         *     L'admin peut créer manager, stock_keeper, cashier.
+         *     Le gérant peut créer stock_keeper, cashier uniquement.
+         */
+        post: operations["memberships_create_user_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/organizations/": {
@@ -1253,6 +2004,23 @@ export interface paths {
          *     - POST /organizations/{id}/switch/ : Changer d'organisation active
          */
         patch: operations["organizations_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/organizations/{id}/dashboard/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Statistiques complètes pour le dashboard avec données d'évolution. */
+        get: operations["organizations_dashboard_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/organizations/{id}/stats/": {
@@ -1381,6 +2149,363 @@ export interface paths {
         patch: operations["payment_methods_partial_update"];
         trace?: never;
     };
+    "/api/v1/plans/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Liste des plans d'abonnement disponibles.
+         *     Accessible à tous les utilisateurs authentifiés.
+         */
+        get: operations["plans_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plans/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Liste des plans d'abonnement disponibles.
+         *     Accessible à tous les utilisateurs authentifiés.
+         */
+        get: operations["plans_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plans/public/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Plans visibles publiquement sur la landing page.
+         *     Aucune authentification requise.
+         */
+        get: operations["plans_public_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plans/public/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Plans visibles publiquement sur la landing page.
+         *     Aucune authentification requise.
+         */
+        get: operations["plans_public_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/dashboard/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Platform-wide dashboard statistics.
+         *     GET /api/v1/platform-admin/dashboard/
+         */
+        get: operations["platform_admin_dashboard_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/organizations/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Admin management of all organizations on the platform. */
+        get: operations["platform_admin_organizations_list"];
+        put?: never;
+        /** @description Admin management of all organizations on the platform. */
+        post: operations["platform_admin_organizations_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/organizations/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Admin management of all organizations on the platform. */
+        get: operations["platform_admin_organizations_retrieve"];
+        /** @description Admin management of all organizations on the platform. */
+        put: operations["platform_admin_organizations_update"];
+        post?: never;
+        /** @description Admin management of all organizations on the platform. */
+        delete: operations["platform_admin_organizations_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Admin management of all organizations on the platform. */
+        patch: operations["platform_admin_organizations_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/platform-admin/organizations/{id}/activate_subscription/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admin activates/extends subscription for an organization. */
+        post: operations["platform_admin_organizations_activate_subscription_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/organizations/{id}/toggle_active/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Activate or deactivate an organization. */
+        post: operations["platform_admin_organizations_toggle_active_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/plans/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Admin CRUD for subscription plans. */
+        get: operations["platform_admin_plans_list"];
+        put?: never;
+        /** @description Admin CRUD for subscription plans. */
+        post: operations["platform_admin_plans_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/plans/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Admin CRUD for subscription plans. */
+        get: operations["platform_admin_plans_retrieve"];
+        /** @description Admin CRUD for subscription plans. */
+        put: operations["platform_admin_plans_update"];
+        post?: never;
+        /** @description Admin CRUD for subscription plans. */
+        delete: operations["platform_admin_plans_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Admin CRUD for subscription plans. */
+        patch: operations["platform_admin_plans_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/platform-admin/subscriptions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Admin management of all subscriptions on the platform.
+         *     Supports listing, creating manually, extending and cancelling.
+         */
+        get: operations["platform_admin_subscriptions_list"];
+        put?: never;
+        /** @description Manually create a subscription for an organization. */
+        post: operations["platform_admin_subscriptions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/subscriptions/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Admin management of all subscriptions on the platform.
+         *     Supports listing, creating manually, extending and cancelling.
+         */
+        get: operations["platform_admin_subscriptions_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/subscriptions/{id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Cancel a subscription. */
+        post: operations["platform_admin_subscriptions_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/subscriptions/{id}/extend/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Extend a subscription by N days. */
+        post: operations["platform_admin_subscriptions_extend_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/users/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Admin management of all platform users. */
+        get: operations["platform_admin_users_list"];
+        put?: never;
+        /** @description Admin management of all platform users. */
+        post: operations["platform_admin_users_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/users/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Admin management of all platform users. */
+        get: operations["platform_admin_users_retrieve"];
+        /** @description Admin management of all platform users. */
+        put: operations["platform_admin_users_update"];
+        post?: never;
+        /** @description Admin management of all platform users. */
+        delete: operations["platform_admin_users_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Admin management of all platform users. */
+        patch: operations["platform_admin_users_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/platform-admin/users/{id}/toggle_active/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Activate or deactivate a user. */
+        post: operations["platform_admin_users_toggle_active_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/users/{id}/toggle_staff/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Toggle staff status for a user. */
+        post: operations["platform_admin_users_toggle_staff_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/price-lists/": {
         parameters: {
             query?: never;
@@ -1483,6 +2608,17 @@ export interface paths {
         /**
          * @description ViewSet pour la gestion des produits.
          *
+         *     Liste (GET /products/) : par défaut, produits restreints aux entrepôts assignés au
+         *     membership (comme le POS). Avec ``full_catalog=true``, tous les produits de
+         *     l'organisation sont listés ; ``total_stock`` reste sommé sur le périmètre entrepôt
+         *     lorsque le membre est restreint.
+         *
+         *     Lecture fiche (retrieve) et détail stock (stock) : pas de filtre sur les lignes
+         *     produit au niveau entrepôt ; les lignes de stock renvoyées restent filtrées dans
+         *     l'action ``stock``.
+         *
+         *     Mutations et recherche code-barres : comportement restreint par entrepôt inchangé.
+         *
          *     Endpoints:
          *     - GET /products/ : Liste des produits
          *     - POST /products/ : Créer un produit
@@ -1499,6 +2635,17 @@ export interface paths {
         put?: never;
         /**
          * @description ViewSet pour la gestion des produits.
+         *
+         *     Liste (GET /products/) : par défaut, produits restreints aux entrepôts assignés au
+         *     membership (comme le POS). Avec ``full_catalog=true``, tous les produits de
+         *     l'organisation sont listés ; ``total_stock`` reste sommé sur le périmètre entrepôt
+         *     lorsque le membre est restreint.
+         *
+         *     Lecture fiche (retrieve) et détail stock (stock) : pas de filtre sur les lignes
+         *     produit au niveau entrepôt ; les lignes de stock renvoyées restent filtrées dans
+         *     l'action ``stock``.
+         *
+         *     Mutations et recherche code-barres : comportement restreint par entrepôt inchangé.
          *
          *     Endpoints:
          *     - GET /products/ : Liste des produits
@@ -1529,6 +2676,17 @@ export interface paths {
         /**
          * @description ViewSet pour la gestion des produits.
          *
+         *     Liste (GET /products/) : par défaut, produits restreints aux entrepôts assignés au
+         *     membership (comme le POS). Avec ``full_catalog=true``, tous les produits de
+         *     l'organisation sont listés ; ``total_stock`` reste sommé sur le périmètre entrepôt
+         *     lorsque le membre est restreint.
+         *
+         *     Lecture fiche (retrieve) et détail stock (stock) : pas de filtre sur les lignes
+         *     produit au niveau entrepôt ; les lignes de stock renvoyées restent filtrées dans
+         *     l'action ``stock``.
+         *
+         *     Mutations et recherche code-barres : comportement restreint par entrepôt inchangé.
+         *
          *     Endpoints:
          *     - GET /products/ : Liste des produits
          *     - POST /products/ : Créer un produit
@@ -1544,6 +2702,17 @@ export interface paths {
         get: operations["products_retrieve"];
         /**
          * @description ViewSet pour la gestion des produits.
+         *
+         *     Liste (GET /products/) : par défaut, produits restreints aux entrepôts assignés au
+         *     membership (comme le POS). Avec ``full_catalog=true``, tous les produits de
+         *     l'organisation sont listés ; ``total_stock`` reste sommé sur le périmètre entrepôt
+         *     lorsque le membre est restreint.
+         *
+         *     Lecture fiche (retrieve) et détail stock (stock) : pas de filtre sur les lignes
+         *     produit au niveau entrepôt ; les lignes de stock renvoyées restent filtrées dans
+         *     l'action ``stock``.
+         *
+         *     Mutations et recherche code-barres : comportement restreint par entrepôt inchangé.
          *
          *     Endpoints:
          *     - GET /products/ : Liste des produits
@@ -1562,6 +2731,17 @@ export interface paths {
         /**
          * @description ViewSet pour la gestion des produits.
          *
+         *     Liste (GET /products/) : par défaut, produits restreints aux entrepôts assignés au
+         *     membership (comme le POS). Avec ``full_catalog=true``, tous les produits de
+         *     l'organisation sont listés ; ``total_stock`` reste sommé sur le périmètre entrepôt
+         *     lorsque le membre est restreint.
+         *
+         *     Lecture fiche (retrieve) et détail stock (stock) : pas de filtre sur les lignes
+         *     produit au niveau entrepôt ; les lignes de stock renvoyées restent filtrées dans
+         *     l'action ``stock``.
+         *
+         *     Mutations et recherche code-barres : comportement restreint par entrepôt inchangé.
+         *
          *     Endpoints:
          *     - GET /products/ : Liste des produits
          *     - POST /products/ : Créer un produit
@@ -1579,6 +2759,17 @@ export interface paths {
         head?: never;
         /**
          * @description ViewSet pour la gestion des produits.
+         *
+         *     Liste (GET /products/) : par défaut, produits restreints aux entrepôts assignés au
+         *     membership (comme le POS). Avec ``full_catalog=true``, tous les produits de
+         *     l'organisation sont listés ; ``total_stock`` reste sommé sur le périmètre entrepôt
+         *     lorsque le membre est restreint.
+         *
+         *     Lecture fiche (retrieve) et détail stock (stock) : pas de filtre sur les lignes
+         *     produit au niveau entrepôt ; les lignes de stock renvoyées restent filtrées dans
+         *     l'action ``stock``.
+         *
+         *     Mutations et recherche code-barres : comportement restreint par entrepôt inchangé.
          *
          *     Endpoints:
          *     - GET /products/ : Liste des produits
@@ -1812,6 +3003,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/products/check-duplicate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Vérifie si un produit avec le même SKU ou code-barres existe déjà.
+         *     Utilisé pour la validation en temps réel lors de la création.
+         */
+        post: operations["products_check_duplicate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/export/excel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Exporte tous les produits de l'organisation au format Excel. */
+        get: operations["products_export_excel_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/export/pdf/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Exporte tous les produits de l'organisation au format PDF. */
+        get: operations["products_export_pdf_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/import/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Importe des produits depuis un fichier Excel.
+         *     Le fichier doit être basé sur le template officiel.
+         */
+        post: operations["products_import_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/import-template/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Télécharge le template Excel pour l'importation de produits. */
+        get: operations["products_import_template_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/products/low_stock/": {
         parameters: {
             query?: never;
@@ -1819,7 +3101,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Retourne les produits en stock bas. */
+        /** @description Retourne les produits en stock bas avec pagination. */
         get: operations["products_low_stock_retrieve"];
         put?: never;
         post?: never;
@@ -1836,7 +3118,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Recherche un produit par code-barres. */
+        /** @description Recherche un produit par code-barres (respecte le scope warehouse du membership). */
         get: operations["products_search_barcode_retrieve"];
         put?: never;
         post?: never;
@@ -2014,7 +3296,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Retourne les commandes en attente de réception. */
+        /** @description Retourne les commandes en attente de réception avec pagination. */
         get: operations["purchase_orders_pending_retrieve"];
         put?: never;
         post?: never;
@@ -2382,7 +3664,18 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Ferme une session de caisse. */
+        /**
+         * @description Ferme une session de caisse.
+         *
+         *     - Tout membre ayant accès à l'entrepôt de la caisse peut fermer la
+         *       session, y compris une session ouverte par un autre utilisateur
+         *       (``get_object`` est déjà filtré par périmètre entrepôt, donc on ne
+         *       peut fermer que les sessions de ses propres entrepôts). L'identité du
+         *       clôtureur est journalisée (voir ``UserActivity`` en fin de méthode).
+         *     - Accepte `counted_balance` optionnel (comptage manuel) ; calcule
+         *       `difference = counted_balance - expected_balance` si fourni.
+         *     - Si différence non nulle, `notes` est obligatoire.
+         */
         post: operations["register_sessions_close_create"];
         delete?: never;
         options?: never;
@@ -2416,7 +3709,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Ouvre une nouvelle session de caisse. */
+        /**
+         * @description Ouvre une nouvelle session de caisse.
+         *
+         *     - Bloque la création si une session est déjà ouverte sur cette caisse
+         *       (check applicatif + UniqueConstraint DB en filet de sécurité).
+         *     - Hérite `opening_balance` du `closing_balance` de la dernière session
+         *       fermée sur cette caisse (sinon 0).
+         */
         post: operations["register_sessions_open_create"];
         delete?: never;
         options?: never;
@@ -2514,6 +3814,419 @@ export interface paths {
          *     - DELETE /registers/{id}/ : Supprimer une caisse
          */
         patch: operations["registers_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/reports/dashboards/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet pour les dashboards personnalisés */
+        get: operations["reports_dashboards_list"];
+        put?: never;
+        /** @description ViewSet pour les dashboards personnalisés */
+        post: operations["reports_dashboards_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/dashboards/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet pour les dashboards personnalisés */
+        get: operations["reports_dashboards_retrieve"];
+        /** @description ViewSet pour les dashboards personnalisés */
+        put: operations["reports_dashboards_update"];
+        post?: never;
+        /** @description ViewSet pour les dashboards personnalisés */
+        delete: operations["reports_dashboards_destroy"];
+        options?: never;
+        head?: never;
+        /** @description ViewSet pour les dashboards personnalisés */
+        patch: operations["reports_dashboards_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/cash_flow/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Flux de trésorerie par période avec pagination */
+        get: operations["reports_statistics_cash_flow_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/cashbook/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Statistiques de la caisse */
+        get: operations["reports_statistics_cashbook_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/customers/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Statistiques des clients */
+        get: operations["reports_statistics_customers_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/daily_cash_report/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Rapport journalier de caisse détaillé */
+        get: operations["reports_statistics_daily_cash_report_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/product_profits/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Bénéfices par produit avec pagination */
+        get: operations["reports_statistics_product_profits_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/product_supplies/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Approvisionnements par produit pour une période donnée */
+        get: operations["reports_statistics_product_supplies_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/profit_margins/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Calcul des bénéfices et marges globaux */
+        get: operations["reports_statistics_profit_margins_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/sales/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Statistiques détaillées des ventes */
+        get: operations["reports_statistics_sales_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/sales-by-packaging/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Chiffre d'affaires et marge ventilés entre vente en gros et vente au détail.
+         *
+         *     La marge n'est pas la même selon la forme de vente : c'est ce que ce
+         *     rapport rend visible. Une ligne mixte (« 2 paquets + 3 bouteilles ») est
+         *     répartie **au prorata** de chaque part, de sorte que la somme des deux
+         *     colonnes égale exactement le chiffre d'affaires de la période.
+         */
+        get: operations["reports_statistics_sales_by_packaging_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/sales_by_category/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Ventes par catégorie de produit avec pagination */
+        get: operations["reports_statistics_sales_by_category_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/sales_by_payment_method/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Ventes par méthode de paiement avec pagination */
+        get: operations["reports_statistics_sales_by_payment_method_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/sales_by_period/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Ventes groupées par période (jour/semaine/mois) avec pagination */
+        get: operations["reports_statistics_sales_by_period_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/stock/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Statistiques du stock */
+        get: operations["reports_statistics_stock_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/stock_details/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Liste détaillée du stock par produit avec pagination */
+        get: operations["reports_statistics_stock_details_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/stock_movements_summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Résumé des mouvements de stock par type */
+        get: operations["reports_statistics_stock_movements_summary_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Résumé global pour le dashboard principal */
+        get: operations["reports_statistics_summary_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/top_customers/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Meilleurs clients avec pagination */
+        get: operations["reports_statistics_top_customers_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/top_products/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Top produits les plus vendus avec pagination */
+        get: operations["reports_statistics_top_products_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/statistics/user_activity/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Rapport d'activité d'un utilisateur sur une période (avec heures).
+         *
+         *     Params : ``user`` (id, requis), ``date_from``/``date_to`` ou ``period``,
+         *     ``group_by=hour|day`` (défaut ``day``). Réservé à ``reports.view``
+         *     (owner + gérant) ; les données restent scopées au périmètre du
+         *     demandeur (un gérant ne voit que l'activité dans ses entrepôts).
+         */
+        get: operations["reports_statistics_user_activity_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/templates/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet pour les modèles de rapports */
+        get: operations["reports_templates_list"];
+        put?: never;
+        /** @description ViewSet pour les modèles de rapports */
+        post: operations["reports_templates_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/templates/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet pour les modèles de rapports */
+        get: operations["reports_templates_retrieve"];
+        /** @description ViewSet pour les modèles de rapports */
+        put: operations["reports_templates_update"];
+        post?: never;
+        /** @description ViewSet pour les modèles de rapports */
+        delete: operations["reports_templates_destroy"];
+        options?: never;
+        head?: never;
+        /** @description ViewSet pour les modèles de rapports */
+        patch: operations["reports_templates_partial_update"];
         trace?: never;
     };
     "/api/v1/sale-returns/": {
@@ -2663,18 +4376,7 @@ export interface paths {
          */
         get: operations["sales_list"];
         put?: never;
-        /**
-         * @description ViewSet pour la gestion des ventes (POS).
-         *
-         *     Endpoints:
-         *     - GET /sales/ : Liste des ventes
-         *     - POST /sales/ : Créer une vente
-         *     - GET /sales/{id}/ : Détail d'une vente
-         *     - POST /sales/{id}/add-payment/ : Ajouter un paiement
-         *     - POST /sales/{id}/cancel/ : Annuler une vente
-         *     - GET /sales/today/ : Ventes du jour
-         *     - GET /sales/stats/ : Statistiques de ventes
-         */
+        /** @description Créer une vente et retourner le détail complet (avec reference, id, etc.). */
         post: operations["sales_create"];
         delete?: never;
         options?: never;
@@ -2772,8 +4474,30 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Annule une vente. */
+        /**
+         * @description Annule une vente.
+         *
+         *     Permission : sold_by (caissier auteur) OU manager+. Refusée pour les
+         *     ventes déjà annulées/remboursées.
+         */
         post: operations["sales_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sales/{id}/mark-receipt-printed/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Marque le reçu comme imprimé. */
+        post: operations["sales_mark_receipt_printed_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2804,7 +4528,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Retourne les ventes du jour. */
+        /** @description Retourne les ventes du jour avec pagination. */
         get: operations["sales_today_retrieve"];
         put?: never;
         post?: never;
@@ -2812,6 +4536,399 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/currencies/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ViewSet for listing available currencies.
+         *     Read-only, currencies are managed by admins.
+         */
+        get: operations["settings_currencies_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/currencies/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ViewSet for listing available currencies.
+         *     Read-only, currencies are managed by admins.
+         */
+        get: operations["settings_currencies_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/customer-loyalty/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet for managing customer loyalty accounts. */
+        get: operations["settings_customer_loyalty_list"];
+        put?: never;
+        /** @description ViewSet for managing customer loyalty accounts. */
+        post: operations["settings_customer_loyalty_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/customer-loyalty/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet for managing customer loyalty accounts. */
+        get: operations["settings_customer_loyalty_retrieve"];
+        /** @description ViewSet for managing customer loyalty accounts. */
+        put: operations["settings_customer_loyalty_update"];
+        post?: never;
+        /** @description ViewSet for managing customer loyalty accounts. */
+        delete: operations["settings_customer_loyalty_destroy"];
+        options?: never;
+        head?: never;
+        /** @description ViewSet for managing customer loyalty accounts. */
+        patch: operations["settings_customer_loyalty_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/settings/customer-loyalty/{id}/redeem/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Utiliser des points pour une récompense. */
+        post: operations["settings_customer_loyalty_redeem_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/customer-loyalty/{id}/transactions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Historique des transactions de fidélité d'un client. */
+        get: operations["settings_customer_loyalty_transactions_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/customer-loyalty/adjust_points/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Ajuster manuellement les points d'un client. */
+        post: operations["settings_customer_loyalty_adjust_points_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/loyalty-program/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retourne le programme de fidélité de l'organisation (ou null). */
+        get: operations["settings_loyalty_program_list"];
+        put?: never;
+        /**
+         * @description ViewSet for managing loyalty program.
+         *     Each organization has at most one loyalty program.
+         */
+        post: operations["settings_loyalty_program_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/loyalty-program/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ViewSet for managing loyalty program.
+         *     Each organization has at most one loyalty program.
+         */
+        get: operations["settings_loyalty_program_retrieve"];
+        /**
+         * @description ViewSet for managing loyalty program.
+         *     Each organization has at most one loyalty program.
+         */
+        put: operations["settings_loyalty_program_update"];
+        post?: never;
+        /**
+         * @description ViewSet for managing loyalty program.
+         *     Each organization has at most one loyalty program.
+         */
+        delete: operations["settings_loyalty_program_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description ViewSet for managing loyalty program.
+         *     Each organization has at most one loyalty program.
+         */
+        patch: operations["settings_loyalty_program_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/settings/loyalty-program/{id}/calculate_points/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Calculer les points pour un montant donné. */
+        post: operations["settings_loyalty_program_calculate_points_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/loyalty-program/{id}/toggle/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Activer/désactiver le programme de fidélité. */
+        post: operations["settings_loyalty_program_toggle_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/loyalty-rewards/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet for managing loyalty rewards. */
+        get: operations["settings_loyalty_rewards_list"];
+        put?: never;
+        /** @description ViewSet for managing loyalty rewards. */
+        post: operations["settings_loyalty_rewards_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/loyalty-rewards/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet for managing loyalty rewards. */
+        get: operations["settings_loyalty_rewards_retrieve"];
+        /** @description ViewSet for managing loyalty rewards. */
+        put: operations["settings_loyalty_rewards_update"];
+        post?: never;
+        /** @description ViewSet for managing loyalty rewards. */
+        delete: operations["settings_loyalty_rewards_destroy"];
+        options?: never;
+        head?: never;
+        /** @description ViewSet for managing loyalty rewards. */
+        patch: operations["settings_loyalty_rewards_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/settings/organization-currencies/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet for managing organization currencies. */
+        get: operations["settings_organization_currencies_list"];
+        put?: never;
+        /** @description ViewSet for managing organization currencies. */
+        post: operations["settings_organization_currencies_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/organization-currencies/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ViewSet for managing organization currencies. */
+        get: operations["settings_organization_currencies_retrieve"];
+        /** @description ViewSet for managing organization currencies. */
+        put: operations["settings_organization_currencies_update"];
+        post?: never;
+        /** @description ViewSet for managing organization currencies. */
+        delete: operations["settings_organization_currencies_destroy"];
+        options?: never;
+        head?: never;
+        /** @description ViewSet for managing organization currencies. */
+        patch: operations["settings_organization_currencies_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/settings/organization-currencies/{id}/set_primary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Définir une devise comme devise principale. */
+        post: operations["settings_organization_currencies_set_primary_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/organization-currencies/{id}/update_rate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Mettre à jour le taux de change d'une devise. */
+        post: operations["settings_organization_currencies_update_rate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/organization-currencies/convert/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Convertir un montant d'une devise à une autre. */
+        post: operations["settings_organization_currencies_convert_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/organization-settings/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retourne les paramètres de l'organisation (ou crée par défaut). */
+        get: operations["settings_organization_settings_list"];
+        put?: never;
+        /** @description Crée ou met à jour les paramètres. */
+        post: operations["settings_organization_settings_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/organization-settings/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ViewSet for managing organization settings.
+         *     Singleton per organization.
+         */
+        get: operations["settings_organization_settings_retrieve"];
+        /**
+         * @description ViewSet for managing organization settings.
+         *     Singleton per organization.
+         */
+        put: operations["settings_organization_settings_update"];
+        post?: never;
+        /**
+         * @description ViewSet for managing organization settings.
+         *     Singleton per organization.
+         */
+        delete: operations["settings_organization_settings_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description ViewSet for managing organization settings.
+         *     Singleton per organization.
+         */
+        patch: operations["settings_organization_settings_partial_update"];
         trace?: never;
     };
     "/api/v1/stock-adjustments/": {
@@ -3004,6 +5121,7 @@ export interface paths {
          *     - GET /stock-locations/{id}/ : Détail d'un emplacement
          *     - PUT/PATCH /stock-locations/{id}/ : Modifier un emplacement
          *     - DELETE /stock-locations/{id}/ : Supprimer un emplacement
+         *     - GET /stock-locations/by-warehouse/{warehouse_id}/ : Emplacements d'un entrepôt
          */
         get: operations["stock_locations_list"];
         put?: never;
@@ -3016,6 +5134,7 @@ export interface paths {
          *     - GET /stock-locations/{id}/ : Détail d'un emplacement
          *     - PUT/PATCH /stock-locations/{id}/ : Modifier un emplacement
          *     - DELETE /stock-locations/{id}/ : Supprimer un emplacement
+         *     - GET /stock-locations/by-warehouse/{warehouse_id}/ : Emplacements d'un entrepôt
          */
         post: operations["stock_locations_create"];
         delete?: never;
@@ -3040,6 +5159,7 @@ export interface paths {
          *     - GET /stock-locations/{id}/ : Détail d'un emplacement
          *     - PUT/PATCH /stock-locations/{id}/ : Modifier un emplacement
          *     - DELETE /stock-locations/{id}/ : Supprimer un emplacement
+         *     - GET /stock-locations/by-warehouse/{warehouse_id}/ : Emplacements d'un entrepôt
          */
         get: operations["stock_locations_retrieve"];
         /**
@@ -3051,6 +5171,7 @@ export interface paths {
          *     - GET /stock-locations/{id}/ : Détail d'un emplacement
          *     - PUT/PATCH /stock-locations/{id}/ : Modifier un emplacement
          *     - DELETE /stock-locations/{id}/ : Supprimer un emplacement
+         *     - GET /stock-locations/by-warehouse/{warehouse_id}/ : Emplacements d'un entrepôt
          */
         put: operations["stock_locations_update"];
         post?: never;
@@ -3063,6 +5184,7 @@ export interface paths {
          *     - GET /stock-locations/{id}/ : Détail d'un emplacement
          *     - PUT/PATCH /stock-locations/{id}/ : Modifier un emplacement
          *     - DELETE /stock-locations/{id}/ : Supprimer un emplacement
+         *     - GET /stock-locations/by-warehouse/{warehouse_id}/ : Emplacements d'un entrepôt
          */
         delete: operations["stock_locations_destroy"];
         options?: never;
@@ -3076,8 +5198,26 @@ export interface paths {
          *     - GET /stock-locations/{id}/ : Détail d'un emplacement
          *     - PUT/PATCH /stock-locations/{id}/ : Modifier un emplacement
          *     - DELETE /stock-locations/{id}/ : Supprimer un emplacement
+         *     - GET /stock-locations/by-warehouse/{warehouse_id}/ : Emplacements d'un entrepôt
          */
         patch: operations["stock_locations_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/stock-locations/by-warehouse/{warehouse_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retourne tous les emplacements actifs d'un entrepôt. */
+        get: operations["stock_locations_by_warehouse_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/stock-movements/": {
@@ -3352,7 +5492,18 @@ export interface paths {
          */
         get: operations["stocks_list"];
         put?: never;
-        post?: never;
+        /**
+         * @description ViewSet pour la consultation du stock.
+         *
+         *     Endpoints:
+         *     - GET /stocks/ : Liste du stock
+         *     - GET /stocks/{id}/ : Détail du stock
+         *     - GET /stocks/by-product/{product_id}/ : Stock par produit
+         *     - GET /stocks/by-warehouse/{warehouse_id}/ : Stock par entrepôt
+         *     - GET /stocks/low-stock/ : Produits en stock bas
+         *     - GET /stocks/expiring/ : Lots bientôt périmés
+         */
+        post: operations["stocks_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3378,6 +5529,47 @@ export interface paths {
          *     - GET /stocks/expiring/ : Lots bientôt périmés
          */
         get: operations["stocks_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stocks/{id}/unpack/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Ouvre un ou plusieurs conditionnements sans attendre une vente.
+         *
+         *     Sert au vendeur qui anticipe, et débloque le cas où le
+         *     déconditionnement automatique est désactivé sur le produit.
+         *
+         *     Corps : ``{"packages": 1}``
+         */
+        post: operations["stocks_unpack_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stocks/batches/{product_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retourne tous les lots d'un produit avec stock disponible (FIFO order). */
+        get: operations["stocks_batches_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3446,6 +5638,214 @@ export interface paths {
         };
         /** @description Retourne les produits en stock bas. */
         get: operations["stocks_low_stock_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/activate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Active un abonnement suite à un paiement.
+         *     Endpoint: POST /api/v1/subscriptions/activate/
+         *
+         *     TEMPORAIREMENT BLOQUÉ pour les utilisateurs normaux tant que
+         *     le système de paiement n'est pas entièrement configuré.
+         *     Seuls les administrateurs plateforme (is_staff) peuvent activer
+         *     un abonnement via l'admin panel.
+         */
+        post: operations["subscriptions_activate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/current/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Retourne l'abonnement actuel.
+         *     Endpoint: GET /api/v1/subscriptions/current/
+         */
+        get: operations["subscriptions_current_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/history/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Historique de tous les abonnements de l'organisation.
+         *     Endpoint: GET /api/v1/subscriptions/history/
+         */
+        get: operations["subscriptions_history_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/invoices/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Factures d'abonnement.
+         *     Endpoint: GET /api/v1/subscriptions/invoices/
+         */
+        get: operations["subscriptions_invoices_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/moko/callback/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Callback MOKO v2 (notification asynchrone).
+         *
+         *     Auth :
+         *     - Header ``Authorization: Bearer <secret>`` recommandé.
+         *     - Fallback header ``X-Webhook-Token: <secret>``.
+         *     - Fallback rétro-compat query string ``?token=<secret>`` (deprecated,
+         *       warning loggué — supprimer dès que Moko aura migré côté config).
+         *
+         *     Throttle :
+         *     - Scope ``moko_callback`` (60/min par IP) — actif même en DEBUG.
+         *
+         *     Durcissement :
+         *     - Si MOKO_CALLBACK_SECRET est configuré, le secret est obligatoire.
+         *     - La référence doit suivre notre convention (``vf_sub_*``).
+         *     - Si la payload contient un ``amount``, il doit correspondre à
+         *       ``payment.amount`` (tolérance 0.01 pour les arrondis Moko).
+         *     - Idempotence renforcée : si ``payment.status != PENDING`` mais que la
+         *       subscription n'a pas été activée, on retraite le callback.
+         */
+        post: operations["subscriptions_moko_callback_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/moko/initiate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Démarre un paiement Mobile Money (MOKO API v2) pour un abonnement.
+         *     POST /api/v1/subscriptions/moko/initiate/
+         */
+        post: operations["subscriptions_moko_initiate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/moko/status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Vérifie le statut d'un paiement MOKO en cours.
+         *     GET /api/v1/subscriptions/moko/status/?reference=xxx
+         *
+         *     Utilisé par le frontend pour le polling.
+         *
+         *     Retourne:
+         *     - status: pending | completed | failed
+         *     - message: Message descriptif
+         *     - subscription_activated: True si l'abonnement a été activé
+         */
+        get: operations["subscriptions_moko_status_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/payments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Historique des paiements d'abonnement.
+         *     Endpoint: GET /api/v1/subscriptions/payments/
+         */
+        get: operations["subscriptions_payments_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Retourne le statut complet de l'abonnement de l'organisation.
+         *     Endpoint: GET /api/v1/subscriptions/status/
+         */
+        get: operations["subscriptions_status_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3821,6 +6221,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pull sync changes
+         * @description Pull changes from the server since the last sync.
+         *
+         *             For initial sync, omit last_pulled_at or set it to 0.
+         *             The response follows WatermelonDB sync protocol format.
+         */
+        get: operations["sync_retrieve"];
+        put?: never;
+        /**
+         * Push sync changes
+         * @description Push local changes to the server and optionally pull updates.
+         *
+         *             The request body should contain:
+         *             - changes: Object with table names as keys, each containing created/updated/deleted arrays
+         *             - last_pulled_at: Timestamp of last pull (for conflict detection)
+         *
+         *             The response includes push stats and optionally pull changes.
+         */
+        post: operations["sync_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get sync status
+         * @description Returns available sync tables and their record counts.
+         */
+        get: operations["sync_status_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/units/": {
         parameters: {
             query?: never;
@@ -4052,7 +6505,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Retourne les activités de l'utilisateur connecté. */
+        /** @description Retourne les activités de l'utilisateur connecté avec pagination. */
         get: operations["users_activities_retrieve"];
         put?: never;
         post?: never;
@@ -4092,6 +6545,35 @@ export interface paths {
         put?: never;
         /** @description Change le mot de passe de l'utilisateur connecté. */
         post: operations["users_me_change_password_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me/permissions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Retourne le rôle et les permissions de l'utilisateur dans l'organisation courante.
+         *     Nécessite le header X-Organization-ID.
+         *
+         *     Retourne:
+         *     - role: rôle du membre
+         *     - role_display: nom affiché du rôle
+         *     - role_permissions: permissions héritées du rôle
+         *     - extra_permissions: permissions additionnelles accordées individuellement
+         *     - permissions: permissions effectives (role + extra)
+         *     - manageable_roles: rôles que cet utilisateur peut gérer
+         *     - all_permissions: liste de toutes les permissions du système (pour UI)
+         */
+        get: operations["users_me_permissions_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4228,13 +6710,20 @@ export interface components {
          * @enum {string}
          */
         ActionEnum: "login" | "logout" | "create" | "update" | "delete" | "view" | "export";
-        /**
-         * @description * `billing` - Facturation
-         *     * `shipping` - Livraison
-         *     * `both` - Les deux
-         * @enum {string}
-         */
-        AddressTypeEnum: "billing" | "shipping" | "both";
+        /** @description Serializer pour ajuster manuellement le solde client. */
+        AdjustBalance: {
+            /** Format: decimal */
+            amount: string;
+            /** @default  */
+            notes: string;
+        };
+        /** @description Serializer pour ajuster manuellement le solde client. */
+        AdjustBalanceRequest: {
+            /** Format: decimal */
+            amount: string;
+            /** @default  */
+            notes: string;
+        };
         /**
          * @description * `count` - Inventaire
          *     * `damage` - Dommage
@@ -4245,6 +6734,247 @@ export interface components {
          * @enum {string}
          */
         AdjustmentTypeEnum: "count" | "damage" | "theft" | "expired" | "correction" | "other";
+        AdminOrganizationDetail: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            business_type?: components["schemas"]["BusinessTypeEnum"];
+            country?: string;
+            city?: string;
+            phone?: string;
+            /** Format: email */
+            email?: string;
+            is_active?: boolean;
+            readonly owner_name: string;
+            readonly owner_email: string;
+            readonly members_count: string;
+            readonly subscription_status: string;
+            readonly subscription_plan: string;
+            readonly subscription_end: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            address?: string;
+            tax_id?: string;
+            currency?: string;
+            readonly recent_activity: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        AdminOrganizationList: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            business_type?: components["schemas"]["BusinessTypeEnum"];
+            country?: string;
+            city?: string;
+            phone?: string;
+            /** Format: email */
+            email?: string;
+            is_active?: boolean;
+            readonly owner_name: string;
+            readonly owner_email: string;
+            readonly members_count: string;
+            readonly subscription_status: string;
+            readonly subscription_plan: string;
+            readonly subscription_end: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        AdminOrganizationListRequest: {
+            name: string;
+            business_type?: components["schemas"]["BusinessTypeEnum"];
+            country?: string;
+            city?: string;
+            phone?: string;
+            /** Format: email */
+            email?: string;
+            is_active?: boolean;
+        };
+        AdminPlan: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code: string;
+            description?: string;
+            /** Format: decimal */
+            price_monthly?: string;
+            /** Format: decimal */
+            price_yearly?: string;
+            readonly currency: components["schemas"]["AdminPlanCurrency"];
+            max_users?: number;
+            max_branches?: number;
+            /** @description Nombre maximal d'entrepôts (non supprimés) par organisation. */
+            max_warehouses?: number;
+            max_products?: number | null;
+            max_monthly_transactions?: number | null;
+            storage_limit_mb?: number;
+            features?: unknown;
+            is_active?: boolean;
+            is_featured?: boolean;
+            trial_days?: number;
+            sort_order?: number;
+            tier?: number;
+            readonly plan_features: components["schemas"]["AdminPlanFeature"][];
+            readonly subscribers_count: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        AdminPlanCreateUpdate: {
+            name: string;
+            code: string;
+            description?: string;
+            /** Format: decimal */
+            price_monthly?: string;
+            /** Format: decimal */
+            price_yearly?: string;
+            /** Format: uuid */
+            currency?: string | null;
+            max_users?: number;
+            max_branches?: number;
+            /** @description Nombre maximal d'entrepôts (non supprimés) par organisation. */
+            max_warehouses?: number;
+            max_products?: number | null;
+            max_monthly_transactions?: number | null;
+            storage_limit_mb?: number;
+            features?: unknown;
+            is_active?: boolean;
+            is_featured?: boolean;
+            trial_days?: number;
+            sort_order?: number;
+            tier?: number;
+        };
+        AdminPlanCreateUpdateRequest: {
+            name: string;
+            code: string;
+            description?: string;
+            /** Format: decimal */
+            price_monthly?: string;
+            /** Format: decimal */
+            price_yearly?: string;
+            /** Format: uuid */
+            currency?: string | null;
+            max_users?: number;
+            max_branches?: number;
+            /** @description Nombre maximal d'entrepôts (non supprimés) par organisation. */
+            max_warehouses?: number;
+            max_products?: number | null;
+            max_monthly_transactions?: number | null;
+            storage_limit_mb?: number;
+            features?: unknown;
+            is_active?: boolean;
+            is_featured?: boolean;
+            trial_days?: number;
+            sort_order?: number;
+            tier?: number;
+        };
+        AdminPlanCurrency: {
+            /** Format: uuid */
+            readonly id: string;
+            code: string;
+            symbol: string;
+        };
+        AdminPlanFeature: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code: string;
+            description?: string;
+            is_enabled?: boolean;
+            limit_value?: number | null;
+        };
+        AdminSubscriptionList: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            organization: string;
+            readonly organization_name: string;
+            /** Format: uuid */
+            plan: string;
+            readonly plan_name: string;
+            status?: components["schemas"]["AdminSubscriptionListStatusEnum"];
+            readonly status_display: string;
+            billing_cycle?: components["schemas"]["BillingCycleEnum"];
+            readonly billing_cycle_display: string;
+            /** Format: decimal */
+            price?: string;
+            currency?: string;
+            /** Format: date-time */
+            current_period_start: string;
+            /** Format: date-time */
+            current_period_end: string;
+            readonly days_remaining: number;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        AdminSubscriptionListRequest: {
+            /** Format: uuid */
+            organization: string;
+            /** Format: uuid */
+            plan: string;
+            status?: components["schemas"]["AdminSubscriptionListStatusEnum"];
+            billing_cycle?: components["schemas"]["BillingCycleEnum"];
+            /** Format: decimal */
+            price?: string;
+            currency?: string;
+            /** Format: date-time */
+            current_period_start: string;
+            /** Format: date-time */
+            current_period_end: string;
+        };
+        /**
+         * @description * `trial` - Essai
+         *     * `active` - Actif
+         *     * `past_due` - En retard
+         *     * `cancelled` - Annulé
+         *     * `expired` - Expiré
+         *     * `suspended` - Suspendu
+         * @enum {string}
+         */
+        AdminSubscriptionListStatusEnum: "trial" | "active" | "past_due" | "cancelled" | "expired" | "suspended";
+        AdminUserList: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: email */
+            email: string;
+            first_name?: string;
+            last_name?: string;
+            readonly full_name: string;
+            phone?: string;
+            is_active?: boolean;
+            is_staff?: boolean;
+            is_email_verified?: boolean;
+            readonly organizations_count: string;
+            readonly organizations: string;
+            /** Format: date-time */
+            date_joined?: string;
+            /** Format: date-time */
+            last_login?: string | null;
+        };
+        AdminUserListRequest: {
+            /** Format: email */
+            email: string;
+            first_name?: string;
+            last_name?: string;
+            phone?: string;
+            is_active?: boolean;
+            is_staff?: boolean;
+            is_email_verified?: boolean;
+            /** Format: date-time */
+            date_joined?: string;
+            /** Format: date-time */
+            last_login?: string | null;
+        };
+        /**
+         * @description * `monthly` - Mensuel
+         *     * `quarterly` - Trimestriel
+         *     * `yearly` - Annuel
+         * @enum {string}
+         */
+        BillingCycleEnum: "monthly" | "quarterly" | "yearly";
+        /** @enum {unknown} */
+        BlankEnum: "";
         /** @description Serializer pour la création de branche. */
         BranchCreate: {
             name: string;
@@ -4335,6 +7065,262 @@ export interface components {
          * @enum {string}
          */
         BusinessTypeEnum: "boutique" | "supermarket" | "pharmacy" | "depot" | "restaurant" | "other";
+        /**
+         * @description Serializer pour créer un mouvement de caisse manuel.
+         *     Les mouvements liés aux ventes/dépenses sont créés automatiquement.
+         */
+        CashMovementCreate: {
+            direction: components["schemas"]["DirectionEnum"];
+            movement_type: components["schemas"]["MovementTypeEe8Enum"];
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            description: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les entrées de caisse
+             */
+            income_category?: string | null;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les sorties de caisse (hors dépenses formelles)
+             */
+            expense_category?: string | null;
+            /** Format: uuid */
+            customer?: string | null;
+            /** Format: uuid */
+            supplier?: string | null;
+            /** Format: date-time */
+            movement_date: string;
+            notes?: string;
+        };
+        /**
+         * @description Serializer pour créer un mouvement de caisse manuel.
+         *     Les mouvements liés aux ventes/dépenses sont créés automatiquement.
+         */
+        CashMovementCreateRequest: {
+            direction: components["schemas"]["DirectionEnum"];
+            movement_type: components["schemas"]["MovementTypeEe8Enum"];
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            description: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les entrées de caisse
+             */
+            income_category?: string | null;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les sorties de caisse (hors dépenses formelles)
+             */
+            expense_category?: string | null;
+            /** Format: uuid */
+            customer?: string | null;
+            /** Format: uuid */
+            supplier?: string | null;
+            /** Format: date-time */
+            movement_date: string;
+            notes?: string;
+        };
+        CashMovementDetail: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly reference: string;
+            direction: components["schemas"]["DirectionEnum"];
+            readonly direction_display: string;
+            movement_type: components["schemas"]["MovementTypeEe8Enum"];
+            readonly movement_type_display: string;
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            /** Format: decimal */
+            readonly signed_amount: string;
+            description: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            readonly payment_method_name: string;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les entrées de caisse
+             */
+            income_category?: string | null;
+            readonly income_category_name: string;
+            readonly income_category_color: string;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les sorties de caisse (hors dépenses formelles)
+             */
+            expense_category?: string | null;
+            readonly expense_category_name: string;
+            readonly expense_category_color: string;
+            /** Format: uuid */
+            sale?: string | null;
+            readonly sale_reference: string;
+            /** Format: uuid */
+            expense?: string | null;
+            readonly expense_reference: string;
+            /** Format: uuid */
+            customer?: string | null;
+            readonly customer_name: string;
+            /** Format: uuid */
+            supplier?: string | null;
+            readonly supplier_name: string;
+            /**
+             * Format: decimal
+             * @description Solde de caisse après ce mouvement
+             */
+            balance_after?: string;
+            /** Format: date-time */
+            movement_date: string;
+            is_cancelled?: boolean;
+            /** Format: uuid */
+            readonly created_by: string | null;
+            readonly created_by_name: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            notes?: string;
+            /** Format: uuid */
+            purchase_order?: string | null;
+            /** Format: date-time */
+            cancelled_at?: string | null;
+            /** Format: uuid */
+            cancelled_by?: string | null;
+            readonly cancelled_by_name: string;
+            cancel_reason?: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        CashMovementDetailRequest: {
+            direction: components["schemas"]["DirectionEnum"];
+            movement_type: components["schemas"]["MovementTypeEe8Enum"];
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            description: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les entrées de caisse
+             */
+            income_category?: string | null;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les sorties de caisse (hors dépenses formelles)
+             */
+            expense_category?: string | null;
+            /** Format: uuid */
+            sale?: string | null;
+            /** Format: uuid */
+            expense?: string | null;
+            /** Format: uuid */
+            customer?: string | null;
+            /** Format: uuid */
+            supplier?: string | null;
+            /**
+             * Format: decimal
+             * @description Solde de caisse après ce mouvement
+             */
+            balance_after?: string;
+            /** Format: date-time */
+            movement_date: string;
+            is_cancelled?: boolean;
+            notes?: string;
+            /** Format: uuid */
+            purchase_order?: string | null;
+            /** Format: date-time */
+            cancelled_at?: string | null;
+            /** Format: uuid */
+            cancelled_by?: string | null;
+            cancel_reason?: string;
+        };
+        CashMovementList: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly reference: string;
+            direction: components["schemas"]["DirectionEnum"];
+            readonly direction_display: string;
+            movement_type: components["schemas"]["MovementTypeEe8Enum"];
+            readonly movement_type_display: string;
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            /** Format: decimal */
+            readonly signed_amount: string;
+            description: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            readonly payment_method_name: string;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les entrées de caisse
+             */
+            income_category?: string | null;
+            readonly income_category_name: string;
+            readonly income_category_color: string;
+            /**
+             * Format: uuid
+             * @description Catégorie pour les sorties de caisse (hors dépenses formelles)
+             */
+            expense_category?: string | null;
+            readonly expense_category_name: string;
+            readonly expense_category_color: string;
+            /** Format: uuid */
+            sale?: string | null;
+            readonly sale_reference: string;
+            /** Format: uuid */
+            expense?: string | null;
+            readonly expense_reference: string;
+            /** Format: uuid */
+            customer?: string | null;
+            readonly customer_name: string;
+            /** Format: uuid */
+            supplier?: string | null;
+            readonly supplier_name: string;
+            /**
+             * Format: decimal
+             * @description Solde de caisse après ce mouvement
+             */
+            balance_after?: string;
+            /** Format: date-time */
+            movement_date: string;
+            is_cancelled?: boolean;
+            /** Format: uuid */
+            readonly created_by: string | null;
+            readonly created_by_name: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
         /** @description Serializer pour la création de catégorie. */
         CategoryCreate: {
             name: string;
@@ -4344,7 +7330,6 @@ export interface components {
             parent?: string | null;
             /** Format: uri */
             image?: string | null;
-            /** Format: int64 */
             sort_order?: number;
             is_active?: boolean;
         };
@@ -4357,7 +7342,6 @@ export interface components {
             parent?: string | null;
             /** Format: binary */
             image?: string | null;
-            /** Format: int64 */
             sort_order?: number;
             is_active?: boolean;
         };
@@ -4373,7 +7357,6 @@ export interface components {
             readonly parent_name: string;
             /** Format: uri */
             image?: string | null;
-            /** Format: int64 */
             sort_order?: number;
             is_active?: boolean;
             readonly ancestors: string;
@@ -4391,7 +7374,6 @@ export interface components {
             parent?: string | null;
             /** Format: binary */
             image?: string | null;
-            /** Format: int64 */
             sort_order?: number;
             is_active?: boolean;
         };
@@ -4406,7 +7388,6 @@ export interface components {
             /** Format: uri */
             image?: string | null;
             is_active?: boolean;
-            /** Format: int64 */
             sort_order?: number;
             readonly children_count: string;
             readonly products_count: string;
@@ -4417,95 +7398,48 @@ export interface components {
             new_password: string;
             new_password_confirm: string;
         };
-        /** @description Serializer pour les adresses client. */
-        CustomerAddress: {
+        /** @description Serializer for Currency model. */
+        Currency: {
             /** Format: uuid */
             readonly id: string;
-            address_type?: components["schemas"]["AddressTypeEnum"];
-            readonly address_type_display: string;
-            name?: string;
-            address_line1: string;
-            address_line2?: string;
-            city: string;
-            state?: string;
-            postal_code?: string;
-            country?: string;
-            phone?: string;
-            is_default?: boolean;
+            code: string;
+            name: string;
+            symbol: string;
+            decimal_places?: number;
+            is_active?: boolean;
         };
-        /** @description Serializer pour les adresses client. */
-        CustomerAddressRequest: {
-            address_type?: components["schemas"]["AddressTypeEnum"];
-            name?: string;
-            address_line1: string;
-            address_line2?: string;
-            city: string;
-            state?: string;
-            postal_code?: string;
-            country?: string;
-            phone?: string;
-            is_default?: boolean;
-        };
-        /** @description Serializer pour ajuster le solde client. */
-        CustomerBalance: {
+        /** @description Couple (devise, montant) pour les saisies multi-devise de caisse. */
+        CurrencyAmount: {
+            currency: string;
             /** Format: decimal */
             amount: string;
-            notes?: string;
         };
-        /** @description Serializer pour ajuster le solde client. */
-        CustomerBalanceRequest: {
+        /** @description Couple (devise, montant) pour les saisies multi-devise de caisse. */
+        CurrencyAmountRequest: {
+            currency: string;
             /** Format: decimal */
             amount: string;
-            notes?: string;
+        };
+        /** @description Serializer for currency conversion. */
+        CurrencyConversion: {
+            /** Format: decimal */
+            amount: string;
+            from_currency: string;
+            to_currency: string;
+            /** Format: decimal */
+            readonly converted_amount: string;
+            /** Format: decimal */
+            readonly exchange_rate: string;
+        };
+        /** @description Serializer for currency conversion. */
+        CurrencyConversionRequest: {
+            /** Format: decimal */
+            amount: string;
+            from_currency: string;
+            to_currency: string;
         };
         /** @description Serializer pour la création de client. */
         CustomerCreate: {
-            customer_type?: components["schemas"]["CustomerTypeEnum"];
-            name: string;
-            company_name?: string;
-            /** Format: email */
-            email?: string;
-            phone?: string;
-            mobile?: string;
-            address?: string;
-            city?: string;
-            country?: string;
-            tax_id?: string;
-            /** Format: uuid */
-            group?: string | null;
-            /** Format: uuid */
-            price_list?: string | null;
-            /** Format: decimal */
-            credit_limit?: string;
-            notes?: string;
-            is_active?: boolean;
-            addresses?: components["schemas"]["CustomerAddress"][];
-        };
-        /** @description Serializer pour la création de client. */
-        CustomerCreateRequest: {
-            customer_type?: components["schemas"]["CustomerTypeEnum"];
-            name: string;
-            company_name?: string;
-            /** Format: email */
-            email?: string;
-            phone?: string;
-            mobile?: string;
-            address?: string;
-            city?: string;
-            country?: string;
-            tax_id?: string;
-            /** Format: uuid */
-            group?: string | null;
-            /** Format: uuid */
-            price_list?: string | null;
-            /** Format: decimal */
-            credit_limit?: string;
-            notes?: string;
-            is_active?: boolean;
-            addresses?: components["schemas"]["CustomerAddressRequest"][];
-        };
-        /** @description Serializer complet pour le détail d'un client. */
-        CustomerDetail: {
             /** Format: uuid */
             readonly id: string;
             readonly code: string;
@@ -4514,34 +7448,54 @@ export interface components {
             company_name?: string;
             /** Format: email */
             email?: string;
-            phone?: string;
-            mobile?: string;
+            phone: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
+            /** Format: decimal */
+            credit_limit?: string;
+            notes?: string;
+            is_active?: boolean;
+        };
+        /** @description Serializer pour la création de client. */
+        CustomerCreateRequest: {
+            customer_type?: components["schemas"]["CustomerTypeEnum"];
+            name: string;
+            company_name?: string;
+            /** Format: email */
+            email?: string;
+            phone: string;
+            address?: string;
+            tax_id?: string;
+            /** Format: decimal */
+            credit_limit?: string;
+            notes?: string;
+            is_active?: boolean;
+        };
+        /** @description Serializer complet pour le détail d'un client. */
+        CustomerDetail: {
             /** Format: uuid */
-            group?: string | null;
-            readonly group_name: string;
-            /** Format: uuid */
-            price_list?: string | null;
-            readonly price_list_name: string;
+            readonly id: string;
+            readonly code: string;
+            customer_type?: components["schemas"]["CustomerTypeEnum"];
+            readonly customer_type_display: string;
+            name: string;
+            company_name?: string;
+            /** Format: email */
+            email?: string;
+            phone?: string;
+            address?: string;
+            tax_id?: string;
             /** Format: decimal */
             credit_limit?: string;
             /** Format: decimal */
             current_balance?: string;
             /** Format: decimal */
             readonly available_credit: string;
-            /** Format: int64 */
-            loyalty_points?: number;
             notes?: string;
             is_active?: boolean;
             /** Format: uuid */
-            linked_user?: string | null;
-            /** Format: uuid */
             created_by?: string | null;
             readonly created_by_name: string;
-            readonly addresses: components["schemas"]["CustomerAddress"][];
             readonly total_purchases: string;
             readonly recent_sales: string;
             /** Format: date-time */
@@ -4549,33 +7503,24 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
-        /** @description Serializer pour les groupes de clients. */
-        CustomerGroup: {
-            /** Format: uuid */
-            readonly id: string;
+        /** @description Serializer complet pour le détail d'un client. */
+        CustomerDetailRequest: {
+            customer_type?: components["schemas"]["CustomerTypeEnum"];
             name: string;
-            code: string;
-            description?: string;
+            company_name?: string;
+            /** Format: email */
+            email?: string;
+            phone?: string;
+            address?: string;
+            tax_id?: string;
             /** Format: decimal */
-            discount_percentage?: string;
-            /** Format: uuid */
-            price_list?: string | null;
-            readonly price_list_name: string;
-            is_default?: boolean;
-            readonly customers_count: string;
-            /** Format: date-time */
-            readonly created_at: string;
-        };
-        /** @description Serializer pour les groupes de clients. */
-        CustomerGroupRequest: {
-            name: string;
-            code: string;
-            description?: string;
+            credit_limit?: string;
             /** Format: decimal */
-            discount_percentage?: string;
+            current_balance?: string;
+            notes?: string;
+            is_active?: boolean;
             /** Format: uuid */
-            price_list?: string | null;
-            is_default?: boolean;
+            created_by?: string | null;
         };
         /** @description Serializer léger pour les listes de clients. */
         CustomerList: {
@@ -4589,17 +7534,47 @@ export interface components {
             /** Format: email */
             email?: string;
             phone?: string;
-            mobile?: string;
-            /** Format: uuid */
-            group?: string | null;
-            readonly group_name: string;
+            address?: string;
+            tax_id?: string;
             /** Format: decimal */
             credit_limit?: string;
             /** Format: decimal */
             current_balance?: string;
-            /** Format: int64 */
-            loyalty_points?: number;
             is_active?: boolean;
+        };
+        /** @description Serializer for CustomerLoyalty model. */
+        CustomerLoyalty: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            customer: string;
+            readonly customer_name: string;
+            readonly customer_phone: string;
+            total_points_earned?: number;
+            total_points_redeemed?: number;
+            current_points?: number;
+            tier?: string;
+            /** Format: date-time */
+            last_points_earned_at?: string | null;
+            /** Format: date-time */
+            last_points_redeemed_at?: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Serializer for CustomerLoyalty model. */
+        CustomerLoyaltyRequest: {
+            /** Format: uuid */
+            customer: string;
+            total_points_earned?: number;
+            total_points_redeemed?: number;
+            current_points?: number;
+            tier?: string;
+            /** Format: date-time */
+            last_points_earned_at?: string | null;
+            /** Format: date-time */
+            last_points_redeemed_at?: string | null;
         };
         /**
          * @description * `individual` - Particulier
@@ -4614,16 +7589,9 @@ export interface components {
             company_name?: string;
             /** Format: email */
             email?: string;
-            phone?: string;
-            mobile?: string;
+            phone: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
-            /** Format: uuid */
-            group?: string | null;
-            /** Format: uuid */
-            price_list?: string | null;
             /** Format: decimal */
             credit_limit?: string;
             notes?: string;
@@ -4636,20 +7604,401 @@ export interface components {
             company_name?: string;
             /** Format: email */
             email?: string;
-            phone?: string;
-            mobile?: string;
+            phone: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
-            /** Format: uuid */
-            group?: string | null;
-            /** Format: uuid */
-            price_list?: string | null;
             /** Format: decimal */
             credit_limit?: string;
             notes?: string;
             is_active?: boolean;
+        };
+        Dashboard: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            description?: string;
+            layout?: unknown;
+            is_default?: boolean;
+            is_shared?: boolean;
+            readonly widgets: components["schemas"]["DashboardWidget"][];
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        DashboardRequest: {
+            name: string;
+            description?: string;
+            layout?: unknown;
+            is_default?: boolean;
+            is_shared?: boolean;
+        };
+        DashboardWidget: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            widget_type: components["schemas"]["WidgetTypeEnum"];
+            config?: unknown;
+            position_x?: number;
+            position_y?: number;
+            width?: number;
+            height?: number;
+        };
+        DashboardWidgetRequest: {
+            name: string;
+            widget_type: components["schemas"]["WidgetTypeEnum"];
+            config?: unknown;
+            position_x?: number;
+            position_y?: number;
+            width?: number;
+            height?: number;
+        };
+        /**
+         * @description * `in` - Entrée
+         *     * `out` - Sortie
+         * @enum {string}
+         */
+        DirectionEnum: "in" | "out";
+        ExpenseCategoryCreate: {
+            name: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+            /**
+             * Format: decimal
+             * @description Budget mensuel alloué à cette catégorie (0 = pas de limite)
+             */
+            budget_monthly?: string;
+        };
+        ExpenseCategoryCreateRequest: {
+            name: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+            /**
+             * Format: decimal
+             * @description Budget mensuel alloué à cette catégorie (0 = pas de limite)
+             */
+            budget_monthly?: string;
+        };
+        ExpenseCategoryDetail: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+            /**
+             * Format: decimal
+             * @description Budget mensuel alloué à cette catégorie (0 = pas de limite)
+             */
+            budget_monthly?: string;
+            readonly expense_count: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        ExpenseCategoryList: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+            /**
+             * Format: decimal
+             * @description Budget mensuel alloué à cette catégorie (0 = pas de limite)
+             */
+            budget_monthly?: string;
+            /** @default 0 */
+            readonly expense_count: number;
+            /**
+             * Format: decimal
+             * @default 0.00
+             */
+            readonly total_spent: string;
+        };
+        ExpenseCreate: {
+            /** Format: uuid */
+            category: string;
+            /**
+             * Format: uuid
+             * @description Entrepôt rattaché à la dépense (filtrage par périmètre membre)
+             */
+            warehouse?: string | null;
+            description: string;
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            /** @description Nom du bénéficiaire de la dépense */
+            beneficiary?: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            /** @description Référence du paiement (n° chèque, transaction mobile, etc.) */
+            payment_reference?: string;
+            /** Format: date */
+            expense_date: string;
+            /** Format: date */
+            due_date?: string | null;
+            /** @description Dépense récurrente (loyer, salaires, etc.) */
+            is_recurring?: boolean;
+            recurrence_period?: components["schemas"]["RecurrencePeriodEnum"] | components["schemas"]["BlankEnum"];
+            notes?: string;
+        };
+        ExpenseCreateRequest: {
+            /** Format: uuid */
+            category: string;
+            /**
+             * Format: uuid
+             * @description Entrepôt rattaché à la dépense (filtrage par périmètre membre)
+             */
+            warehouse?: string | null;
+            description: string;
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            /** @description Nom du bénéficiaire de la dépense */
+            beneficiary?: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            /** @description Référence du paiement (n° chèque, transaction mobile, etc.) */
+            payment_reference?: string;
+            /** Format: date */
+            expense_date: string;
+            /** Format: date */
+            due_date?: string | null;
+            /** @description Dépense récurrente (loyer, salaires, etc.) */
+            is_recurring?: boolean;
+            recurrence_period?: components["schemas"]["RecurrencePeriodEnum"] | components["schemas"]["BlankEnum"];
+            notes?: string;
+        };
+        ExpenseDetail: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly reference: string;
+            /** Format: uuid */
+            category: string;
+            readonly category_name: string;
+            readonly category_color: string;
+            /**
+             * Format: uuid
+             * @description Entrepôt rattaché à la dépense (filtrage par périmètre membre)
+             */
+            warehouse?: string | null;
+            readonly warehouse_name: string;
+            description: string;
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            status?: components["schemas"]["StatusEfdEnum"];
+            /** @description Nom du bénéficiaire de la dépense */
+            beneficiary?: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            readonly payment_method_name: string;
+            /** @description Référence du paiement (n° chèque, transaction mobile, etc.) */
+            payment_reference?: string;
+            /** Format: date */
+            expense_date: string;
+            /** Format: date */
+            due_date?: string | null;
+            /** Format: date */
+            paid_date?: string | null;
+            /** @description Dépense récurrente (loyer, salaires, etc.) */
+            is_recurring?: boolean;
+            recurrence_period?: components["schemas"]["RecurrencePeriodEnum"] | components["schemas"]["BlankEnum"];
+            notes?: string;
+            /**
+             * Format: uri
+             * @description Pièce justificative (facture, reçu, etc.)
+             */
+            attachment?: string | null;
+            /** Format: uuid */
+            readonly created_by: string | null;
+            readonly created_by_name: string;
+            /** Format: uuid */
+            readonly approved_by: string | null;
+            readonly approved_by_name: string;
+            readonly cash_movements: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        ExpenseDetailRequest: {
+            /** Format: uuid */
+            category: string;
+            /**
+             * Format: uuid
+             * @description Entrepôt rattaché à la dépense (filtrage par périmètre membre)
+             */
+            warehouse?: string | null;
+            description: string;
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            status?: components["schemas"]["StatusEfdEnum"];
+            /** @description Nom du bénéficiaire de la dépense */
+            beneficiary?: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            /** @description Référence du paiement (n° chèque, transaction mobile, etc.) */
+            payment_reference?: string;
+            /** Format: date */
+            expense_date: string;
+            /** Format: date */
+            due_date?: string | null;
+            /** Format: date */
+            paid_date?: string | null;
+            /** @description Dépense récurrente (loyer, salaires, etc.) */
+            is_recurring?: boolean;
+            recurrence_period?: components["schemas"]["RecurrencePeriodEnum"] | components["schemas"]["BlankEnum"];
+            notes?: string;
+            /**
+             * Format: binary
+             * @description Pièce justificative (facture, reçu, etc.)
+             */
+            attachment?: string | null;
+        };
+        ExpenseList: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly reference: string;
+            /** Format: uuid */
+            category: string;
+            readonly category_name: string;
+            readonly category_color: string;
+            /**
+             * Format: uuid
+             * @description Entrepôt rattaché à la dépense (filtrage par périmètre membre)
+             */
+            warehouse?: string | null;
+            readonly warehouse_name: string;
+            description: string;
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            status?: components["schemas"]["StatusEfdEnum"];
+            /** @description Nom du bénéficiaire de la dépense */
+            beneficiary?: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            readonly payment_method_name: string;
+            /** @description Référence du paiement (n° chèque, transaction mobile, etc.) */
+            payment_reference?: string;
+            /** Format: date */
+            expense_date: string;
+            /** Format: date */
+            due_date?: string | null;
+            /** Format: date */
+            paid_date?: string | null;
+            /** @description Dépense récurrente (loyer, salaires, etc.) */
+            is_recurring?: boolean;
+            recurrence_period?: components["schemas"]["RecurrencePeriodEnum"] | components["schemas"]["BlankEnum"];
+            /** Format: uuid */
+            readonly created_by: string | null;
+            readonly created_by_name: string;
+            /** Format: uuid */
+            readonly approved_by: string | null;
+            readonly approved_by_name: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        ExpenseUpdate: {
+            /** Format: uuid */
+            category: string;
+            /**
+             * Format: uuid
+             * @description Entrepôt rattaché à la dépense (filtrage par périmètre membre)
+             */
+            warehouse?: string | null;
+            description: string;
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            /** @description Nom du bénéficiaire de la dépense */
+            beneficiary?: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            /** @description Référence du paiement (n° chèque, transaction mobile, etc.) */
+            payment_reference?: string;
+            /** Format: date */
+            expense_date: string;
+            /** Format: date */
+            due_date?: string | null;
+            /** @description Dépense récurrente (loyer, salaires, etc.) */
+            is_recurring?: boolean;
+            recurrence_period?: components["schemas"]["RecurrencePeriodEnum"] | components["schemas"]["BlankEnum"];
+            notes?: string;
+        };
+        ExpenseUpdateRequest: {
+            /** Format: uuid */
+            category: string;
+            /**
+             * Format: uuid
+             * @description Entrepôt rattaché à la dépense (filtrage par périmètre membre)
+             */
+            warehouse?: string | null;
+            description: string;
+            /** Format: decimal */
+            amount: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            /** @description Nom du bénéficiaire de la dépense */
+            beneficiary?: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            /** @description Référence du paiement (n° chèque, transaction mobile, etc.) */
+            payment_reference?: string;
+            /** Format: date */
+            expense_date: string;
+            /** Format: date */
+            due_date?: string | null;
+            /** @description Dépense récurrente (loyer, salaires, etc.) */
+            is_recurring?: boolean;
+            recurrence_period?: components["schemas"]["RecurrencePeriodEnum"] | components["schemas"]["BlankEnum"];
+            notes?: string;
         };
         /** @description Serializer pour la création de réception. */
         GoodsReceiptCreate: {
@@ -4834,6 +8183,250 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        IncomeCategoryCreate: {
+            name: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+        };
+        IncomeCategoryCreateRequest: {
+            name: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+        };
+        IncomeCategoryDetail: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+            readonly movement_count: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        IncomeCategoryList: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+            /** @default 0 */
+            readonly movement_count: number;
+            /**
+             * Format: decimal
+             * @default 0.00
+             */
+            readonly total_amount: string;
+        };
+        /** @description Serializer pour les lignes de comptage d'inventaire. */
+        InventoryCount: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly session: string;
+            /** Format: uuid */
+            readonly product: string;
+            readonly product_name: string;
+            readonly product_sku: string;
+            readonly product_category_name: string;
+            /** Format: uuid */
+            readonly variant: string | null;
+            readonly variant_name: string;
+            /** Format: decimal */
+            readonly quantity_expected: string;
+            /** Format: decimal */
+            quantity_counted?: string;
+            /** Format: decimal */
+            readonly quantity_difference: string;
+            /** Format: decimal */
+            expected_loose_quantity?: string;
+            /** Format: decimal */
+            counted_package_quantity?: string;
+            /** Format: decimal */
+            counted_loose_quantity?: string;
+            packaging_factor?: number | null;
+            readonly expected_display: string;
+            readonly counted_display: string;
+            readonly package_unit_name: string;
+            /** Format: decimal */
+            readonly unit_cost: string;
+            /** Format: decimal */
+            readonly difference_value: string;
+            is_counted?: boolean;
+            /** Format: uuid */
+            counted_by?: string | null;
+            readonly counted_by_name: string;
+            /** Format: date-time */
+            counted_at?: string | null;
+            readonly unit_name: string;
+            notes?: string;
+        };
+        /** @description Serializer pour les lignes de comptage d'inventaire. */
+        InventoryCountRequest: {
+            /** Format: decimal */
+            quantity_counted?: string;
+            /** Format: decimal */
+            expected_loose_quantity?: string;
+            /** Format: decimal */
+            counted_package_quantity?: string;
+            /** Format: decimal */
+            counted_loose_quantity?: string;
+            packaging_factor?: number | null;
+            is_counted?: boolean;
+            /** Format: uuid */
+            counted_by?: string | null;
+            /** Format: date-time */
+            counted_at?: string | null;
+            notes?: string;
+        };
+        /** @description Serializer pour la création d'une session d'inventaire. */
+        InventorySessionCreate: {
+            name?: string;
+            /** Format: uuid */
+            warehouse: string;
+            scope_type?: components["schemas"]["ScopeTypeEnum"];
+            notes?: string;
+            category_ids?: string[];
+            product_ids?: string[];
+        };
+        /** @description Serializer pour la création d'une session d'inventaire. */
+        InventorySessionCreateRequest: {
+            name?: string;
+            /** Format: uuid */
+            warehouse: string;
+            scope_type?: components["schemas"]["ScopeTypeEnum"];
+            notes?: string;
+            category_ids?: string[];
+            product_ids?: string[];
+        };
+        /** @description Serializer complet pour le détail d'une session d'inventaire. */
+        InventorySessionDetail: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly reference: string;
+            name: string;
+            /** Format: uuid */
+            warehouse: string;
+            readonly warehouse_name: string;
+            scope_type?: components["schemas"]["ScopeTypeEnum"];
+            readonly scope_type_display: string;
+            status?: components["schemas"]["Status950Enum"];
+            readonly status_display: string;
+            is_stock_locked?: boolean;
+            notes?: string;
+            /** Format: double */
+            readonly progress_percentage: number;
+            readonly items_total: number;
+            readonly items_counted: number;
+            readonly items_with_difference: number;
+            /** Format: decimal */
+            total_expected_quantity?: string;
+            /** Format: decimal */
+            total_counted_quantity?: string;
+            /** Format: decimal */
+            total_difference_quantity?: string;
+            /** Format: decimal */
+            total_difference_value?: string;
+            readonly counts: components["schemas"]["InventoryCount"][];
+            readonly category_names: string;
+            readonly product_names: string;
+            /** Format: uuid */
+            created_by?: string | null;
+            readonly created_by_name: string;
+            /** Format: uuid */
+            validated_by?: string | null;
+            readonly validated_by_name: string;
+            /** Format: date-time */
+            started_at?: string | null;
+            /** Format: date-time */
+            completed_at?: string | null;
+            /** Format: date-time */
+            validated_at?: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Serializer complet pour le détail d'une session d'inventaire. */
+        InventorySessionDetailRequest: {
+            name: string;
+            /** Format: uuid */
+            warehouse: string;
+            scope_type?: components["schemas"]["ScopeTypeEnum"];
+            status?: components["schemas"]["Status950Enum"];
+            is_stock_locked?: boolean;
+            notes?: string;
+            /** Format: decimal */
+            total_expected_quantity?: string;
+            /** Format: decimal */
+            total_counted_quantity?: string;
+            /** Format: decimal */
+            total_difference_quantity?: string;
+            /** Format: decimal */
+            total_difference_value?: string;
+            /** Format: uuid */
+            created_by?: string | null;
+            /** Format: uuid */
+            validated_by?: string | null;
+            /** Format: date-time */
+            started_at?: string | null;
+            /** Format: date-time */
+            completed_at?: string | null;
+            /** Format: date-time */
+            validated_at?: string | null;
+        };
+        /** @description Serializer léger pour les listes de sessions d'inventaire. */
+        InventorySessionList: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly reference: string;
+            name: string;
+            /** Format: uuid */
+            warehouse: string;
+            readonly warehouse_name: string;
+            scope_type?: components["schemas"]["ScopeTypeEnum"];
+            readonly scope_type_display: string;
+            status?: components["schemas"]["Status950Enum"];
+            readonly status_display: string;
+            is_stock_locked?: boolean;
+            /** Format: double */
+            readonly progress_percentage: number;
+            readonly items_total: number;
+            readonly items_counted: number;
+            readonly items_with_difference: number;
+            /** Format: decimal */
+            total_expected_quantity?: string;
+            /** Format: decimal */
+            total_counted_quantity?: string;
+            /** Format: decimal */
+            total_difference_quantity?: string;
+            /** Format: decimal */
+            total_difference_value?: string;
+            /** Format: uuid */
+            created_by?: string | null;
+            readonly created_by_name: string;
+            /** Format: date-time */
+            started_at?: string | null;
+            /** Format: date-time */
+            completed_at?: string | null;
+            /** Format: date-time */
+            validated_at?: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
         /** @description Serializer pour créer une invitation. */
         InvitationCreate: {
             /** Format: email */
@@ -4848,30 +8441,257 @@ export interface components {
             /** @default cashier */
             role: components["schemas"]["RoleEnum"];
         };
-        /** @description Serializer pour ajouter un membre. */
+        /** @description Serializer for LoyaltyProgram model. */
+        LoyaltyProgram: {
+            /** Format: uuid */
+            readonly id: string;
+            name?: string;
+            is_active?: boolean;
+            points_calculation_type?: components["schemas"]["PointsCalculationTypeEnum"];
+            readonly points_calculation_type_display: string;
+            /** @description Nombre de points gagnés */
+            points_per_unit?: number;
+            /**
+             * Format: decimal
+             * @description Montant requis pour gagner les points (en devise principale)
+             */
+            amount_per_unit?: string;
+            /**
+             * Format: decimal
+             * @description Pourcentage du montant converti en points
+             */
+            points_percentage?: string;
+            /**
+             * Format: decimal
+             * @description Valeur d'un point en devise principale (pour les récompenses)
+             */
+            point_value?: string;
+            /** @description Nombre minimum de points pour pouvoir les utiliser */
+            min_points_to_redeem?: number;
+            /** @description Nombre de jours avant expiration des points (0 = jamais) */
+            points_expiry_days?: number;
+            /** @description Seuls les clients enregistrés peuvent accumuler des points */
+            only_registered_customers?: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Serializer for creating/updating LoyaltyProgram. */
+        LoyaltyProgramCreateUpdate: {
+            name?: string;
+            is_active?: boolean;
+            points_calculation_type?: components["schemas"]["PointsCalculationTypeEnum"];
+            /** @description Nombre de points gagnés */
+            points_per_unit?: number;
+            /**
+             * Format: decimal
+             * @description Montant requis pour gagner les points (en devise principale)
+             */
+            amount_per_unit?: string;
+            /**
+             * Format: decimal
+             * @description Pourcentage du montant converti en points
+             */
+            points_percentage?: string;
+            /**
+             * Format: decimal
+             * @description Valeur d'un point en devise principale (pour les récompenses)
+             */
+            point_value?: string;
+            /** @description Nombre minimum de points pour pouvoir les utiliser */
+            min_points_to_redeem?: number;
+            /** @description Nombre de jours avant expiration des points (0 = jamais) */
+            points_expiry_days?: number;
+            /** @description Seuls les clients enregistrés peuvent accumuler des points */
+            only_registered_customers?: boolean;
+        };
+        /** @description Serializer for creating/updating LoyaltyProgram. */
+        LoyaltyProgramCreateUpdateRequest: {
+            name?: string;
+            is_active?: boolean;
+            points_calculation_type?: components["schemas"]["PointsCalculationTypeEnum"];
+            /** @description Nombre de points gagnés */
+            points_per_unit?: number;
+            /**
+             * Format: decimal
+             * @description Montant requis pour gagner les points (en devise principale)
+             */
+            amount_per_unit?: string;
+            /**
+             * Format: decimal
+             * @description Pourcentage du montant converti en points
+             */
+            points_percentage?: string;
+            /**
+             * Format: decimal
+             * @description Valeur d'un point en devise principale (pour les récompenses)
+             */
+            point_value?: string;
+            /** @description Nombre minimum de points pour pouvoir les utiliser */
+            min_points_to_redeem?: number;
+            /** @description Nombre de jours avant expiration des points (0 = jamais) */
+            points_expiry_days?: number;
+            /** @description Seuls les clients enregistrés peuvent accumuler des points */
+            only_registered_customers?: boolean;
+        };
+        /** @description Serializer for LoyaltyProgram model. */
+        LoyaltyProgramRequest: {
+            name?: string;
+            is_active?: boolean;
+            points_calculation_type?: components["schemas"]["PointsCalculationTypeEnum"];
+            /** @description Nombre de points gagnés */
+            points_per_unit?: number;
+            /**
+             * Format: decimal
+             * @description Montant requis pour gagner les points (en devise principale)
+             */
+            amount_per_unit?: string;
+            /**
+             * Format: decimal
+             * @description Pourcentage du montant converti en points
+             */
+            points_percentage?: string;
+            /**
+             * Format: decimal
+             * @description Valeur d'un point en devise principale (pour les récompenses)
+             */
+            point_value?: string;
+            /** @description Nombre minimum de points pour pouvoir les utiliser */
+            min_points_to_redeem?: number;
+            /** @description Nombre de jours avant expiration des points (0 = jamais) */
+            points_expiry_days?: number;
+            /** @description Seuls les clients enregistrés peuvent accumuler des points */
+            only_registered_customers?: boolean;
+        };
+        /** @description Serializer for LoyaltyReward model. */
+        LoyaltyReward: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly loyalty_program: string;
+            name: string;
+            description?: string;
+            reward_type?: components["schemas"]["RewardTypeEnum"];
+            readonly reward_type_display: string;
+            /** @description Nombre de points requis pour cette récompense */
+            points_required: number;
+            /** Format: decimal */
+            discount_amount?: string;
+            /** Format: decimal */
+            discount_percentage?: string;
+            /** Format: uuid */
+            product?: string | null;
+            readonly product_name: string;
+            is_active?: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Serializer for creating LoyaltyReward. */
+        LoyaltyRewardCreate: {
+            name: string;
+            description?: string;
+            reward_type?: components["schemas"]["RewardTypeEnum"];
+            /** @description Nombre de points requis pour cette récompense */
+            points_required: number;
+            /** Format: decimal */
+            discount_amount?: string;
+            /** Format: decimal */
+            discount_percentage?: string;
+            /** Format: uuid */
+            product?: string | null;
+            is_active?: boolean;
+        };
+        /** @description Serializer for creating LoyaltyReward. */
+        LoyaltyRewardCreateRequest: {
+            name: string;
+            description?: string;
+            reward_type?: components["schemas"]["RewardTypeEnum"];
+            /** @description Nombre de points requis pour cette récompense */
+            points_required: number;
+            /** Format: decimal */
+            discount_amount?: string;
+            /** Format: decimal */
+            discount_percentage?: string;
+            /** Format: uuid */
+            product?: string | null;
+            is_active?: boolean;
+        };
+        /** @description Serializer for LoyaltyReward model. */
+        LoyaltyRewardRequest: {
+            name: string;
+            description?: string;
+            reward_type?: components["schemas"]["RewardTypeEnum"];
+            /** @description Nombre de points requis pour cette récompense */
+            points_required: number;
+            /** Format: decimal */
+            discount_amount?: string;
+            /** Format: decimal */
+            discount_percentage?: string;
+            /** Format: uuid */
+            product?: string | null;
+            is_active?: boolean;
+        };
+        /**
+         * @description Serializer pour créer un nouvel utilisateur et l'ajouter à l'organisation.
+         *     Utilisé par l'admin et le gérant pour créer des comptes directement.
+         */
+        MemberCreateWithUser: {
+            /** Format: email */
+            email: string;
+            first_name: string;
+            last_name: string;
+            phone?: string;
+            role: components["schemas"]["RoleEnum"];
+            warehouse_ids: string[];
+        };
+        /**
+         * @description Serializer pour créer un nouvel utilisateur et l'ajouter à l'organisation.
+         *     Utilisé par l'admin et le gérant pour créer des comptes directement.
+         */
+        MemberCreateWithUserRequest: {
+            /** Format: email */
+            email: string;
+            first_name: string;
+            last_name: string;
+            phone?: string;
+            password: string;
+            role: components["schemas"]["RoleEnum"];
+            warehouse_ids: string[];
+        };
+        /** @description Serializer pour ajouter un membre existant par email. */
         MembershipCreate: {
             /** Format: email */
             email: string;
             role: components["schemas"]["RoleEnum"];
+            warehouse_ids: string[];
         };
-        /** @description Serializer pour ajouter un membre. */
+        /** @description Serializer pour ajouter un membre existant par email. */
         MembershipCreateRequest: {
             /** Format: email */
             email: string;
             role: components["schemas"]["RoleEnum"];
+            warehouse_ids: string[];
         };
         /** @description Serializer pour modifier un membre. */
         MembershipUpdate: {
-            role: components["schemas"]["RoleEnum"];
+            role?: components["schemas"]["RoleEnum"];
             is_active?: boolean;
+            warehouse_ids?: string[];
+            extra_permissions?: string[];
         };
         /** @description Serializer pour modifier un membre. */
         MembershipUpdateRequest: {
-            role: components["schemas"]["RoleEnum"];
+            role?: components["schemas"]["RoleEnum"];
             is_active?: boolean;
+            warehouse_ids?: string[];
+            extra_permissions?: string[];
         };
         /**
          * @description * `cash` - Espèces
+         *     * `card` - Carte bancaire
          *     * `mobile_money` - Mobile Money
          *     * `bank_transfer` - Virement bancaire
          *     * `check` - Chèque
@@ -4879,7 +8699,7 @@ export interface components {
          *     * `other` - Autre
          * @enum {string}
          */
-        MethodTypeEnum: "cash" | "mobile_money" | "bank_transfer" | "check" | "credit" | "other";
+        MethodTypeEnum: "cash" | "card" | "mobile_money" | "bank_transfer" | "check" | "credit" | "other";
         /**
          * @description * `purchase` - Achat
          *     * `sale` - Vente
@@ -4894,9 +8714,26 @@ export interface components {
          *     * `initial` - Stock initial
          *     * `production_in` - Production entrante
          *     * `production_out` - Production sortante
+         *     * `unpack` - Déconditionnement
          * @enum {string}
          */
-        MovementTypeEnum: "purchase" | "sale" | "return_in" | "return_out" | "transfer_in" | "transfer_out" | "adjustment_in" | "adjustment_out" | "damage" | "expired" | "initial" | "production_in" | "production_out";
+        MovementTypeA1dEnum: "purchase" | "sale" | "return_in" | "return_out" | "transfer_in" | "transfer_out" | "adjustment_in" | "adjustment_out" | "damage" | "expired" | "initial" | "production_in" | "production_out" | "unpack";
+        /**
+         * @description * `sale` - Vente
+         *     * `sale_return` - Remboursement client
+         *     * `expense` - Dépense
+         *     * `purchase` - Achat fournisseur
+         *     * `supplier_refund` - Remboursement fournisseur
+         *     * `debt_collection` - Recouvrement dette
+         *     * `fund_in` - Apport de fonds
+         *     * `fund_out` - Retrait de fonds
+         *     * `adjustment` - Ajustement de caisse
+         *     * `change` - Monnaie rendue
+         *     * `other_in` - Autre entrée
+         *     * `other_out` - Autre sortie
+         * @enum {string}
+         */
+        MovementTypeEe8Enum: "sale" | "sale_return" | "expense" | "purchase" | "supplier_refund" | "debt_collection" | "fund_in" | "fund_out" | "adjustment" | "change" | "other_in" | "other_out";
         /** @description Serializer pour la création d'organisation. */
         OrganizationCreate: {
             /** Format: uuid */
@@ -4907,7 +8744,7 @@ export interface components {
             logo?: string | null;
             /** Format: email */
             email?: string;
-            phone?: string;
+            phone: string;
             address?: string;
             city?: string;
             country?: string;
@@ -4925,7 +8762,7 @@ export interface components {
             logo?: string | null;
             /** Format: email */
             email?: string;
-            phone?: string;
+            phone: string;
             address?: string;
             city?: string;
             country?: string;
@@ -4934,6 +8771,82 @@ export interface components {
             id_nat?: string;
             currency?: string;
             timezone?: string;
+        };
+        /** @description Serializer for OrganizationCurrency model. */
+        OrganizationCurrency: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            currency: string;
+            readonly currency_code: string;
+            readonly currency_name: string;
+            readonly currency_symbol: string;
+            readonly currency_decimal_places: number;
+            is_primary?: boolean;
+            /**
+             * Format: decimal
+             * @description Taux de change par rapport à la devise principale
+             */
+            exchange_rate?: string;
+            is_active?: boolean;
+            /** Format: date-time */
+            readonly last_rate_update: string;
+        };
+        /** @description Serializer for creating OrganizationCurrency. */
+        OrganizationCurrencyCreate: {
+            /** Format: uuid */
+            currency: string;
+            is_primary?: boolean;
+            /**
+             * Format: decimal
+             * @description Taux de change par rapport à la devise principale
+             */
+            exchange_rate?: string;
+            is_active?: boolean;
+        };
+        /** @description Serializer for creating OrganizationCurrency. */
+        OrganizationCurrencyCreateRequest: {
+            /** Format: uuid */
+            currency: string;
+            is_primary?: boolean;
+            /**
+             * Format: decimal
+             * @description Taux de change par rapport à la devise principale
+             */
+            exchange_rate?: string;
+            is_active?: boolean;
+        };
+        /** @description Serializer for OrganizationCurrency model. */
+        OrganizationCurrencyRequest: {
+            /** Format: uuid */
+            currency: string;
+            is_primary?: boolean;
+            /**
+             * Format: decimal
+             * @description Taux de change par rapport à la devise principale
+             */
+            exchange_rate?: string;
+            is_active?: boolean;
+        };
+        /** @description Serializer for updating OrganizationCurrency. */
+        OrganizationCurrencyUpdate: {
+            /**
+             * Format: decimal
+             * @description Taux de change par rapport à la devise principale
+             */
+            exchange_rate?: string;
+            is_active?: boolean;
+            is_primary?: boolean;
+        };
+        /** @description Serializer for updating OrganizationCurrency. */
+        OrganizationCurrencyUpdateRequest: {
+            /**
+             * Format: decimal
+             * @description Taux de change par rapport à la devise principale
+             */
+            exchange_rate?: string;
+            is_active?: boolean;
+            is_primary?: boolean;
         };
         /** @description Serializer complet pour le détail d'une organisation. */
         OrganizationDetail: {
@@ -4959,6 +8872,7 @@ export interface components {
             is_active?: boolean;
             settings?: unknown;
             readonly subscription_status: string;
+            readonly default_currency_info: string;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
@@ -5033,6 +8947,7 @@ export interface components {
             logo?: string | null;
             is_active?: boolean;
             readonly members_count: string;
+            readonly default_currency_info: string;
             /** Format: date-time */
             readonly created_at: string;
         };
@@ -5042,8 +8957,18 @@ export interface components {
             readonly id: string;
             /** Format: uuid */
             user: string;
+            /** Format: uuid */
+            readonly user_id: string;
             readonly user_email: string;
             readonly user_name: string;
+            readonly user_first_name: string;
+            readonly user_last_name: string;
+            readonly user_phone: string;
+            /** Format: uri */
+            readonly user_avatar: string;
+            readonly user_is_active: boolean;
+            /** Format: date-time */
+            readonly user_last_login: string;
             role?: components["schemas"]["RoleEnum"];
             readonly role_display: string;
             is_active?: boolean;
@@ -5052,6 +8977,55 @@ export interface components {
             readonly invited_by_name: string;
             /** Format: date-time */
             readonly joined_at: string;
+            readonly warehouse_access: string;
+            readonly assigned_warehouses: string;
+            /** @description Permissions additionnelles accordées à cet utilisateur en plus de celles de son rôle. */
+            extra_permissions?: unknown;
+            readonly role_permissions: string;
+            readonly effective_permissions: string;
+        };
+        /** @description Serializer pour les membres d'organisation. */
+        OrganizationMembershipRequest: {
+            /** Format: uuid */
+            user: string;
+            role?: components["schemas"]["RoleEnum"];
+            is_active?: boolean;
+            /** Format: uuid */
+            invited_by?: string | null;
+            /** @description Permissions additionnelles accordées à cet utilisateur en plus de celles de son rôle. */
+            extra_permissions?: unknown;
+        };
+        /** @description Serializer for OrganizationSettings model. */
+        OrganizationSettings: {
+            /** Format: uuid */
+            readonly id: string;
+            /** @description En-tête des reçus */
+            receipt_header?: string;
+            /** @description Pied de page des reçus */
+            receipt_footer?: string;
+            /** @description Largeur du papier du ticket en mm (58 ou 80) */
+            receipt_paper_width?: number;
+            /** @description Afficher les points gagnés et le solde du client sur les reçus */
+            show_loyalty_points_on_receipt?: boolean;
+            /** @description Seuil d'alerte de stock bas */
+            low_stock_threshold?: number;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Serializer for OrganizationSettings model. */
+        OrganizationSettingsRequest: {
+            /** @description En-tête des reçus */
+            receipt_header?: string;
+            /** @description Pied de page des reçus */
+            receipt_footer?: string;
+            /** @description Largeur du papier du ticket en mm (58 ou 80) */
+            receipt_paper_width?: number;
+            /** @description Afficher les points gagnés et le solde du client sur les reçus */
+            show_loyalty_points_on_receipt?: boolean;
+            /** @description Seuil d'alerte de stock bas */
+            low_stock_threshold?: number;
         };
         /** @description Serializer pour la mise à jour d'organisation. */
         OrganizationUpdate: {
@@ -5091,6 +9065,66 @@ export interface components {
             timezone?: string;
             settings?: unknown;
         };
+        PaginatedAdminOrganizationListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["AdminOrganizationList"][];
+        };
+        PaginatedAdminPlanList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["AdminPlan"][];
+        };
+        PaginatedAdminSubscriptionListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["AdminSubscriptionList"][];
+        };
+        PaginatedAdminUserListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["AdminUserList"][];
+        };
         PaginatedBranchListList: {
             /** @example 123 */
             count: number;
@@ -5121,6 +9155,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Brand"][];
         };
+        PaginatedCashMovementListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["CashMovementList"][];
+        };
         PaginatedCategoryListList: {
             /** @example 123 */
             count: number;
@@ -5135,36 +9184,6 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["CategoryList"][];
-        };
-        PaginatedCustomerAddressList: {
-            /** @example 123 */
-            count: number;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=4
-             */
-            next?: string | null;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=2
-             */
-            previous?: string | null;
-            results: components["schemas"]["CustomerAddress"][];
-        };
-        PaginatedCustomerGroupList: {
-            /** @example 123 */
-            count: number;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=4
-             */
-            next?: string | null;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=2
-             */
-            previous?: string | null;
-            results: components["schemas"]["CustomerGroup"][];
         };
         PaginatedCustomerListList: {
             /** @example 123 */
@@ -5181,6 +9200,66 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["CustomerList"][];
         };
+        PaginatedCustomerLoyaltyList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["CustomerLoyalty"][];
+        };
+        PaginatedDashboardList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Dashboard"][];
+        };
+        PaginatedExpenseCategoryListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["ExpenseCategoryList"][];
+        };
+        PaginatedExpenseListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["ExpenseList"][];
+        };
         PaginatedGoodsReceiptListList: {
             /** @example 123 */
             count: number;
@@ -5195,6 +9274,66 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["GoodsReceiptList"][];
+        };
+        PaginatedIncomeCategoryListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["IncomeCategoryList"][];
+        };
+        PaginatedInventorySessionListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["InventorySessionList"][];
+        };
+        PaginatedLoyaltyProgramList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["LoyaltyProgram"][];
+        };
+        PaginatedLoyaltyRewardList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["LoyaltyReward"][];
         };
         PaginatedOrganizationInvitationList: {
             /** @example 123 */
@@ -5240,6 +9379,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["OrganizationMembership"][];
+        };
+        PaginatedOrganizationSettingsList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["OrganizationSettings"][];
         };
         PaginatedPaymentMethodList: {
             /** @example 123 */
@@ -5390,6 +9544,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["RegisterSessionList"][];
+        };
+        PaginatedReportTemplateList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["ReportTemplate"][];
         };
         PaginatedSaleListList: {
             /** @example 123 */
@@ -5616,6 +9785,54 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["WarehouseList"][];
         };
+        PatchedAdminOrganizationListRequest: {
+            name?: string;
+            business_type?: components["schemas"]["BusinessTypeEnum"];
+            country?: string;
+            city?: string;
+            phone?: string;
+            /** Format: email */
+            email?: string;
+            is_active?: boolean;
+        };
+        PatchedAdminPlanCreateUpdateRequest: {
+            name?: string;
+            code?: string;
+            description?: string;
+            /** Format: decimal */
+            price_monthly?: string;
+            /** Format: decimal */
+            price_yearly?: string;
+            /** Format: uuid */
+            currency?: string | null;
+            max_users?: number;
+            max_branches?: number;
+            /** @description Nombre maximal d'entrepôts (non supprimés) par organisation. */
+            max_warehouses?: number;
+            max_products?: number | null;
+            max_monthly_transactions?: number | null;
+            storage_limit_mb?: number;
+            features?: unknown;
+            is_active?: boolean;
+            is_featured?: boolean;
+            trial_days?: number;
+            sort_order?: number;
+            tier?: number;
+        };
+        PatchedAdminUserListRequest: {
+            /** Format: email */
+            email?: string;
+            first_name?: string;
+            last_name?: string;
+            phone?: string;
+            is_active?: boolean;
+            is_staff?: boolean;
+            is_email_verified?: boolean;
+            /** Format: date-time */
+            date_joined?: string;
+            /** Format: date-time */
+            last_login?: string | null;
+        };
         /** @description Serializer pour la création de branche. */
         PatchedBranchCreateRequest: {
             name?: string;
@@ -5645,33 +9862,21 @@ export interface components {
             parent?: string | null;
             /** Format: binary */
             image?: string | null;
-            /** Format: int64 */
             sort_order?: number;
             is_active?: boolean;
         };
-        /** @description Serializer pour les adresses client. */
-        PatchedCustomerAddressRequest: {
-            address_type?: components["schemas"]["AddressTypeEnum"];
-            name?: string;
-            address_line1?: string;
-            address_line2?: string;
-            city?: string;
-            state?: string;
-            postal_code?: string;
-            country?: string;
-            phone?: string;
-            is_default?: boolean;
-        };
-        /** @description Serializer pour les groupes de clients. */
-        PatchedCustomerGroupRequest: {
-            name?: string;
-            code?: string;
-            description?: string;
-            /** Format: decimal */
-            discount_percentage?: string;
+        /** @description Serializer for CustomerLoyalty model. */
+        PatchedCustomerLoyaltyRequest: {
             /** Format: uuid */
-            price_list?: string | null;
-            is_default?: boolean;
+            customer?: string;
+            total_points_earned?: number;
+            total_points_redeemed?: number;
+            current_points?: number;
+            tier?: string;
+            /** Format: date-time */
+            last_points_earned_at?: string | null;
+            /** Format: date-time */
+            last_points_redeemed_at?: string | null;
         };
         /** @description Serializer pour la mise à jour de client. */
         PatchedCustomerUpdateRequest: {
@@ -5681,19 +9886,64 @@ export interface components {
             /** Format: email */
             email?: string;
             phone?: string;
-            mobile?: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
-            /** Format: uuid */
-            group?: string | null;
-            /** Format: uuid */
-            price_list?: string | null;
             /** Format: decimal */
             credit_limit?: string;
             notes?: string;
             is_active?: boolean;
+        };
+        PatchedDashboardRequest: {
+            name?: string;
+            description?: string;
+            layout?: unknown;
+            is_default?: boolean;
+            is_shared?: boolean;
+        };
+        PatchedExpenseCategoryCreateRequest: {
+            name?: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+            /**
+             * Format: decimal
+             * @description Budget mensuel alloué à cette catégorie (0 = pas de limite)
+             */
+            budget_monthly?: string;
+        };
+        PatchedExpenseUpdateRequest: {
+            /** Format: uuid */
+            category?: string;
+            /**
+             * Format: uuid
+             * @description Entrepôt rattaché à la dépense (filtrage par périmètre membre)
+             */
+            warehouse?: string | null;
+            description?: string;
+            /** Format: decimal */
+            amount?: string;
+            currency?: string;
+            /**
+             * Format: decimal
+             * @description Unités de devise principale pour 1 unité de `currency`.
+             */
+            exchange_rate?: string;
+            /** @description Nom du bénéficiaire de la dépense */
+            beneficiary?: string;
+            /** Format: uuid */
+            payment_method?: string | null;
+            /** @description Référence du paiement (n° chèque, transaction mobile, etc.) */
+            payment_reference?: string;
+            /** Format: date */
+            expense_date?: string;
+            /** Format: date */
+            due_date?: string | null;
+            /** @description Dépense récurrente (loyer, salaires, etc.) */
+            is_recurring?: boolean;
+            recurrence_period?: components["schemas"]["RecurrencePeriodEnum"] | components["schemas"]["BlankEnum"];
+            notes?: string;
         };
         /** @description Serializer complet pour le détail d'une réception. */
         PatchedGoodsReceiptDetailRequest: {
@@ -5710,10 +9960,102 @@ export interface components {
             /** Format: uuid */
             received_by?: string | null;
         };
+        PatchedIncomeCategoryCreateRequest: {
+            name?: string;
+            code?: string;
+            description?: string;
+            color?: string;
+            icon?: string;
+            is_active?: boolean;
+        };
+        /** @description Serializer complet pour le détail d'une session d'inventaire. */
+        PatchedInventorySessionDetailRequest: {
+            name?: string;
+            /** Format: uuid */
+            warehouse?: string;
+            scope_type?: components["schemas"]["ScopeTypeEnum"];
+            status?: components["schemas"]["Status950Enum"];
+            is_stock_locked?: boolean;
+            notes?: string;
+            /** Format: decimal */
+            total_expected_quantity?: string;
+            /** Format: decimal */
+            total_counted_quantity?: string;
+            /** Format: decimal */
+            total_difference_quantity?: string;
+            /** Format: decimal */
+            total_difference_value?: string;
+            /** Format: uuid */
+            created_by?: string | null;
+            /** Format: uuid */
+            validated_by?: string | null;
+            /** Format: date-time */
+            started_at?: string | null;
+            /** Format: date-time */
+            completed_at?: string | null;
+            /** Format: date-time */
+            validated_at?: string | null;
+        };
+        /** @description Serializer for creating/updating LoyaltyProgram. */
+        PatchedLoyaltyProgramCreateUpdateRequest: {
+            name?: string;
+            is_active?: boolean;
+            points_calculation_type?: components["schemas"]["PointsCalculationTypeEnum"];
+            /** @description Nombre de points gagnés */
+            points_per_unit?: number;
+            /**
+             * Format: decimal
+             * @description Montant requis pour gagner les points (en devise principale)
+             */
+            amount_per_unit?: string;
+            /**
+             * Format: decimal
+             * @description Pourcentage du montant converti en points
+             */
+            points_percentage?: string;
+            /**
+             * Format: decimal
+             * @description Valeur d'un point en devise principale (pour les récompenses)
+             */
+            point_value?: string;
+            /** @description Nombre minimum de points pour pouvoir les utiliser */
+            min_points_to_redeem?: number;
+            /** @description Nombre de jours avant expiration des points (0 = jamais) */
+            points_expiry_days?: number;
+            /** @description Seuls les clients enregistrés peuvent accumuler des points */
+            only_registered_customers?: boolean;
+        };
+        /** @description Serializer for LoyaltyReward model. */
+        PatchedLoyaltyRewardRequest: {
+            name?: string;
+            description?: string;
+            reward_type?: components["schemas"]["RewardTypeEnum"];
+            /** @description Nombre de points requis pour cette récompense */
+            points_required?: number;
+            /** Format: decimal */
+            discount_amount?: string;
+            /** Format: decimal */
+            discount_percentage?: string;
+            /** Format: uuid */
+            product?: string | null;
+            is_active?: boolean;
+        };
         /** @description Serializer pour modifier un membre. */
         PatchedMembershipUpdateRequest: {
             role?: components["schemas"]["RoleEnum"];
             is_active?: boolean;
+            warehouse_ids?: string[];
+            extra_permissions?: string[];
+        };
+        /** @description Serializer for updating OrganizationCurrency. */
+        PatchedOrganizationCurrencyUpdateRequest: {
+            /**
+             * Format: decimal
+             * @description Taux de change par rapport à la devise principale
+             */
+            exchange_rate?: string;
+            is_active?: boolean;
+            is_primary?: boolean;
         };
         /** @description Serializer pour les invitations. */
         PatchedOrganizationInvitationRequest: {
@@ -5725,6 +10067,30 @@ export interface components {
             invited_by?: string;
             /** Format: date-time */
             expires_at?: string;
+        };
+        /** @description Serializer pour les membres d'organisation. */
+        PatchedOrganizationMembershipRequest: {
+            /** Format: uuid */
+            user?: string;
+            role?: components["schemas"]["RoleEnum"];
+            is_active?: boolean;
+            /** Format: uuid */
+            invited_by?: string | null;
+            /** @description Permissions additionnelles accordées à cet utilisateur en plus de celles de son rôle. */
+            extra_permissions?: unknown;
+        };
+        /** @description Serializer for OrganizationSettings model. */
+        PatchedOrganizationSettingsRequest: {
+            /** @description En-tête des reçus */
+            receipt_header?: string;
+            /** @description Pied de page des reçus */
+            receipt_footer?: string;
+            /** @description Largeur du papier du ticket en mm (58 ou 80) */
+            receipt_paper_width?: number;
+            /** @description Afficher les points gagnés et le solde du client sur les reçus */
+            show_loyalty_points_on_receipt?: boolean;
+            /** @description Seuil d'alerte de stock bas */
+            low_stock_threshold?: number;
         };
         /** @description Serializer pour la mise à jour d'organisation. */
         PatchedOrganizationUpdateRequest: {
@@ -5774,7 +10140,6 @@ export interface components {
             /** Format: binary */
             image?: string;
             alt_text?: string;
-            /** Format: int64 */
             sort_order?: number;
             is_primary?: boolean;
         };
@@ -5784,33 +10149,51 @@ export interface components {
             slug?: string;
             sku?: string;
             barcode?: string;
-            description?: string;
             short_description?: string;
-            product_type?: components["schemas"]["ProductTypeEnum"];
             /** Format: uuid */
             category?: string | null;
             /** Format: uuid */
             brand?: string | null;
             /** Format: uuid */
             unit?: string | null;
+            /**
+             * @description Forme sous laquelle ce produit est vendu.
+             *
+             *     * `retail_only` - Vente au détail uniquement
+             *     * `wholesale_only` - Vente en gros uniquement
+             *     * `wholesale_and_retail` - Vente en gros et au détail
+             */
+            selling_mode?: components["schemas"]["SellingModeEnum"];
+            /**
+             * Format: uuid
+             * @description Unité de gros (paquet, carton, casier…).
+             */
+            packaging_unit?: string | null;
+            /** @description Nombre d'unités de détail contenues dans un conditionnement. */
+            units_per_package?: number | null;
+            /** @description Autorise l'ouverture automatique d'un conditionnement lorsque le stock à l'unité est insuffisant pour servir une vente au détail. */
+            allow_auto_unpacking?: boolean;
             /** Format: decimal */
             cost_price?: string;
             /** Format: decimal */
             selling_price?: string;
             /** Format: decimal */
             wholesale_price?: string | null;
+            /**
+             * Format: decimal
+             * @description Prix d'achat d'un conditionnement entier. Confort de saisie pour le marchand qui achète au carton ; `cost_price` (à l'unité) reste la valeur utilisée pour le coût moyen pondéré et les marges.
+             */
+            package_cost_price?: string | null;
             /** Format: decimal */
             tax_rate?: string;
             is_taxable?: boolean;
-            track_stock?: boolean;
+            track_inventory?: boolean;
             allow_negative_stock?: boolean;
-            /** Format: int64 */
+            /** @description Indique si ce produit est périssable et nécessite un suivi des dates d'expiration */
+            has_expiry_date?: boolean;
             min_stock_level?: number;
-            /** Format: int64 */
             max_stock_level?: number | null;
-            /** Format: int64 */
             reorder_point?: number;
-            /** Format: int64 */
             reorder_quantity?: number;
             /** Format: decimal */
             weight?: string | null;
@@ -5919,12 +10302,26 @@ export interface components {
             name?: string;
             code?: string;
             /** Format: uuid */
-            branch?: string;
+            branch?: string | null;
             /** Format: uuid */
-            warehouse?: string | null;
+            warehouse?: string;
             is_active?: boolean;
             receipt_header?: string;
             receipt_footer?: string;
+        };
+        PatchedReportTemplateRequest: {
+            name?: string;
+            code?: string;
+            description?: string;
+            report_type?: components["schemas"]["ReportTypeEnum"];
+            query_config?: unknown;
+            columns?: unknown;
+            filters?: unknown;
+            grouping?: unknown;
+            sorting?: unknown;
+            chart_config?: unknown;
+            is_system?: boolean;
+            is_active?: boolean;
         };
         /** @description Serializer complet pour le détail d'une vente. */
         PatchedSaleDetailRequest: {
@@ -5948,6 +10345,11 @@ export interface components {
             discount_amount?: string;
             /** Format: decimal */
             discount_percentage?: string;
+            /**
+             * Format: decimal
+             * @description Montant déduit du total grâce à l'utilisation de points de fidélité.
+             */
+            loyalty_redemption_amount?: string;
             /** Format: decimal */
             total?: string;
             /** Format: decimal */
@@ -5956,6 +10358,7 @@ export interface components {
             amount_due?: string;
             /** Format: decimal */
             change_amount?: string;
+            change_currency?: string;
             currency?: string;
             /** Format: decimal */
             exchange_rate?: string;
@@ -5966,6 +10369,7 @@ export interface components {
             /** Format: date */
             due_date?: string | null;
             is_pos?: boolean;
+            receipt_printed?: boolean;
         };
         /** @description Serializer complet pour le détail d'un retour. */
         PatchedSaleReturnDetailRequest: {
@@ -6017,7 +10421,7 @@ export interface components {
             variant?: string | null;
             /** Format: uuid */
             warehouse?: string;
-            movement_type?: components["schemas"]["MovementTypeEnum"];
+            movement_type?: components["schemas"]["MovementTypeA1dEnum"];
             /** Format: decimal */
             quantity?: string;
             /** Format: decimal */
@@ -6081,7 +10485,6 @@ export interface components {
             unit_price?: string;
             /** Format: decimal */
             min_order_quantity?: string;
-            /** Format: int64 */
             lead_time_days?: number;
             is_preferred?: boolean;
             is_active?: boolean;
@@ -6094,19 +10497,13 @@ export interface components {
             /** Format: email */
             email?: string;
             phone?: string;
-            mobile?: string;
             /** Format: uri */
             website?: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
-            /** Format: int64 */
-            payment_terms?: number;
             currency?: string;
             bank_name?: string;
             bank_account?: string;
-            notes?: string;
             is_active?: boolean;
         };
         /** @description Serializer pour les unités de mesure. */
@@ -6162,6 +10559,8 @@ export interface components {
             readonly payment_method_name: string;
             /** Format: decimal */
             amount: string;
+            /** Format: decimal */
+            tendered_amount?: string | null;
             currency?: string;
             /** Format: decimal */
             exchange_rate?: string;
@@ -6174,24 +10573,40 @@ export interface components {
             readonly paid_at: string;
             notes?: string;
         };
-        /** @description Serializer pour la création de paiement. */
+        /**
+         * @description Serializer pour la création de paiement.
+         *
+         *     ``tendered_amount`` = montant réellement remis, dans ``currency``. Pour la
+         *     rétro-compatibilité, ``amount`` seul est accepté et traité comme le montant
+         *     remis. La conversion vers la devise de la vente est faite côté service.
+         */
         PaymentCreate: {
             /** Format: uuid */
             payment_method?: string | null;
             /** Format: decimal */
-            amount: string;
+            amount?: string | null;
+            /** Format: decimal */
+            tendered_amount?: string | null;
             currency?: string;
             /** Format: decimal */
             exchange_rate?: string;
             reference?: string;
             notes?: string;
         };
-        /** @description Serializer pour la création de paiement. */
+        /**
+         * @description Serializer pour la création de paiement.
+         *
+         *     ``tendered_amount`` = montant réellement remis, dans ``currency``. Pour la
+         *     rétro-compatibilité, ``amount`` seul est accepté et traité comme le montant
+         *     remis. La conversion vers la devise de la vente est faite côté service.
+         */
         PaymentCreateRequest: {
             /** Format: uuid */
             payment_method?: string | null;
             /** Format: decimal */
-            amount: string;
+            amount?: string | null;
+            /** Format: decimal */
+            tendered_amount?: string | null;
             currency?: string;
             /** Format: decimal */
             exchange_rate?: string;
@@ -6227,6 +10642,8 @@ export interface components {
             payment_method?: string | null;
             /** Format: decimal */
             amount: string;
+            /** Format: decimal */
+            tendered_amount?: string | null;
             currency?: string;
             /** Format: decimal */
             exchange_rate?: string;
@@ -6244,6 +10661,54 @@ export interface components {
          * @enum {string}
          */
         PaymentStatusEnum: "pending" | "completed" | "failed" | "refunded";
+        Plan: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code: string;
+            description?: string;
+            /** Format: decimal */
+            price_monthly?: string;
+            /** Format: decimal */
+            price_yearly?: string;
+            readonly currency: components["schemas"]["PlanCurrency"];
+            max_users?: number;
+            max_branches?: number;
+            /** @description Nombre maximal d'entrepôts (non supprimés) par organisation. */
+            max_warehouses?: number;
+            max_products?: number | null;
+            max_monthly_transactions?: number | null;
+            storage_limit_mb?: number;
+            features?: unknown;
+            is_active?: boolean;
+            is_featured?: boolean;
+            trial_days?: number;
+            sort_order?: number;
+            tier?: number;
+            readonly plan_features: components["schemas"]["PlanFeature"][];
+        };
+        /** @description Devise d'un plan : symbole pour l'affichage, code ISO pour la logique. */
+        PlanCurrency: {
+            /** Format: uuid */
+            readonly id: string;
+            code: string;
+            symbol: string;
+        };
+        PlanFeature: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code: string;
+            description?: string;
+            is_enabled?: boolean;
+            limit_value?: number | null;
+        };
+        /**
+         * @description * `fixed_per_amount` - Points fixes par montant
+         *     * `percentage` - Pourcentage du montant
+         * @enum {string}
+         */
+        PointsCalculationTypeEnum: "fixed_per_amount" | "percentage";
         /** @description Serializer pour les listes de prix. */
         PriceList: {
             /** Format: uuid */
@@ -6302,36 +10767,54 @@ export interface components {
          */
         ProductCreate: {
             name: string;
-            slug: string;
+            slug?: string;
             sku: string;
             barcode?: string;
-            description?: string;
             short_description?: string;
-            product_type?: components["schemas"]["ProductTypeEnum"];
             /** Format: uuid */
             category?: string | null;
             /** Format: uuid */
             brand?: string | null;
             /** Format: uuid */
             unit?: string | null;
+            /**
+             * @description Forme sous laquelle ce produit est vendu.
+             *
+             *     * `retail_only` - Vente au détail uniquement
+             *     * `wholesale_only` - Vente en gros uniquement
+             *     * `wholesale_and_retail` - Vente en gros et au détail
+             */
+            selling_mode?: components["schemas"]["SellingModeEnum"];
+            /**
+             * Format: uuid
+             * @description Unité de gros (paquet, carton, casier…).
+             */
+            packaging_unit?: string | null;
+            /** @description Nombre d'unités de détail contenues dans un conditionnement. */
+            units_per_package?: number | null;
+            /** @description Autorise l'ouverture automatique d'un conditionnement lorsque le stock à l'unité est insuffisant pour servir une vente au détail. */
+            allow_auto_unpacking?: boolean;
             /** Format: decimal */
             cost_price?: string;
             /** Format: decimal */
             selling_price?: string;
             /** Format: decimal */
             wholesale_price?: string | null;
+            /**
+             * Format: decimal
+             * @description Prix d'achat d'un conditionnement entier. Confort de saisie pour le marchand qui achète au carton ; `cost_price` (à l'unité) reste la valeur utilisée pour le coût moyen pondéré et les marges.
+             */
+            package_cost_price?: string | null;
             /** Format: decimal */
             tax_rate?: string;
             is_taxable?: boolean;
-            track_stock?: boolean;
+            track_inventory?: boolean;
             allow_negative_stock?: boolean;
-            /** Format: int64 */
+            /** @description Indique si ce produit est périssable et nécessite un suivi des dates d'expiration */
+            has_expiry_date?: boolean;
             min_stock_level?: number;
-            /** Format: int64 */
             max_stock_level?: number | null;
-            /** Format: int64 */
             reorder_point?: number;
-            /** Format: int64 */
             reorder_quantity?: number;
             /** Format: decimal */
             weight?: string | null;
@@ -6353,36 +10836,54 @@ export interface components {
          */
         ProductCreateRequest: {
             name: string;
-            slug: string;
+            slug?: string;
             sku: string;
             barcode?: string;
-            description?: string;
             short_description?: string;
-            product_type?: components["schemas"]["ProductTypeEnum"];
             /** Format: uuid */
             category?: string | null;
             /** Format: uuid */
             brand?: string | null;
             /** Format: uuid */
             unit?: string | null;
+            /**
+             * @description Forme sous laquelle ce produit est vendu.
+             *
+             *     * `retail_only` - Vente au détail uniquement
+             *     * `wholesale_only` - Vente en gros uniquement
+             *     * `wholesale_and_retail` - Vente en gros et au détail
+             */
+            selling_mode?: components["schemas"]["SellingModeEnum"];
+            /**
+             * Format: uuid
+             * @description Unité de gros (paquet, carton, casier…).
+             */
+            packaging_unit?: string | null;
+            /** @description Nombre d'unités de détail contenues dans un conditionnement. */
+            units_per_package?: number | null;
+            /** @description Autorise l'ouverture automatique d'un conditionnement lorsque le stock à l'unité est insuffisant pour servir une vente au détail. */
+            allow_auto_unpacking?: boolean;
             /** Format: decimal */
             cost_price?: string;
             /** Format: decimal */
             selling_price?: string;
             /** Format: decimal */
             wholesale_price?: string | null;
+            /**
+             * Format: decimal
+             * @description Prix d'achat d'un conditionnement entier. Confort de saisie pour le marchand qui achète au carton ; `cost_price` (à l'unité) reste la valeur utilisée pour le coût moyen pondéré et les marges.
+             */
+            package_cost_price?: string | null;
             /** Format: decimal */
             tax_rate?: string;
             is_taxable?: boolean;
-            track_stock?: boolean;
+            track_inventory?: boolean;
             allow_negative_stock?: boolean;
-            /** Format: int64 */
+            /** @description Indique si ce produit est périssable et nécessite un suivi des dates d'expiration */
+            has_expiry_date?: boolean;
             min_stock_level?: number;
-            /** Format: int64 */
             max_stock_level?: number | null;
-            /** Format: int64 */
             reorder_point?: number;
-            /** Format: int64 */
             reorder_quantity?: number;
             /** Format: decimal */
             weight?: string | null;
@@ -6409,9 +10910,7 @@ export interface components {
             slug: string;
             sku: string;
             barcode?: string;
-            description?: string;
             short_description?: string;
-            product_type?: components["schemas"]["ProductTypeEnum"];
             /** Format: uuid */
             category?: string | null;
             readonly category_name: string;
@@ -6422,27 +10921,50 @@ export interface components {
             unit?: string | null;
             readonly unit_name: string;
             readonly unit_symbol: string;
+            /**
+             * @description Forme sous laquelle ce produit est vendu.
+             *
+             *     * `retail_only` - Vente au détail uniquement
+             *     * `wholesale_only` - Vente en gros uniquement
+             *     * `wholesale_and_retail` - Vente en gros et au détail
+             */
+            selling_mode?: components["schemas"]["SellingModeEnum"];
+            /**
+             * Format: uuid
+             * @description Unité de gros (paquet, carton, casier…).
+             */
+            packaging_unit?: string | null;
+            readonly packaging_unit_name: string;
+            readonly packaging_unit_symbol: string;
+            /** @description Nombre d'unités de détail contenues dans un conditionnement. */
+            units_per_package?: number | null;
+            /** @description Autorise l'ouverture automatique d'un conditionnement lorsque le stock à l'unité est insuffisant pour servir une vente au détail. */
+            allow_auto_unpacking?: boolean;
+            readonly packaging_summary: string;
             /** Format: decimal */
             cost_price?: string;
             /** Format: decimal */
             selling_price?: string;
             /** Format: decimal */
             wholesale_price?: string | null;
+            /**
+             * Format: decimal
+             * @description Prix d'achat d'un conditionnement entier. Confort de saisie pour le marchand qui achète au carton ; `cost_price` (à l'unité) reste la valeur utilisée pour le coût moyen pondéré et les marges.
+             */
+            package_cost_price?: string | null;
             /** Format: decimal */
             tax_rate?: string;
             is_taxable?: boolean;
             readonly price_with_tax: string;
             /** Format: decimal */
             readonly profit_margin: string;
-            track_stock?: boolean;
+            track_inventory?: boolean;
             allow_negative_stock?: boolean;
-            /** Format: int64 */
+            /** @description Indique si ce produit est périssable et nécessite un suivi des dates d'expiration */
+            has_expiry_date?: boolean;
             min_stock_level?: number;
-            /** Format: int64 */
             max_stock_level?: number | null;
-            /** Format: int64 */
             reorder_point?: number;
-            /** Format: int64 */
             reorder_quantity?: number;
             /** Format: decimal */
             weight?: string | null;
@@ -6475,33 +10997,51 @@ export interface components {
             slug: string;
             sku: string;
             barcode?: string;
-            description?: string;
             short_description?: string;
-            product_type?: components["schemas"]["ProductTypeEnum"];
             /** Format: uuid */
             category?: string | null;
             /** Format: uuid */
             brand?: string | null;
             /** Format: uuid */
             unit?: string | null;
+            /**
+             * @description Forme sous laquelle ce produit est vendu.
+             *
+             *     * `retail_only` - Vente au détail uniquement
+             *     * `wholesale_only` - Vente en gros uniquement
+             *     * `wholesale_and_retail` - Vente en gros et au détail
+             */
+            selling_mode?: components["schemas"]["SellingModeEnum"];
+            /**
+             * Format: uuid
+             * @description Unité de gros (paquet, carton, casier…).
+             */
+            packaging_unit?: string | null;
+            /** @description Nombre d'unités de détail contenues dans un conditionnement. */
+            units_per_package?: number | null;
+            /** @description Autorise l'ouverture automatique d'un conditionnement lorsque le stock à l'unité est insuffisant pour servir une vente au détail. */
+            allow_auto_unpacking?: boolean;
             /** Format: decimal */
             cost_price?: string;
             /** Format: decimal */
             selling_price?: string;
             /** Format: decimal */
             wholesale_price?: string | null;
+            /**
+             * Format: decimal
+             * @description Prix d'achat d'un conditionnement entier. Confort de saisie pour le marchand qui achète au carton ; `cost_price` (à l'unité) reste la valeur utilisée pour le coût moyen pondéré et les marges.
+             */
+            package_cost_price?: string | null;
             /** Format: decimal */
             tax_rate?: string;
             is_taxable?: boolean;
-            track_stock?: boolean;
+            track_inventory?: boolean;
             allow_negative_stock?: boolean;
-            /** Format: int64 */
+            /** @description Indique si ce produit est périssable et nécessite un suivi des dates d'expiration */
+            has_expiry_date?: boolean;
             min_stock_level?: number;
-            /** Format: int64 */
             max_stock_level?: number | null;
-            /** Format: int64 */
             reorder_point?: number;
-            /** Format: int64 */
             reorder_quantity?: number;
             /** Format: decimal */
             weight?: string | null;
@@ -6524,7 +11064,6 @@ export interface components {
             /** Format: uri */
             image: string;
             alt_text?: string;
-            /** Format: int64 */
             sort_order?: number;
             is_primary?: boolean;
         };
@@ -6533,7 +11072,6 @@ export interface components {
             /** Format: binary */
             image: string;
             alt_text?: string;
-            /** Format: int64 */
             sort_order?: number;
             is_primary?: boolean;
         };
@@ -6558,14 +11096,51 @@ export interface components {
             /** Format: uuid */
             unit?: string | null;
             readonly unit_symbol: string;
+            readonly unit_name: string;
+            /**
+             * @description Forme sous laquelle ce produit est vendu.
+             *
+             *     * `retail_only` - Vente au détail uniquement
+             *     * `wholesale_only` - Vente en gros uniquement
+             *     * `wholesale_and_retail` - Vente en gros et au détail
+             */
+            selling_mode?: components["schemas"]["SellingModeEnum"];
+            /**
+             * Format: uuid
+             * @description Unité de gros (paquet, carton, casier…).
+             */
+            packaging_unit?: string | null;
+            readonly packaging_unit_name: string;
+            readonly packaging_unit_symbol: string;
+            /** @description Nombre d'unités de détail contenues dans un conditionnement. */
+            units_per_package?: number | null;
+            /** @description Autorise l'ouverture automatique d'un conditionnement lorsque le stock à l'unité est insuffisant pour servir une vente au détail. */
+            allow_auto_unpacking?: boolean;
+            /** Format: decimal */
+            wholesale_price?: string | null;
+            /**
+             * Format: decimal
+             * @description Prix d'achat d'un conditionnement entier. Confort de saisie pour le marchand qui achète au carton ; `cost_price` (à l'unité) reste la valeur utilisée pour le coût moyen pondéré et les marges.
+             */
+            package_cost_price?: string | null;
             /** Format: decimal */
             selling_price?: string;
             /** Format: decimal */
             cost_price?: string;
+            is_taxable?: boolean;
+            /** Format: decimal */
+            tax_rate?: string;
             is_active?: boolean;
             is_featured?: boolean;
-            track_stock?: boolean;
+            track_inventory?: boolean;
+            allow_negative_stock?: boolean;
+            reorder_point?: number;
             readonly stock_quantity: string;
+            readonly stock_location: string;
+            readonly warehouse_name: string;
+            readonly stock_packages: string;
+            readonly stock_loose: string;
+            readonly stock_display: string;
         };
         /** @description Serializer pour les prix produit par liste. */
         ProductPrice: {
@@ -6576,7 +11151,6 @@ export interface components {
             readonly price_list_name: string;
             /** Format: decimal */
             price: string;
-            /** Format: int64 */
             min_quantity?: number;
         };
         /** @description Serializer pour les prix produit par liste. */
@@ -6585,49 +11159,59 @@ export interface components {
             price_list: string;
             /** Format: decimal */
             price: string;
-            /** Format: int64 */
             min_quantity?: number;
         };
-        /**
-         * @description * `physical` - Produit physique
-         *     * `service` - Service
-         *     * `bundle` - Pack/Bundle
-         * @enum {string}
-         */
-        ProductTypeEnum: "physical" | "service" | "bundle";
         /** @description Serializer pour la mise à jour de produit. */
         ProductUpdate: {
             name: string;
-            slug: string;
+            slug?: string;
             sku: string;
             barcode?: string;
-            description?: string;
             short_description?: string;
-            product_type?: components["schemas"]["ProductTypeEnum"];
             /** Format: uuid */
             category?: string | null;
             /** Format: uuid */
             brand?: string | null;
             /** Format: uuid */
             unit?: string | null;
+            /**
+             * @description Forme sous laquelle ce produit est vendu.
+             *
+             *     * `retail_only` - Vente au détail uniquement
+             *     * `wholesale_only` - Vente en gros uniquement
+             *     * `wholesale_and_retail` - Vente en gros et au détail
+             */
+            selling_mode?: components["schemas"]["SellingModeEnum"];
+            /**
+             * Format: uuid
+             * @description Unité de gros (paquet, carton, casier…).
+             */
+            packaging_unit?: string | null;
+            /** @description Nombre d'unités de détail contenues dans un conditionnement. */
+            units_per_package?: number | null;
+            /** @description Autorise l'ouverture automatique d'un conditionnement lorsque le stock à l'unité est insuffisant pour servir une vente au détail. */
+            allow_auto_unpacking?: boolean;
             /** Format: decimal */
             cost_price?: string;
             /** Format: decimal */
             selling_price?: string;
             /** Format: decimal */
             wholesale_price?: string | null;
+            /**
+             * Format: decimal
+             * @description Prix d'achat d'un conditionnement entier. Confort de saisie pour le marchand qui achète au carton ; `cost_price` (à l'unité) reste la valeur utilisée pour le coût moyen pondéré et les marges.
+             */
+            package_cost_price?: string | null;
             /** Format: decimal */
             tax_rate?: string;
             is_taxable?: boolean;
-            track_stock?: boolean;
+            track_inventory?: boolean;
             allow_negative_stock?: boolean;
-            /** Format: int64 */
+            /** @description Indique si ce produit est périssable et nécessite un suivi des dates d'expiration */
+            has_expiry_date?: boolean;
             min_stock_level?: number;
-            /** Format: int64 */
             max_stock_level?: number | null;
-            /** Format: int64 */
             reorder_point?: number;
-            /** Format: int64 */
             reorder_quantity?: number;
             /** Format: decimal */
             weight?: string | null;
@@ -6646,36 +11230,54 @@ export interface components {
         /** @description Serializer pour la mise à jour de produit. */
         ProductUpdateRequest: {
             name: string;
-            slug: string;
+            slug?: string;
             sku: string;
             barcode?: string;
-            description?: string;
             short_description?: string;
-            product_type?: components["schemas"]["ProductTypeEnum"];
             /** Format: uuid */
             category?: string | null;
             /** Format: uuid */
             brand?: string | null;
             /** Format: uuid */
             unit?: string | null;
+            /**
+             * @description Forme sous laquelle ce produit est vendu.
+             *
+             *     * `retail_only` - Vente au détail uniquement
+             *     * `wholesale_only` - Vente en gros uniquement
+             *     * `wholesale_and_retail` - Vente en gros et au détail
+             */
+            selling_mode?: components["schemas"]["SellingModeEnum"];
+            /**
+             * Format: uuid
+             * @description Unité de gros (paquet, carton, casier…).
+             */
+            packaging_unit?: string | null;
+            /** @description Nombre d'unités de détail contenues dans un conditionnement. */
+            units_per_package?: number | null;
+            /** @description Autorise l'ouverture automatique d'un conditionnement lorsque le stock à l'unité est insuffisant pour servir une vente au détail. */
+            allow_auto_unpacking?: boolean;
             /** Format: decimal */
             cost_price?: string;
             /** Format: decimal */
             selling_price?: string;
             /** Format: decimal */
             wholesale_price?: string | null;
+            /**
+             * Format: decimal
+             * @description Prix d'achat d'un conditionnement entier. Confort de saisie pour le marchand qui achète au carton ; `cost_price` (à l'unité) reste la valeur utilisée pour le coût moyen pondéré et les marges.
+             */
+            package_cost_price?: string | null;
             /** Format: decimal */
             tax_rate?: string;
             is_taxable?: boolean;
-            track_stock?: boolean;
+            track_inventory?: boolean;
             allow_negative_stock?: boolean;
-            /** Format: int64 */
+            /** @description Indique si ce produit est périssable et nécessite un suivi des dates d'expiration */
+            has_expiry_date?: boolean;
             min_stock_level?: number;
-            /** Format: int64 */
             max_stock_level?: number | null;
-            /** Format: int64 */
             reorder_point?: number;
-            /** Format: int64 */
             reorder_quantity?: number;
             /** Format: decimal */
             weight?: string | null;
@@ -6721,6 +11323,31 @@ export interface components {
             /** Format: binary */
             image?: string | null;
             is_active?: boolean;
+        };
+        /** @description Serializer exposé publiquement (landing page). Ne contient que les infos commerciales. */
+        PublicPlan: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code: string;
+            description?: string;
+            /** Format: decimal */
+            price_monthly?: string;
+            /** Format: decimal */
+            price_yearly?: string;
+            readonly currency: components["schemas"]["PlanCurrency"];
+            max_users?: number;
+            max_branches?: number;
+            /** @description Nombre maximal d'entrepôts (non supprimés) par organisation. */
+            max_warehouses?: number;
+            max_products?: number | null;
+            max_monthly_transactions?: number | null;
+            storage_limit_mb?: number;
+            is_featured?: boolean;
+            trial_days?: number;
+            sort_order?: number;
+            tier?: number;
+            readonly plan_features: components["schemas"]["PlanFeature"][];
         };
         /** @description Serializer pour la création de commande d'achat. */
         PurchaseOrderCreate: {
@@ -7209,6 +11836,15 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        /**
+         * @description * `daily` - Quotidien
+         *     * `weekly` - Hebdomadaire
+         *     * `monthly` - Mensuel
+         *     * `quarterly` - Trimestriel
+         *     * `yearly` - Annuel
+         * @enum {string}
+         */
+        RecurrencePeriodEnum: "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
         /** @description Serializer pour les caisses. */
         Register: {
             /** Format: uuid */
@@ -7216,10 +11852,10 @@ export interface components {
             name: string;
             code: string;
             /** Format: uuid */
-            branch: string;
+            branch?: string | null;
             readonly branch_name: string;
             /** Format: uuid */
-            warehouse?: string | null;
+            warehouse: string;
             readonly warehouse_name: string;
             is_active?: boolean;
             receipt_header?: string;
@@ -7233,24 +11869,70 @@ export interface components {
             name: string;
             code: string;
             /** Format: uuid */
-            branch: string;
+            branch?: string | null;
             /** Format: uuid */
-            warehouse?: string | null;
+            warehouse: string;
             is_active?: boolean;
             receipt_header?: string;
             receipt_footer?: string;
         };
-        /** @description Serializer pour la fermeture de session. */
+        /**
+         * @description Fermeture de session avec comptage manuel optionnel, PAR DEVISE.
+         *
+         *     - `counted_balances` : comptage réel par devise (ex. [{"currency":"USD","amount":20}]).
+         *     - `counted_balance` : compat mono-devise (appliqué à la devise principale).
+         *     - `notes` : obligatoire si un écart est non nul dans une devise.
+         */
         RegisterSessionClose: {
             /** Format: decimal */
-            closing_balance: string;
-            notes?: string;
+            counted_balance?: string | null;
+            counted_balances?: components["schemas"]["CurrencyAmount"][];
+            /** @default  */
+            notes: string;
         };
-        /** @description Serializer pour la fermeture de session. */
+        /**
+         * @description Fermeture de session avec comptage manuel optionnel, PAR DEVISE.
+         *
+         *     - `counted_balances` : comptage réel par devise (ex. [{"currency":"USD","amount":20}]).
+         *     - `counted_balance` : compat mono-devise (appliqué à la devise principale).
+         *     - `notes` : obligatoire si un écart est non nul dans une devise.
+         */
         RegisterSessionCloseRequest: {
             /** Format: decimal */
-            closing_balance: string;
-            notes?: string;
+            counted_balance?: string | null;
+            counted_balances?: components["schemas"]["CurrencyAmountRequest"][];
+            /** @default  */
+            notes: string;
+        };
+        /** @description Solde de caisse d'une session, ventilé par devise. */
+        RegisterSessionCurrencyBalance: {
+            currency: string;
+            /** Format: decimal */
+            opening_balance?: string;
+            /** Format: decimal */
+            expected_balance?: string | null;
+            /**
+             * Format: decimal
+             * @description Montant réel compté dans cette devise à la fermeture.
+             */
+            counted_balance?: string | null;
+            /** Format: decimal */
+            difference?: string | null;
+        };
+        /** @description Solde de caisse d'une session, ventilé par devise. */
+        RegisterSessionCurrencyBalanceRequest: {
+            currency: string;
+            /** Format: decimal */
+            opening_balance?: string;
+            /** Format: decimal */
+            expected_balance?: string | null;
+            /**
+             * Format: decimal
+             * @description Montant réel compté dans cette devise à la fermeture.
+             */
+            counted_balance?: string | null;
+            /** Format: decimal */
+            difference?: string | null;
         };
         /** @description Serializer complet pour le détail d'une session. */
         RegisterSessionDetail: {
@@ -7259,6 +11941,8 @@ export interface components {
             /** Format: uuid */
             register: string;
             readonly register_name: string;
+            readonly warehouse: string;
+            readonly warehouse_name: string;
             /** Format: uuid */
             opened_by: string;
             readonly opened_by_name: string;
@@ -7274,6 +11958,7 @@ export interface components {
             expected_balance?: string | null;
             /** Format: decimal */
             difference?: string | null;
+            readonly currency_balances: components["schemas"]["RegisterSessionCurrencyBalance"][];
             /** Format: date-time */
             readonly opened_at: string;
             /** Format: date-time */
@@ -7311,6 +11996,8 @@ export interface components {
             /** Format: uuid */
             register: string;
             readonly register_name: string;
+            readonly warehouse: string;
+            readonly warehouse_name: string;
             /** Format: uuid */
             opened_by: string;
             readonly opened_by_name: string;
@@ -7326,6 +12013,7 @@ export interface components {
             expected_balance?: string | null;
             /** Format: decimal */
             difference?: string | null;
+            readonly currency_balances: components["schemas"]["RegisterSessionCurrencyBalance"][];
             /** Format: date-time */
             readonly opened_at: string;
             /** Format: date-time */
@@ -7333,22 +12021,74 @@ export interface components {
             readonly sales_count: string;
             readonly sales_total: string;
         };
-        /** @description Serializer pour l'ouverture de session. */
+        /**
+         * @description Ouverture de session.
+         *
+         *     Le solde d'ouverture est hérité automatiquement, PAR DEVISE, de la dernière
+         *     session fermée sur cette caisse (ou 0). `opening_balances` permet de surcharger
+         *     les fonds d'ouverture par devise (ex. [{"currency": "USD", "amount": 20}]).
+         */
         RegisterSessionOpen: {
             /** Format: uuid */
             register: string;
-            /** Format: decimal */
-            opening_balance: string;
-            notes?: string;
+            opening_balances?: components["schemas"]["CurrencyAmount"][];
         };
-        /** @description Serializer pour l'ouverture de session. */
+        /**
+         * @description Ouverture de session.
+         *
+         *     Le solde d'ouverture est hérité automatiquement, PAR DEVISE, de la dernière
+         *     session fermée sur cette caisse (ou 0). `opening_balances` permet de surcharger
+         *     les fonds d'ouverture par devise (ex. [{"currency": "USD", "amount": 20}]).
+         */
         RegisterSessionOpenRequest: {
             /** Format: uuid */
             register: string;
-            /** Format: decimal */
-            opening_balance: string;
-            notes?: string;
+            opening_balances?: components["schemas"]["CurrencyAmountRequest"][];
         };
+        ReportTemplate: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            code: string;
+            description?: string;
+            report_type: components["schemas"]["ReportTypeEnum"];
+            query_config?: unknown;
+            columns?: unknown;
+            filters?: unknown;
+            grouping?: unknown;
+            sorting?: unknown;
+            chart_config?: unknown;
+            is_system?: boolean;
+            is_active?: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        ReportTemplateRequest: {
+            name: string;
+            code: string;
+            description?: string;
+            report_type: components["schemas"]["ReportTypeEnum"];
+            query_config?: unknown;
+            columns?: unknown;
+            filters?: unknown;
+            grouping?: unknown;
+            sorting?: unknown;
+            chart_config?: unknown;
+            is_system?: boolean;
+            is_active?: boolean;
+        };
+        /**
+         * @description * `sales` - Ventes
+         *     * `purchases` - Achats
+         *     * `inventory` - Inventaire
+         *     * `financial` - Financier
+         *     * `customer` - Clients
+         *     * `supplier` - Fournisseurs
+         *     * `product` - Produits
+         *     * `custom` - Personnalisé
+         * @enum {string}
+         */
+        ReportTypeEnum: "sales" | "purchases" | "inventory" | "financial" | "customer" | "supplier" | "product" | "custom";
         /**
          * @description * `full` - Retour complet
          *     * `partial` - Retour partiel
@@ -7357,16 +12097,21 @@ export interface components {
          */
         ReturnTypeEnum: "full" | "partial" | "exchange";
         /**
-         * @description * `owner` - Propriétaire
-         *     * `admin` - Administrateur
-         *     * `manager` - Gérant
-         *     * `cashier` - Caissier
-         *     * `stock_keeper` - Magasinier
-         *     * `accountant` - Comptable
-         *     * `viewer` - Lecteur
+         * @description * `discount_amount` - Réduction montant fixe
+         *     * `discount_percentage` - Réduction pourcentage
+         *     * `free_product` - Produit gratuit
+         *     * `custom` - Récompense personnalisée
          * @enum {string}
          */
-        RoleEnum: "owner" | "admin" | "manager" | "cashier" | "stock_keeper" | "accountant" | "viewer";
+        RewardTypeEnum: "discount_amount" | "discount_percentage" | "free_product" | "custom";
+        /**
+         * @description * `owner` - Admin
+         *     * `manager` - Gérant
+         *     * `stock_keeper` - Magasinier
+         *     * `cashier` - Caissier
+         * @enum {string}
+         */
+        RoleEnum: "owner" | "manager" | "stock_keeper" | "cashier";
         /**
          * @description Serializer pour la création de vente (POS).
          *     Gère la création des items et paiements en une seule requête.
@@ -7383,9 +12128,15 @@ export interface components {
             price_list?: string | null;
             /** Format: decimal */
             discount_percentage?: string;
+            /**
+             * Format: decimal
+             * @default 0.00
+             */
+            global_discount_amount: string;
             currency?: string;
             /** Format: decimal */
             exchange_rate?: string;
+            change_currency?: string;
             notes?: string;
             internal_notes?: string;
             /** Format: date */
@@ -7393,6 +12144,8 @@ export interface components {
             is_pos?: boolean;
             items: components["schemas"]["SaleItemCreate"][];
             payments?: components["schemas"]["PaymentCreate"][];
+            /** @default 0 */
+            points_used: number;
         };
         /**
          * @description Serializer pour la création de vente (POS).
@@ -7410,9 +12163,15 @@ export interface components {
             price_list?: string | null;
             /** Format: decimal */
             discount_percentage?: string;
+            /**
+             * Format: decimal
+             * @default 0.00
+             */
+            global_discount_amount: string;
             currency?: string;
             /** Format: decimal */
             exchange_rate?: string;
+            change_currency?: string;
             notes?: string;
             internal_notes?: string;
             /** Format: date */
@@ -7420,6 +12179,8 @@ export interface components {
             is_pos?: boolean;
             items: components["schemas"]["SaleItemCreateRequest"][];
             payments?: components["schemas"]["PaymentCreateRequest"][];
+            /** @default 0 */
+            points_used: number;
         };
         /** @description Serializer complet pour le détail d'une vente. */
         SaleDetail: {
@@ -7450,6 +12211,11 @@ export interface components {
             discount_amount?: string;
             /** Format: decimal */
             discount_percentage?: string;
+            /**
+             * Format: decimal
+             * @description Montant déduit du total grâce à l'utilisation de points de fidélité.
+             */
+            loyalty_redemption_amount?: string;
             /** Format: decimal */
             total?: string;
             /** Format: decimal */
@@ -7458,6 +12224,7 @@ export interface components {
             amount_due?: string;
             /** Format: decimal */
             change_amount?: string;
+            change_currency?: string;
             currency?: string;
             /** Format: decimal */
             exchange_rate?: string;
@@ -7471,8 +12238,10 @@ export interface components {
             /** Format: date */
             due_date?: string | null;
             is_pos?: boolean;
+            receipt_printed?: boolean;
             readonly items: components["schemas"]["SaleItem"][];
             readonly payments: components["schemas"]["Payment"][];
+            readonly unpacking_notices: string;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
@@ -7500,6 +12269,11 @@ export interface components {
             discount_amount?: string;
             /** Format: decimal */
             discount_percentage?: string;
+            /**
+             * Format: decimal
+             * @description Montant déduit du total grâce à l'utilisation de points de fidélité.
+             */
+            loyalty_redemption_amount?: string;
             /** Format: decimal */
             total?: string;
             /** Format: decimal */
@@ -7508,6 +12282,7 @@ export interface components {
             amount_due?: string;
             /** Format: decimal */
             change_amount?: string;
+            change_currency?: string;
             currency?: string;
             /** Format: decimal */
             exchange_rate?: string;
@@ -7518,6 +12293,7 @@ export interface components {
             /** Format: date */
             due_date?: string | null;
             is_pos?: boolean;
+            receipt_printed?: boolean;
         };
         /** @description Serializer pour les lignes de vente. */
         SaleItem: {
@@ -7540,6 +12316,17 @@ export interface components {
             /** Format: decimal */
             cost_price?: string;
             /** Format: decimal */
+            package_quantity?: string;
+            /** Format: decimal */
+            package_unit_price?: string | null;
+            /** @description Nombre d'unités par conditionnement au moment de la vente. */
+            packaging_factor?: number | null;
+            /** Format: decimal */
+            readonly loose_quantity: string;
+            readonly quantity_display: string;
+            readonly package_unit_name: string;
+            readonly unit_name: string;
+            /** Format: decimal */
             discount_amount?: string;
             /** Format: decimal */
             discount_percentage?: string;
@@ -7553,7 +12340,14 @@ export interface components {
             readonly total: string;
             notes?: string;
         };
-        /** @description Serializer pour la création de ligne de vente. */
+        /**
+         * @description Serializer pour la création de ligne de vente.
+         *
+         *     Pour un produit vendu en gros, le caissier envoie ``package_quantity`` et
+         *     ``loose_quantity`` ; le serveur en déduit ``quantity`` (unité de base) et
+         *     fige le conditionnement du moment. Une ligne peut mêler les deux formes —
+         *     « 2 paquets + 3 bouteilles ».
+         */
         SaleItemCreate: {
             /** Format: uuid */
             product: string;
@@ -7562,16 +12356,27 @@ export interface components {
             /** Format: uuid */
             batch?: string | null;
             /** Format: decimal */
-            quantity: string;
+            quantity?: string;
             /** Format: decimal */
             unit_price: string;
+            /** Format: decimal */
+            package_quantity?: string;
+            /** Format: decimal */
+            package_unit_price?: string | null;
             /** Format: decimal */
             discount_percentage?: string;
             /** Format: decimal */
             tax_rate?: string;
             notes?: string;
         };
-        /** @description Serializer pour la création de ligne de vente. */
+        /**
+         * @description Serializer pour la création de ligne de vente.
+         *
+         *     Pour un produit vendu en gros, le caissier envoie ``package_quantity`` et
+         *     ``loose_quantity`` ; le serveur en déduit ``quantity`` (unité de base) et
+         *     fige le conditionnement du moment. Une ligne peut mêler les deux formes —
+         *     « 2 paquets + 3 bouteilles ».
+         */
         SaleItemCreateRequest: {
             /** Format: uuid */
             product: string;
@@ -7580,9 +12385,15 @@ export interface components {
             /** Format: uuid */
             batch?: string | null;
             /** Format: decimal */
-            quantity: string;
+            quantity?: string;
             /** Format: decimal */
             unit_price: string;
+            /** Format: decimal */
+            package_quantity?: string;
+            /** Format: decimal */
+            package_unit_price?: string | null;
+            /** Format: decimal */
+            loose_quantity?: string;
             /** Format: decimal */
             discount_percentage?: string;
             /** Format: decimal */
@@ -7604,6 +12415,12 @@ export interface components {
             unit_price: string;
             /** Format: decimal */
             cost_price?: string;
+            /** Format: decimal */
+            package_quantity?: string;
+            /** Format: decimal */
+            package_unit_price?: string | null;
+            /** @description Nombre d'unités par conditionnement au moment de la vente. */
+            packaging_factor?: number | null;
             /** Format: decimal */
             discount_amount?: string;
             /** Format: decimal */
@@ -7629,6 +12446,8 @@ export interface components {
             /** Format: decimal */
             tax_amount?: string;
             /** Format: decimal */
+            discount_percentage?: string;
+            /** Format: decimal */
             discount_amount?: string;
             /** Format: decimal */
             total?: string;
@@ -7644,21 +12463,41 @@ export interface components {
             readonly items_count: string;
             is_pos?: boolean;
         };
-        /** @description Serializer pour ajouter un paiement à une vente existante. */
+        /**
+         * @description Serializer pour ajouter un paiement à une vente existante.
+         *
+         *     ``amount`` = montant remis dans ``currency`` (compat historique). Un split
+         *     multi-devise se fait via plusieurs appels ``add-payment`` successifs.
+         *     ``change_currency`` : devise de la monnaie rendue si le règlement solde la vente.
+         */
         SalePayment: {
             /** Format: uuid */
             payment_method: string;
             /** Format: decimal */
             amount: string;
+            currency?: string;
+            /** Format: decimal */
+            exchange_rate?: string;
+            change_currency?: string;
             reference?: string;
             notes?: string;
         };
-        /** @description Serializer pour ajouter un paiement à une vente existante. */
+        /**
+         * @description Serializer pour ajouter un paiement à une vente existante.
+         *
+         *     ``amount`` = montant remis dans ``currency`` (compat historique). Un split
+         *     multi-devise se fait via plusieurs appels ``add-payment`` successifs.
+         *     ``change_currency`` : devise de la monnaie rendue si le règlement solde la vente.
+         */
         SalePaymentRequest: {
             /** Format: uuid */
             payment_method: string;
             /** Format: decimal */
             amount: string;
+            currency?: string;
+            /** Format: decimal */
+            exchange_rate?: string;
+            change_currency?: string;
             reference?: string;
             notes?: string;
         };
@@ -7780,6 +12619,20 @@ export interface components {
          */
         SaleTypeEnum: "retail" | "wholesale" | "credit";
         /**
+         * @description * `full` - Inventaire complet
+         *     * `category` - Par catégorie
+         *     * `product` - Par produit
+         * @enum {string}
+         */
+        ScopeTypeEnum: "full" | "category" | "product";
+        /**
+         * @description * `retail_only` - Vente au détail uniquement
+         *     * `wholesale_only` - Vente en gros uniquement
+         *     * `wholesale_and_retail` - Vente en gros et au détail
+         * @enum {string}
+         */
+        SellingModeEnum: "retail_only" | "wholesale_only" | "wholesale_and_retail";
+        /**
          * @description * `draft` - Brouillon
          *     * `pending` - En attente
          *     * `approved` - Approuvé
@@ -7824,6 +12677,15 @@ export interface components {
          */
         Status81dEnum: "draft" | "pending" | "approved" | "rejected";
         /**
+         * @description * `draft` - Brouillon
+         *     * `in_progress` - En cours
+         *     * `review` - En révision
+         *     * `validated` - Validé
+         *     * `cancelled` - Annulé
+         * @enum {string}
+         */
+        Status950Enum: "draft" | "in_progress" | "review" | "validated" | "cancelled";
+        /**
          * @description * `open` - Ouvert
          *     * `closed` - Fermé
          * @enum {string}
@@ -7856,6 +12718,16 @@ export interface components {
          * @enum {string}
          */
         StatusC27Enum: "draft" | "pending" | "completed" | "partially_paid" | "cancelled" | "refunded";
+        /**
+         * @description * `draft` - Brouillon
+         *     * `pending` - En attente
+         *     * `approved` - Approuvée
+         *     * `paid` - Payée
+         *     * `rejected` - Rejetée
+         *     * `cancelled` - Annulée
+         * @enum {string}
+         */
+        StatusEfdEnum: "draft" | "pending" | "approved" | "paid" | "rejected" | "cancelled";
         /**
          * @description * `draft` - Brouillon
          *     * `pending` - En attente
@@ -7940,6 +12812,8 @@ export interface components {
             /** Format: decimal */
             readonly quantity_difference: string;
             /** Format: decimal */
+            counted_loose_quantity?: string | null;
+            /** Format: decimal */
             unit_cost?: string;
             notes?: string;
         };
@@ -7955,6 +12829,8 @@ export interface components {
             quantity_counted: string;
             /** Format: decimal */
             quantity_expected: string;
+            /** Format: decimal */
+            counted_loose_quantity?: string | null;
             /** Format: decimal */
             unit_cost?: string;
             notes?: string;
@@ -7990,6 +12866,9 @@ export interface components {
             /** Format: uuid */
             warehouse: string;
             readonly warehouse_name: string;
+            /** Format: uuid */
+            location?: string | null;
+            readonly location_name: string;
             batch_number: string;
             /** Format: decimal */
             quantity?: string;
@@ -8028,8 +12907,17 @@ export interface components {
             reserved_quantity?: string;
             /** Format: decimal */
             readonly available_quantity: string;
-            /** Format: decimal */
-            avg_cost?: string;
+            /**
+             * Format: decimal
+             * @description Part de `quantity` qui se trouve hors emballage scellé, pour les produits vendus en gros et au détail. Alimentée par les déconditionnements et les entrées saisies à l'unité. Sans objet pour les produits vendus au détail uniquement.
+             */
+            loose_quantity?: string;
+            readonly stock_display: string;
+            readonly stock_packages: string;
+            readonly stock_loose: string;
+            readonly unit_symbol: string;
+            readonly avg_cost: string;
+            readonly stock_value: string;
             /** Format: date-time */
             last_counted_at?: string | null;
             /** Format: date-time */
@@ -8040,6 +12928,30 @@ export interface components {
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
+        };
+        /** @description Serializer complet pour le détail du stock. */
+        StockDetailRequest: {
+            /** Format: uuid */
+            product: string;
+            /** Format: uuid */
+            variant?: string | null;
+            /** Format: uuid */
+            warehouse: string;
+            /** Format: uuid */
+            location?: string | null;
+            /** Format: decimal */
+            quantity?: string;
+            /** Format: decimal */
+            reserved_quantity?: string;
+            /**
+             * Format: decimal
+             * @description Part de `quantity` qui se trouve hors emballage scellé, pour les produits vendus en gros et au détail. Alimentée par les déconditionnements et les entrées saisies à l'unité. Sans objet pour les produits vendus au détail uniquement.
+             */
+            loose_quantity?: string;
+            /** Format: date-time */
+            last_counted_at?: string | null;
+            /** Format: date-time */
+            last_movement_at?: string | null;
         };
         /** @description Serializer léger pour les listes de stock. */
         StockList: {
@@ -8061,8 +12973,16 @@ export interface components {
             reserved_quantity?: string;
             /** Format: decimal */
             readonly available_quantity: string;
-            /** Format: decimal */
-            avg_cost?: string;
+            /**
+             * Format: decimal
+             * @description Part de `quantity` qui se trouve hors emballage scellé, pour les produits vendus en gros et au détail. Alimentée par les déconditionnements et les entrées saisies à l'unité. Sans objet pour les produits vendus au détail uniquement.
+             */
+            loose_quantity?: string;
+            readonly stock_display: string;
+            readonly stock_packages: string;
+            readonly stock_loose: string;
+            readonly unit_symbol: string;
+            readonly avg_cost: string;
             readonly stock_value: string;
             /** Format: date-time */
             readonly last_movement_at: string | null;
@@ -8091,7 +13011,15 @@ export interface components {
             parent?: string | null;
             is_active?: boolean;
         };
-        /** @description Serializer pour la création manuelle de mouvement. */
+        /**
+         * @description Serializer pour la création manuelle de mouvement.
+         *
+         *     Pour les produits vendus en gros, l'approvisionnement peut se saisir en
+         *     conditionnements, en unités, ou dans les deux à la fois. La conversion vers
+         *     l'unité de base est faite **ici**, dans ``validate()`` : tout l'aval
+         *     (``perform_create``, lots FIFO, coût moyen pondéré, quantité du mouvement)
+         *     continue de raisonner en unité de base sans modification.
+         */
         StockMovementCreate: {
             /** Format: uuid */
             product: string;
@@ -8101,14 +13029,22 @@ export interface components {
             warehouse: string;
             /** Format: uuid */
             batch?: string | null;
-            movement_type: components["schemas"]["MovementTypeEnum"];
+            movement_type: components["schemas"]["MovementTypeA1dEnum"];
             /** Format: decimal */
-            quantity: string;
+            quantity?: string;
             /** Format: decimal */
             unit_cost?: string;
             notes?: string;
         };
-        /** @description Serializer pour la création manuelle de mouvement. */
+        /**
+         * @description Serializer pour la création manuelle de mouvement.
+         *
+         *     Pour les produits vendus en gros, l'approvisionnement peut se saisir en
+         *     conditionnements, en unités, ou dans les deux à la fois. La conversion vers
+         *     l'unité de base est faite **ici**, dans ``validate()`` : tout l'aval
+         *     (``perform_create``, lots FIFO, coût moyen pondéré, quantité du mouvement)
+         *     continue de raisonner en unité de base sans modification.
+         */
         StockMovementCreateRequest: {
             /** Format: uuid */
             product: string;
@@ -8118,12 +13054,22 @@ export interface components {
             warehouse: string;
             /** Format: uuid */
             batch?: string | null;
-            movement_type: components["schemas"]["MovementTypeEnum"];
+            movement_type: components["schemas"]["MovementTypeA1dEnum"];
             /** Format: decimal */
-            quantity: string;
+            quantity?: string;
             /** Format: decimal */
             unit_cost?: string;
             notes?: string;
+            /** Format: uuid */
+            location?: string | null;
+            /** Format: date */
+            expiry_date?: string | null;
+            /** Format: decimal */
+            package_quantity?: string;
+            /** Format: decimal */
+            loose_quantity?: string;
+            /** Format: decimal */
+            package_unit_cost?: string;
         };
         /** @description Serializer complet pour le détail d'un mouvement. */
         StockMovementDetail: {
@@ -8137,7 +13083,7 @@ export interface components {
             /** Format: uuid */
             warehouse: string;
             readonly warehouse_name: string;
-            movement_type: components["schemas"]["MovementTypeEnum"];
+            movement_type: components["schemas"]["MovementTypeA1dEnum"];
             readonly movement_type_display: string;
             /** Format: decimal */
             quantity: string;
@@ -8168,7 +13114,7 @@ export interface components {
             variant?: string | null;
             /** Format: uuid */
             warehouse: string;
-            movement_type: components["schemas"]["MovementTypeEnum"];
+            movement_type: components["schemas"]["MovementTypeA1dEnum"];
             /** Format: decimal */
             quantity: string;
             /** Format: decimal */
@@ -8198,7 +13144,7 @@ export interface components {
             /** Format: uuid */
             warehouse: string;
             readonly warehouse_name: string;
-            movement_type: components["schemas"]["MovementTypeEnum"];
+            movement_type: components["schemas"]["MovementTypeA1dEnum"];
             readonly movement_type_display: string;
             /** Format: decimal */
             quantity: string;
@@ -8345,25 +13291,22 @@ export interface components {
         };
         /** @description Serializer pour la création de fournisseur. */
         SupplierCreate: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly code: string;
             name: string;
             company_name?: string;
             contact_person?: string;
             /** Format: email */
             email?: string;
-            phone?: string;
-            mobile?: string;
+            phone: string;
             /** Format: uri */
             website?: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
-            /** Format: int64 */
-            payment_terms?: number;
             currency?: string;
             bank_name?: string;
             bank_account?: string;
-            notes?: string;
             is_active?: boolean;
         };
         /** @description Serializer pour la création de fournisseur. */
@@ -8373,20 +13316,14 @@ export interface components {
             contact_person?: string;
             /** Format: email */
             email?: string;
-            phone?: string;
-            mobile?: string;
+            phone: string;
             /** Format: uri */
             website?: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
-            /** Format: int64 */
-            payment_terms?: number;
             currency?: string;
             bank_name?: string;
             bank_account?: string;
-            notes?: string;
             is_active?: boolean;
         };
         /** @description Serializer complet pour le détail d'un fournisseur. */
@@ -8400,21 +13337,15 @@ export interface components {
             /** Format: email */
             email?: string;
             phone?: string;
-            mobile?: string;
             /** Format: uri */
             website?: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
-            /** Format: int64 */
-            payment_terms?: number;
             currency?: string;
             /** Format: decimal */
             current_balance?: string;
             bank_name?: string;
             bank_account?: string;
-            notes?: string;
             is_active?: boolean;
             /** Format: uuid */
             created_by?: string | null;
@@ -8438,9 +13369,15 @@ export interface components {
             /** Format: email */
             email?: string;
             phone?: string;
+            /** Format: uri */
+            website?: string;
+            address?: string;
+            tax_id?: string;
             currency?: string;
             /** Format: decimal */
             current_balance?: string;
+            bank_name?: string;
+            bank_account?: string;
             is_active?: boolean;
         };
         /** @description Serializer pour les allocations de paiement. */
@@ -8580,7 +13517,6 @@ export interface components {
             unit_price?: string;
             /** Format: decimal */
             min_order_quantity?: string;
-            /** Format: int64 */
             lead_time_days?: number;
             is_preferred?: boolean;
             is_active?: boolean;
@@ -8595,7 +13531,6 @@ export interface components {
             unit_price?: string;
             /** Format: decimal */
             min_order_quantity?: string;
-            /** Format: int64 */
             lead_time_days?: number;
             is_preferred?: boolean;
             is_active?: boolean;
@@ -8607,20 +13542,14 @@ export interface components {
             contact_person?: string;
             /** Format: email */
             email?: string;
-            phone?: string;
-            mobile?: string;
+            phone: string;
             /** Format: uri */
             website?: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
-            /** Format: int64 */
-            payment_terms?: number;
             currency?: string;
             bank_name?: string;
             bank_account?: string;
-            notes?: string;
             is_active?: boolean;
         };
         /** @description Serializer pour la mise à jour de fournisseur. */
@@ -8630,32 +13559,18 @@ export interface components {
             contact_person?: string;
             /** Format: email */
             email?: string;
-            phone?: string;
-            mobile?: string;
+            phone: string;
             /** Format: uri */
             website?: string;
             address?: string;
-            city?: string;
-            country?: string;
             tax_id?: string;
-            /** Format: int64 */
-            payment_terms?: number;
             currency?: string;
             bank_name?: string;
             bank_account?: string;
-            notes?: string;
             is_active?: boolean;
         };
         TokenBlacklistRequest: {
             refresh: string;
-        };
-        TokenObtainPair: {
-            readonly access: string;
-            readonly refresh: string;
-        };
-        TokenObtainPairRequest: {
-            email: string;
-            password: string;
         };
         TokenRefresh: {
             readonly access: string;
@@ -8686,6 +13601,16 @@ export interface components {
             base_unit?: string | null;
             /** Format: decimal */
             conversion_factor?: string;
+        };
+        /** @description Serializer for updating exchange rate. */
+        UpdateExchangeRate: {
+            /** Format: decimal */
+            exchange_rate: string;
+        };
+        /** @description Serializer for updating exchange rate. */
+        UpdateExchangeRateRequest: {
+            /** Format: decimal */
+            exchange_rate: string;
         };
         /** @description Serializer pour les activités utilisateur. */
         UserActivity: {
@@ -8821,6 +13746,7 @@ export interface components {
             is_default?: boolean;
             is_active?: boolean;
             allow_negative_stock?: boolean;
+            readonly stock_value: string;
             readonly locations: string;
             /** Format: date-time */
             readonly created_at: string;
@@ -8836,13 +13762,23 @@ export interface components {
             /** Format: uuid */
             branch?: string | null;
             readonly branch_name: string;
+            address?: string;
             /** Format: uuid */
             manager?: string | null;
             readonly manager_name: string;
             is_default?: boolean;
             is_active?: boolean;
+            allow_negative_stock?: boolean;
             readonly stock_value: string;
         };
+        /**
+         * @description * `metric` - Métrique
+         *     * `chart` - Graphique
+         *     * `table` - Tableau
+         *     * `list` - Liste
+         * @enum {string}
+         */
+        WidgetTypeEnum: "metric" | "chart" | "table" | "list";
     };
     responses: never;
     parameters: never;
@@ -8942,6 +13878,24 @@ export interface operations {
             };
         };
     };
+    auth_register_with_organization_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     auth_token_create: {
         parameters: {
             query?: never;
@@ -8949,21 +13903,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TokenObtainPairRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["TokenObtainPairRequest"];
-                "multipart/form-data": components["schemas"]["TokenObtainPairRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
+            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["TokenObtainPair"];
-                };
+                content?: never;
             };
         };
     };
@@ -9021,9 +13968,11 @@ export interface operations {
             query?: {
                 is_active?: boolean;
                 is_main?: boolean;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -9072,7 +14021,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this branch. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) branch. */
                 id: string;
             };
             cookie?: never;
@@ -9094,7 +14043,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this branch. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) branch. */
                 id: string;
             };
             cookie?: never;
@@ -9122,7 +14071,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this branch. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) branch. */
                 id: string;
             };
             cookie?: never;
@@ -9143,7 +14092,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this branch. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) branch. */
                 id: string;
             };
             cookie?: never;
@@ -9170,11 +14119,13 @@ export interface operations {
         parameters: {
             query?: {
                 is_active?: boolean;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -9223,7 +14174,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this brand. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) brand. */
                 id: string;
             };
             cookie?: never;
@@ -9245,7 +14196,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this brand. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) brand. */
                 id: string;
             };
             cookie?: never;
@@ -9273,7 +14224,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this brand. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) brand. */
                 id: string;
             };
             cookie?: never;
@@ -9294,7 +14245,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this brand. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) brand. */
                 id: string;
             };
             cookie?: never;
@@ -9317,16 +14268,257 @@ export interface operations {
             };
         };
     };
+    cash_movements_list: {
+        parameters: {
+            query?: {
+                currency?: string;
+                /**
+                 * @description * `in` - Entrée
+                 *     * `out` - Sortie
+                 */
+                direction?: "in" | "out";
+                is_cancelled?: boolean;
+                /**
+                 * @description * `sale` - Vente
+                 *     * `sale_return` - Remboursement client
+                 *     * `expense` - Dépense
+                 *     * `purchase` - Achat fournisseur
+                 *     * `supplier_refund` - Remboursement fournisseur
+                 *     * `debt_collection` - Recouvrement dette
+                 *     * `fund_in` - Apport de fonds
+                 *     * `fund_out` - Retrait de fonds
+                 *     * `adjustment` - Ajustement de caisse
+                 *     * `change` - Monnaie rendue
+                 *     * `other_in` - Autre entrée
+                 *     * `other_out` - Autre sortie
+                 */
+                movement_type?: "adjustment" | "change" | "debt_collection" | "expense" | "fund_in" | "fund_out" | "other_in" | "other_out" | "purchase" | "sale" | "sale_return" | "supplier_refund";
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedCashMovementListList"];
+                };
+            };
+        };
+    };
+    cash_movements_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CashMovementCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CashMovementCreateRequest"];
+                "multipart/form-data": components["schemas"]["CashMovementCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashMovementCreate"];
+                };
+            };
+        };
+    };
+    cash_movements_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Mouvement de caisse. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashMovementDetail"];
+                };
+            };
+        };
+    };
+    cash_movements_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Mouvement de caisse. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CashMovementDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CashMovementDetailRequest"];
+                "multipart/form-data": components["schemas"]["CashMovementDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashMovementDetail"];
+                };
+            };
+        };
+    };
+    cash_movements_annual_report_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashMovementDetail"];
+                };
+            };
+        };
+    };
+    cash_movements_balance_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashMovementDetail"];
+                };
+            };
+        };
+    };
+    cash_movements_custom_report_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashMovementDetail"];
+                };
+            };
+        };
+    };
+    cash_movements_daily_report_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashMovementDetail"];
+                };
+            };
+        };
+    };
+    cash_movements_monthly_report_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashMovementDetail"];
+                };
+            };
+        };
+    };
+    cash_movements_summary_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashMovementDetail"];
+                };
+            };
+        };
+    };
     categories_list: {
         parameters: {
             query?: {
                 is_active?: boolean;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 parent?: string;
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -9375,7 +14567,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this category. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) category. */
                 id: string;
             };
             cookie?: never;
@@ -9397,7 +14589,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this category. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) category. */
                 id: string;
             };
             cookie?: never;
@@ -9425,7 +14617,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this category. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) category. */
                 id: string;
             };
             cookie?: never;
@@ -9446,7 +14638,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this category. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) category. */
                 id: string;
             };
             cookie?: never;
@@ -9474,7 +14666,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this category. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) category. */
                 id: string;
             };
             cookie?: never;
@@ -9510,155 +14702,6 @@ export interface operations {
             };
         };
     };
-    customer_groups_list: {
-        parameters: {
-            query?: {
-                is_default?: boolean;
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedCustomerGroupList"];
-                };
-            };
-        };
-    };
-    customer_groups_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CustomerGroupRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["CustomerGroupRequest"];
-                "multipart/form-data": components["schemas"]["CustomerGroupRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerGroup"];
-                };
-            };
-        };
-    };
-    customer_groups_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A UUID string identifying this customer group. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerGroup"];
-                };
-            };
-        };
-    };
-    customer_groups_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A UUID string identifying this customer group. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CustomerGroupRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["CustomerGroupRequest"];
-                "multipart/form-data": components["schemas"]["CustomerGroupRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerGroup"];
-                };
-            };
-        };
-    };
-    customer_groups_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A UUID string identifying this customer group. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    customer_groups_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A UUID string identifying this customer group. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedCustomerGroupRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedCustomerGroupRequest"];
-                "multipart/form-data": components["schemas"]["PatchedCustomerGroupRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerGroup"];
-                };
-            };
-        };
-    };
     customers_list: {
         parameters: {
             query?: {
@@ -9667,13 +14710,14 @@ export interface operations {
                  *     * `business` - Entreprise
                  */
                 customer_type?: "business" | "individual";
-                group?: string;
                 is_active?: boolean;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -9717,170 +14761,12 @@ export interface operations {
             };
         };
     };
-    customers_addresses_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path: {
-                customer_pk: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedCustomerAddressList"];
-                };
-            };
-        };
-    };
-    customers_addresses_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                customer_pk: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CustomerAddressRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["CustomerAddressRequest"];
-                "multipart/form-data": components["schemas"]["CustomerAddressRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerAddress"];
-                };
-            };
-        };
-    };
-    customers_addresses_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                customer_pk: string;
-                /** @description A UUID string identifying this customer address. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerAddress"];
-                };
-            };
-        };
-    };
-    customers_addresses_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                customer_pk: string;
-                /** @description A UUID string identifying this customer address. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CustomerAddressRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["CustomerAddressRequest"];
-                "multipart/form-data": components["schemas"]["CustomerAddressRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerAddress"];
-                };
-            };
-        };
-    };
-    customers_addresses_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                customer_pk: string;
-                /** @description A UUID string identifying this customer address. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    customers_addresses_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                customer_pk: string;
-                /** @description A UUID string identifying this customer address. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedCustomerAddressRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedCustomerAddressRequest"];
-                "multipart/form-data": components["schemas"]["PatchedCustomerAddressRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerAddress"];
-                };
-            };
-        };
-    };
     customers_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this customer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer. */
                 id: string;
             };
             cookie?: never;
@@ -9902,7 +14788,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this customer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer. */
                 id: string;
             };
             cookie?: never;
@@ -9930,7 +14816,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this customer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer. */
                 id: string;
             };
             cookie?: never;
@@ -9951,7 +14837,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this customer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer. */
                 id: string;
             };
             cookie?: never;
@@ -9979,16 +14865,16 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this customer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer. */
                 id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CustomerBalanceRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["CustomerBalanceRequest"];
-                "multipart/form-data": components["schemas"]["CustomerBalanceRequest"];
+                "application/json": components["schemas"]["AdjustBalanceRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdjustBalanceRequest"];
+                "multipart/form-data": components["schemas"]["AdjustBalanceRequest"];
             };
         };
         responses: {
@@ -9997,7 +14883,63 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CustomerBalance"];
+                    "application/json": components["schemas"]["AdjustBalance"];
+                };
+            };
+        };
+    };
+    customers_record_advance_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomerDetailRequest"];
+                "multipart/form-data": components["schemas"]["CustomerDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerDetail"];
+                };
+            };
+        };
+    };
+    customers_record_payment_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomerDetailRequest"];
+                "multipart/form-data": components["schemas"]["CustomerDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerDetail"];
                 };
             };
         };
@@ -10007,9 +14949,50 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this customer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer. */
                 id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerDetail"];
+                };
+            };
+        };
+    };
+    customers_transactions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerDetail"];
+                };
+            };
+        };
+    };
+    customers_debt_summary_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -10081,15 +15064,494 @@ export interface operations {
             };
         };
     };
+    expense_categories_list: {
+        parameters: {
+            query?: {
+                is_active?: boolean;
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedExpenseCategoryListList"];
+                };
+            };
+        };
+    };
+    expense_categories_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseCategoryCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseCategoryCreateRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseCategoryCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseCategoryCreate"];
+                };
+            };
+        };
+    };
+    expense_categories_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Catégorie de dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseCategoryDetail"];
+                };
+            };
+        };
+    };
+    expense_categories_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Catégorie de dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseCategoryCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseCategoryCreateRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseCategoryCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseCategoryCreate"];
+                };
+            };
+        };
+    };
+    expense_categories_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Catégorie de dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    expense_categories_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Catégorie de dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedExpenseCategoryCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedExpenseCategoryCreateRequest"];
+                "multipart/form-data": components["schemas"]["PatchedExpenseCategoryCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseCategoryCreate"];
+                };
+            };
+        };
+    };
+    expenses_list: {
+        parameters: {
+            query?: {
+                category?: string;
+                currency?: string;
+                is_recurring?: boolean;
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+                /**
+                 * @description * `draft` - Brouillon
+                 *     * `pending` - En attente
+                 *     * `approved` - Approuvée
+                 *     * `paid` - Payée
+                 *     * `rejected` - Rejetée
+                 *     * `cancelled` - Annulée
+                 */
+                status?: "approved" | "cancelled" | "draft" | "paid" | "pending" | "rejected";
+                warehouse?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedExpenseListList"];
+                };
+            };
+        };
+    };
+    expenses_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseCreateRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseCreate"];
+                };
+            };
+        };
+    };
+    expenses_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDetail"];
+                };
+            };
+        };
+    };
+    expenses_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseUpdateRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseUpdate"];
+                };
+            };
+        };
+    };
+    expenses_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    expenses_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedExpenseUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedExpenseUpdateRequest"];
+                "multipart/form-data": components["schemas"]["PatchedExpenseUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseUpdate"];
+                };
+            };
+        };
+    };
+    expenses_approve_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseDetailRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDetail"];
+                };
+            };
+        };
+    };
+    expenses_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseDetailRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDetail"];
+                };
+            };
+        };
+    };
+    expenses_pay_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseDetailRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDetail"];
+                };
+            };
+        };
+    };
+    expenses_reject_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseDetailRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDetail"];
+                };
+            };
+        };
+    };
+    expenses_submit_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Dépense. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseDetailRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDetail"];
+                };
+            };
+        };
+    };
+    expenses_stats_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDetail"];
+                };
+            };
+        };
+    };
     goods_receipts_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 purchase_order?: string;
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
                 /**
                  * @description * `draft` - Brouillon
@@ -10145,7 +15607,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this goods receipt. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) goods receipt. */
                 id: string;
             };
             cookie?: never;
@@ -10167,7 +15629,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this goods receipt. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) goods receipt. */
                 id: string;
             };
             cookie?: never;
@@ -10195,7 +15657,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this goods receipt. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) goods receipt. */
                 id: string;
             };
             cookie?: never;
@@ -10216,7 +15678,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this goods receipt. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) goods receipt. */
                 id: string;
             };
             cookie?: never;
@@ -10244,7 +15706,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this goods receipt. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) goods receipt. */
                 id: string;
             };
             cookie?: never;
@@ -10272,7 +15734,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this goods receipt. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) goods receipt. */
                 id: string;
             };
             cookie?: never;
@@ -10295,22 +15757,544 @@ export interface operations {
             };
         };
     };
+    income_categories_list: {
+        parameters: {
+            query?: {
+                is_active?: boolean;
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedIncomeCategoryListList"];
+                };
+            };
+        };
+    };
+    income_categories_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IncomeCategoryCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["IncomeCategoryCreateRequest"];
+                "multipart/form-data": components["schemas"]["IncomeCategoryCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeCategoryCreate"];
+                };
+            };
+        };
+    };
+    income_categories_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Catégorie d'entrée. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeCategoryDetail"];
+                };
+            };
+        };
+    };
+    income_categories_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Catégorie d'entrée. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IncomeCategoryCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["IncomeCategoryCreateRequest"];
+                "multipart/form-data": components["schemas"]["IncomeCategoryCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeCategoryCreate"];
+                };
+            };
+        };
+    };
+    income_categories_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Catégorie d'entrée. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    income_categories_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) Catégorie d'entrée. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedIncomeCategoryCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedIncomeCategoryCreateRequest"];
+                "multipart/form-data": components["schemas"]["PatchedIncomeCategoryCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeCategoryCreate"];
+                };
+            };
+        };
+    };
+    inventory_sessions_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /**
+                 * @description * `full` - Inventaire complet
+                 *     * `category` - Par catégorie
+                 *     * `product` - Par produit
+                 */
+                scope_type?: "category" | "full" | "product";
+                /** @description Un terme de recherche. */
+                search?: string;
+                /**
+                 * @description * `draft` - Brouillon
+                 *     * `in_progress` - En cours
+                 *     * `review` - En révision
+                 *     * `validated` - Validé
+                 *     * `cancelled` - Annulé
+                 */
+                status?: "cancelled" | "draft" | "in_progress" | "review" | "validated";
+                warehouse?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedInventorySessionListList"];
+                };
+            };
+        };
+    };
+    inventory_sessions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventorySessionCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InventorySessionCreateRequest"];
+                "multipart/form-data": components["schemas"]["InventorySessionCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionCreate"];
+                };
+            };
+        };
+    };
+    inventory_sessions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventorySessionDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InventorySessionDetailRequest"];
+                "multipart/form-data": components["schemas"]["InventorySessionDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    inventory_sessions_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedInventorySessionDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedInventorySessionDetailRequest"];
+                "multipart/form-data": components["schemas"]["PatchedInventorySessionDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventorySessionDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InventorySessionDetailRequest"];
+                "multipart/form-data": components["schemas"]["InventorySessionDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_count_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventorySessionDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InventorySessionDetailRequest"];
+                "multipart/form-data": components["schemas"]["InventorySessionDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_counts_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_print_data_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_start_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventorySessionDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InventorySessionDetailRequest"];
+                "multipart/form-data": components["schemas"]["InventorySessionDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_submit_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventorySessionDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InventorySessionDetailRequest"];
+                "multipart/form-data": components["schemas"]["InventorySessionDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_validate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) inventory session. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventorySessionDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InventorySessionDetailRequest"];
+                "multipart/form-data": components["schemas"]["InventorySessionDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
+    inventory_sessions_locked_products_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventorySessionDetail"];
+                };
+            };
+        };
+    };
     invitations_list: {
         parameters: {
             query?: {
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 /**
-                 * @description * `owner` - Propriétaire
-                 *     * `admin` - Administrateur
+                 * @description * `owner` - Admin
                  *     * `manager` - Gérant
-                 *     * `cashier` - Caissier
                  *     * `stock_keeper` - Magasinier
-                 *     * `accountant` - Comptable
-                 *     * `viewer` - Lecteur
+                 *     * `cashier` - Caissier
                  */
-                role?: "accountant" | "admin" | "cashier" | "manager" | "owner" | "stock_keeper" | "viewer";
-                /** @description A search term. */
+                role?: "cashier" | "manager" | "owner" | "stock_keeper";
+                /** @description Un terme de recherche. */
                 search?: string;
                 /**
                  * @description * `pending` - En attente
@@ -10366,7 +16350,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization invitation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization invitation. */
                 id: string;
             };
             cookie?: never;
@@ -10388,7 +16372,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization invitation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization invitation. */
                 id: string;
             };
             cookie?: never;
@@ -10416,7 +16400,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization invitation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization invitation. */
                 id: string;
             };
             cookie?: never;
@@ -10437,7 +16421,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization invitation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization invitation. */
                 id: string;
             };
             cookie?: never;
@@ -10465,7 +16449,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization invitation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization invitation. */
                 id: string;
             };
             cookie?: never;
@@ -10492,19 +16476,18 @@ export interface operations {
         parameters: {
             query?: {
                 is_active?: boolean;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 /**
-                 * @description * `owner` - Propriétaire
-                 *     * `admin` - Administrateur
+                 * @description * `owner` - Admin
                  *     * `manager` - Gérant
-                 *     * `cashier` - Caissier
                  *     * `stock_keeper` - Magasinier
-                 *     * `accountant` - Comptable
-                 *     * `viewer` - Lecteur
+                 *     * `cashier` - Caissier
                  */
-                role?: "accountant" | "admin" | "cashier" | "manager" | "owner" | "stock_keeper" | "viewer";
-                /** @description A search term. */
+                role?: "cashier" | "manager" | "owner" | "stock_keeper";
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -10553,7 +16536,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization membership. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization membership. */
                 id: string;
             };
             cookie?: never;
@@ -10575,12 +16558,12 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization membership. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization membership. */
                 id: string;
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["MembershipUpdateRequest"];
                 "application/x-www-form-urlencoded": components["schemas"]["MembershipUpdateRequest"];
@@ -10603,7 +16586,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization membership. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization membership. */
                 id: string;
             };
             cookie?: never;
@@ -10624,7 +16607,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization membership. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization membership. */
                 id: string;
             };
             cookie?: never;
@@ -10647,12 +16630,117 @@ export interface operations {
             };
         };
     };
+    memberships_permissions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization membership. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationMembership"];
+                };
+            };
+        };
+    };
+    memberships_permissions_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization membership. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedOrganizationMembershipRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedOrganizationMembershipRequest"];
+                "multipart/form-data": components["schemas"]["PatchedOrganizationMembershipRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationMembership"];
+                };
+            };
+        };
+    };
+    memberships_reset_password_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization membership. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationMembershipRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OrganizationMembershipRequest"];
+                "multipart/form-data": components["schemas"]["OrganizationMembershipRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationMembership"];
+                };
+            };
+        };
+    };
+    memberships_create_user_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberCreateWithUserRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["MemberCreateWithUserRequest"];
+                "multipart/form-data": components["schemas"]["MemberCreateWithUserRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberCreateWithUser"];
+                };
+            };
+        };
+    };
     organizations_list: {
         parameters: {
             query?: {
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -10701,7 +16789,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
                 id: string;
             };
             cookie?: never;
@@ -10723,7 +16811,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
                 id: string;
             };
             cookie?: never;
@@ -10751,7 +16839,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
                 id: string;
             };
             cookie?: never;
@@ -10772,7 +16860,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
                 id: string;
             };
             cookie?: never;
@@ -10795,12 +16883,34 @@ export interface operations {
             };
         };
     };
+    organizations_dashboard_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationDetail"];
+                };
+            };
+        };
+    };
     organizations_stats_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
                 id: string;
             };
             cookie?: never;
@@ -10822,7 +16932,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this organization. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
                 id: string;
             };
             cookie?: never;
@@ -10851,16 +16961,19 @@ export interface operations {
                 is_active?: boolean;
                 /**
                  * @description * `cash` - Espèces
+                 *     * `card` - Carte bancaire
                  *     * `mobile_money` - Mobile Money
                  *     * `bank_transfer` - Virement bancaire
                  *     * `check` - Chèque
                  *     * `credit` - Crédit
                  *     * `other` - Autre
                  */
-                method_type?: "bank_transfer" | "cash" | "check" | "credit" | "mobile_money" | "other";
-                /** @description A page number within the paginated result set. */
+                method_type?: "bank_transfer" | "card" | "cash" | "check" | "credit" | "mobile_money" | "other";
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -10909,7 +17022,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this payment method. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) payment method. */
                 id: string;
             };
             cookie?: never;
@@ -10931,7 +17044,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this payment method. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) payment method. */
                 id: string;
             };
             cookie?: never;
@@ -10959,7 +17072,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this payment method. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) payment method. */
                 id: string;
             };
             cookie?: never;
@@ -10980,7 +17093,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this payment method. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) payment method. */
                 id: string;
             };
             cookie?: never;
@@ -11003,14 +17116,854 @@ export interface operations {
             };
         };
     };
+    plans_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"][];
+                };
+            };
+        };
+    };
+    plans_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) plan. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+        };
+    };
+    plans_public_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPlan"][];
+                };
+            };
+        };
+    };
+    plans_public_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) plan. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPlan"];
+                };
+            };
+        };
+    };
+    platform_admin_dashboard_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    platform_admin_organizations_list: {
+        parameters: {
+            query?: {
+                /**
+                 * @description * `boutique` - Boutique
+                 *     * `supermarket` - Supermarché
+                 *     * `pharmacy` - Pharmacie
+                 *     * `depot` - Dépôt
+                 *     * `restaurant` - Restaurant
+                 *     * `other` - Autre
+                 */
+                business_type?: "boutique" | "depot" | "other" | "pharmacy" | "restaurant" | "supermarket";
+                country?: string;
+                is_active?: boolean;
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedAdminOrganizationListList"];
+                };
+            };
+        };
+    };
+    platform_admin_organizations_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrganizationListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminOrganizationListRequest"];
+                "multipart/form-data": components["schemas"]["AdminOrganizationListRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrganizationList"];
+                };
+            };
+        };
+    };
+    platform_admin_organizations_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrganizationDetail"];
+                };
+            };
+        };
+    };
+    platform_admin_organizations_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrganizationListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminOrganizationListRequest"];
+                "multipart/form-data": components["schemas"]["AdminOrganizationListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrganizationList"];
+                };
+            };
+        };
+    };
+    platform_admin_organizations_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    platform_admin_organizations_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAdminOrganizationListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminOrganizationListRequest"];
+                "multipart/form-data": components["schemas"]["PatchedAdminOrganizationListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrganizationList"];
+                };
+            };
+        };
+    };
+    platform_admin_organizations_activate_subscription_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrganizationListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminOrganizationListRequest"];
+                "multipart/form-data": components["schemas"]["AdminOrganizationListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrganizationList"];
+                };
+            };
+        };
+    };
+    platform_admin_organizations_toggle_active_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrganizationListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminOrganizationListRequest"];
+                "multipart/form-data": components["schemas"]["AdminOrganizationListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrganizationList"];
+                };
+            };
+        };
+    };
+    platform_admin_plans_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedAdminPlanList"];
+                };
+            };
+        };
+    };
+    platform_admin_plans_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPlanCreateUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminPlanCreateUpdateRequest"];
+                "multipart/form-data": components["schemas"]["AdminPlanCreateUpdateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlanCreateUpdate"];
+                };
+            };
+        };
+    };
+    platform_admin_plans_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) plan. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlan"];
+                };
+            };
+        };
+    };
+    platform_admin_plans_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) plan. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPlanCreateUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminPlanCreateUpdateRequest"];
+                "multipart/form-data": components["schemas"]["AdminPlanCreateUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlanCreateUpdate"];
+                };
+            };
+        };
+    };
+    platform_admin_plans_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) plan. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    platform_admin_plans_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) plan. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAdminPlanCreateUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminPlanCreateUpdateRequest"];
+                "multipart/form-data": components["schemas"]["PatchedAdminPlanCreateUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlanCreateUpdate"];
+                };
+            };
+        };
+    };
+    platform_admin_subscriptions_list: {
+        parameters: {
+            query?: {
+                /**
+                 * @description * `monthly` - Mensuel
+                 *     * `quarterly` - Trimestriel
+                 *     * `yearly` - Annuel
+                 */
+                billing_cycle?: "monthly" | "quarterly" | "yearly";
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                plan?: string;
+                /** @description Un terme de recherche. */
+                search?: string;
+                /**
+                 * @description * `trial` - Essai
+                 *     * `active` - Actif
+                 *     * `past_due` - En retard
+                 *     * `cancelled` - Annulé
+                 *     * `expired` - Expiré
+                 *     * `suspended` - Suspendu
+                 */
+                status?: "active" | "cancelled" | "expired" | "past_due" | "suspended" | "trial";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedAdminSubscriptionListList"];
+                };
+            };
+        };
+    };
+    platform_admin_subscriptions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminSubscriptionListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminSubscriptionListRequest"];
+                "multipart/form-data": components["schemas"]["AdminSubscriptionListRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSubscriptionList"];
+                };
+            };
+        };
+    };
+    platform_admin_subscriptions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) subscription. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSubscriptionList"];
+                };
+            };
+        };
+    };
+    platform_admin_subscriptions_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) subscription. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminSubscriptionListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminSubscriptionListRequest"];
+                "multipart/form-data": components["schemas"]["AdminSubscriptionListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSubscriptionList"];
+                };
+            };
+        };
+    };
+    platform_admin_subscriptions_extend_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) subscription. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminSubscriptionListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminSubscriptionListRequest"];
+                "multipart/form-data": components["schemas"]["AdminSubscriptionListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSubscriptionList"];
+                };
+            };
+        };
+    };
+    platform_admin_users_list: {
+        parameters: {
+            query?: {
+                is_active?: boolean;
+                is_staff?: boolean;
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedAdminUserListList"];
+                };
+            };
+        };
+    };
+    platform_admin_users_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminUserListRequest"];
+                "multipart/form-data": components["schemas"]["AdminUserListRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+        };
+    };
+    platform_admin_users_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+        };
+    };
+    platform_admin_users_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminUserListRequest"];
+                "multipart/form-data": components["schemas"]["AdminUserListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+        };
+    };
+    platform_admin_users_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    platform_admin_users_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAdminUserListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminUserListRequest"];
+                "multipart/form-data": components["schemas"]["PatchedAdminUserListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+        };
+    };
+    platform_admin_users_toggle_active_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminUserListRequest"];
+                "multipart/form-data": components["schemas"]["AdminUserListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+        };
+    };
+    platform_admin_users_toggle_staff_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserListRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminUserListRequest"];
+                "multipart/form-data": components["schemas"]["AdminUserListRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+        };
+    };
     price_lists_list: {
         parameters: {
             query?: {
                 is_active?: boolean;
                 is_default?: boolean;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -11059,7 +18012,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this price list. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) price list. */
                 id: string;
             };
             cookie?: never;
@@ -11081,7 +18034,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this price list. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) price list. */
                 id: string;
             };
             cookie?: never;
@@ -11109,7 +18062,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this price list. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) price list. */
                 id: string;
             };
             cookie?: never;
@@ -11130,7 +18083,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this price list. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) price list. */
                 id: string;
             };
             cookie?: never;
@@ -11160,19 +18113,15 @@ export interface operations {
                 category?: string;
                 is_active?: boolean;
                 is_featured?: boolean;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /**
-                 * @description * `physical` - Produit physique
-                 *     * `service` - Service
-                 *     * `bundle` - Pack/Bundle
-                 */
-                product_type?: "bundle" | "physical" | "service";
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
-                track_stock?: boolean;
+                track_inventory?: boolean;
             };
             header?: never;
             path?: never;
@@ -11220,7 +18169,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product. */
                 id: string;
             };
             cookie?: never;
@@ -11242,7 +18191,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product. */
                 id: string;
             };
             cookie?: never;
@@ -11270,7 +18219,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product. */
                 id: string;
             };
             cookie?: never;
@@ -11291,7 +18240,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product. */
                 id: string;
             };
             cookie?: never;
@@ -11319,7 +18268,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product. */
                 id: string;
             };
             cookie?: never;
@@ -11339,11 +18288,13 @@ export interface operations {
     products_images_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -11396,7 +18347,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product image. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product image. */
                 id: string;
                 product_pk: string;
             };
@@ -11419,7 +18370,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product image. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product image. */
                 id: string;
                 product_pk: string;
             };
@@ -11448,7 +18399,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product image. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product image. */
                 id: string;
                 product_pk: string;
             };
@@ -11470,7 +18421,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product image. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product image. */
                 id: string;
                 product_pk: string;
             };
@@ -11497,11 +18448,13 @@ export interface operations {
     products_variants_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -11554,7 +18507,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product variant. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product variant. */
                 id: string;
                 product_pk: string;
             };
@@ -11577,7 +18530,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product variant. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product variant. */
                 id: string;
                 product_pk: string;
             };
@@ -11606,7 +18559,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product variant. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product variant. */
                 id: string;
                 product_pk: string;
             };
@@ -11628,7 +18581,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this product variant. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) product variant. */
                 id: string;
                 product_pk: string;
             };
@@ -11702,6 +18655,112 @@ export interface operations {
             };
         };
     };
+    products_check_duplicate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ProductDetailRequest"];
+                "multipart/form-data": components["schemas"]["ProductDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductDetail"];
+                };
+            };
+        };
+    };
+    products_export_excel_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductDetail"];
+                };
+            };
+        };
+    };
+    products_export_pdf_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductDetail"];
+                };
+            };
+        };
+    };
+    products_import_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ProductDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ProductDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductDetail"];
+                };
+            };
+        };
+    };
+    products_import_template_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductDetail"];
+                };
+            };
+        };
+    };
     products_low_stock_retrieve: {
         parameters: {
             query?: never;
@@ -11743,11 +18802,13 @@ export interface operations {
     purchase_orders_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
                 /**
                  * @description * `draft` - Brouillon
@@ -11807,7 +18868,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase order. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase order. */
                 id: string;
             };
             cookie?: never;
@@ -11829,7 +18890,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase order. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase order. */
                 id: string;
             };
             cookie?: never;
@@ -11857,7 +18918,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase order. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase order. */
                 id: string;
             };
             cookie?: never;
@@ -11878,7 +18939,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase order. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase order. */
                 id: string;
             };
             cookie?: never;
@@ -11906,7 +18967,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase order. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase order. */
                 id: string;
             };
             cookie?: never;
@@ -11934,7 +18995,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase order. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase order. */
                 id: string;
             };
             cookie?: never;
@@ -11962,7 +19023,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase order. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase order. */
                 id: string;
             };
             cookie?: never;
@@ -12007,11 +19068,13 @@ export interface operations {
     purchase_returns_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
                 /**
                  * @description * `draft` - Brouillon
@@ -12070,7 +19133,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase return. */
                 id: string;
             };
             cookie?: never;
@@ -12092,7 +19155,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase return. */
                 id: string;
             };
             cookie?: never;
@@ -12120,7 +19183,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase return. */
                 id: string;
             };
             cookie?: never;
@@ -12141,7 +19204,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase return. */
                 id: string;
             };
             cookie?: never;
@@ -12169,7 +19232,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase return. */
                 id: string;
             };
             cookie?: never;
@@ -12197,7 +19260,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase return. */
                 id: string;
             };
             cookie?: never;
@@ -12225,7 +19288,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this purchase return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) purchase return. */
                 id: string;
             };
             cookie?: never;
@@ -12252,11 +19315,13 @@ export interface operations {
         parameters: {
             query?: {
                 customer?: string;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
                 /**
                  * @description * `draft` - Brouillon
@@ -12314,7 +19379,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this quotation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) quotation. */
                 id: string;
             };
             cookie?: never;
@@ -12336,7 +19401,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this quotation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) quotation. */
                 id: string;
             };
             cookie?: never;
@@ -12364,7 +19429,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this quotation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) quotation. */
                 id: string;
             };
             cookie?: never;
@@ -12385,7 +19450,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this quotation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) quotation. */
                 id: string;
             };
             cookie?: never;
@@ -12413,7 +19478,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this quotation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) quotation. */
                 id: string;
             };
             cookie?: never;
@@ -12441,7 +19506,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this quotation. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) quotation. */
                 id: string;
             };
             cookie?: never;
@@ -12468,10 +19533,12 @@ export interface operations {
         parameters: {
             query?: {
                 opened_by?: string;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 register?: string;
                 /**
                  * @description * `open` - Ouvert
@@ -12525,7 +19592,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this register session. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) register session. */
                 id: string;
             };
             cookie?: never;
@@ -12547,12 +19614,12 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this register session. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) register session. */
                 id: string;
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["RegisterSessionCloseRequest"];
                 "application/x-www-form-urlencoded": components["schemas"]["RegisterSessionCloseRequest"];
@@ -12619,9 +19686,11 @@ export interface operations {
             query?: {
                 branch?: string;
                 is_active?: boolean;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -12670,7 +19739,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this register. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) register. */
                 id: string;
             };
             cookie?: never;
@@ -12692,7 +19761,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this register. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) register. */
                 id: string;
             };
             cookie?: never;
@@ -12720,7 +19789,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this register. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) register. */
                 id: string;
             };
             cookie?: never;
@@ -12741,7 +19810,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this register. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) register. */
                 id: string;
             };
             cookie?: never;
@@ -12764,20 +19833,668 @@ export interface operations {
             };
         };
     };
+    reports_dashboards_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedDashboardList"];
+                };
+            };
+        };
+    };
+    reports_dashboards_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DashboardRequest"];
+                "multipart/form-data": components["schemas"]["DashboardRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"];
+                };
+            };
+        };
+    };
+    reports_dashboards_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) dashboard. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"];
+                };
+            };
+        };
+    };
+    reports_dashboards_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) dashboard. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DashboardRequest"];
+                "multipart/form-data": components["schemas"]["DashboardRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"];
+                };
+            };
+        };
+    };
+    reports_dashboards_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) dashboard. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_dashboards_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) dashboard. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedDashboardRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedDashboardRequest"];
+                "multipart/form-data": components["schemas"]["PatchedDashboardRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"];
+                };
+            };
+        };
+    };
+    reports_statistics_cash_flow_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_cashbook_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_customers_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_daily_cash_report_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_product_profits_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_product_supplies_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_profit_margins_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_sales_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_sales_by_packaging_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_sales_by_category_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_sales_by_payment_method_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_sales_by_period_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_stock_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_stock_details_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_stock_movements_summary_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_summary_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_top_customers_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_top_products_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_statistics_user_activity_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_templates_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedReportTemplateList"];
+                };
+            };
+        };
+    };
+    reports_templates_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportTemplateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReportTemplateRequest"];
+                "multipart/form-data": components["schemas"]["ReportTemplateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportTemplate"];
+                };
+            };
+        };
+    };
+    reports_templates_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) report template. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportTemplate"];
+                };
+            };
+        };
+    };
+    reports_templates_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) report template. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportTemplateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReportTemplateRequest"];
+                "multipart/form-data": components["schemas"]["ReportTemplateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportTemplate"];
+                };
+            };
+        };
+    };
+    reports_templates_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) report template. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reports_templates_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) report template. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedReportTemplateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedReportTemplateRequest"];
+                "multipart/form-data": components["schemas"]["PatchedReportTemplateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportTemplate"];
+                };
+            };
+        };
+    };
     sale_returns_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 /**
                  * @description * `full` - Retour complet
                  *     * `partial` - Retour partiel
                  *     * `exchange` - Échange
                  */
                 return_type?: "exchange" | "full" | "partial";
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
                 /**
                  * @description * `draft` - Brouillon
@@ -12834,7 +20551,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale return. */
                 id: string;
             };
             cookie?: never;
@@ -12856,7 +20573,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale return. */
                 id: string;
             };
             cookie?: never;
@@ -12884,7 +20601,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale return. */
                 id: string;
             };
             cookie?: never;
@@ -12905,7 +20622,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale return. */
                 id: string;
             };
             cookie?: never;
@@ -12933,7 +20650,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale return. */
                 id: string;
             };
             cookie?: never;
@@ -12961,7 +20678,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale return. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale return. */
                 id: string;
             };
             cookie?: never;
@@ -12989,10 +20706,12 @@ export interface operations {
             query?: {
                 customer?: string;
                 is_pos?: boolean;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 register?: string;
                 /**
                  * @description * `retail` - Détail
@@ -13000,7 +20719,7 @@ export interface operations {
                  *     * `credit` - Crédit
                  */
                 sale_type?: "credit" | "retail" | "wholesale";
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
                 /**
                  * @description * `draft` - Brouillon
@@ -13058,7 +20777,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale. */
                 id: string;
             };
             cookie?: never;
@@ -13080,7 +20799,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale. */
                 id: string;
             };
             cookie?: never;
@@ -13108,7 +20827,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale. */
                 id: string;
             };
             cookie?: never;
@@ -13129,7 +20848,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale. */
                 id: string;
             };
             cookie?: never;
@@ -13157,7 +20876,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale. */
                 id: string;
             };
             cookie?: never;
@@ -13185,7 +20904,35 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this sale. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SaleDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SaleDetailRequest"];
+                "multipart/form-data": components["schemas"]["SaleDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleDetail"];
+                };
+            };
+        };
+    };
+    sales_mark_receipt_printed_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) sale. */
                 id: string;
             };
             cookie?: never;
@@ -13246,6 +20993,1020 @@ export interface operations {
             };
         };
     };
+    settings_currencies_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Currency"][];
+                };
+            };
+        };
+    };
+    settings_currencies_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) currency. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Currency"];
+                };
+            };
+        };
+    };
+    settings_customer_loyalty_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedCustomerLoyaltyList"];
+                };
+            };
+        };
+    };
+    settings_customer_loyalty_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerLoyaltyRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomerLoyaltyRequest"];
+                "multipart/form-data": components["schemas"]["CustomerLoyaltyRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerLoyalty"];
+                };
+            };
+        };
+    };
+    settings_customer_loyalty_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer loyalty. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerLoyalty"];
+                };
+            };
+        };
+    };
+    settings_customer_loyalty_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer loyalty. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerLoyaltyRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomerLoyaltyRequest"];
+                "multipart/form-data": components["schemas"]["CustomerLoyaltyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerLoyalty"];
+                };
+            };
+        };
+    };
+    settings_customer_loyalty_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer loyalty. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    settings_customer_loyalty_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer loyalty. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedCustomerLoyaltyRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedCustomerLoyaltyRequest"];
+                "multipart/form-data": components["schemas"]["PatchedCustomerLoyaltyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerLoyalty"];
+                };
+            };
+        };
+    };
+    settings_customer_loyalty_redeem_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer loyalty. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerLoyaltyRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomerLoyaltyRequest"];
+                "multipart/form-data": components["schemas"]["CustomerLoyaltyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerLoyalty"];
+                };
+            };
+        };
+    };
+    settings_customer_loyalty_transactions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) customer loyalty. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerLoyalty"];
+                };
+            };
+        };
+    };
+    settings_customer_loyalty_adjust_points_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerLoyaltyRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomerLoyaltyRequest"];
+                "multipart/form-data": components["schemas"]["CustomerLoyaltyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerLoyalty"];
+                };
+            };
+        };
+    };
+    settings_loyalty_program_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedLoyaltyProgramList"];
+                };
+            };
+        };
+    };
+    settings_loyalty_program_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LoyaltyProgramCreateUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LoyaltyProgramCreateUpdateRequest"];
+                "multipart/form-data": components["schemas"]["LoyaltyProgramCreateUpdateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyProgramCreateUpdate"];
+                };
+            };
+        };
+    };
+    settings_loyalty_program_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty program. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyProgram"];
+                };
+            };
+        };
+    };
+    settings_loyalty_program_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty program. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LoyaltyProgramCreateUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LoyaltyProgramCreateUpdateRequest"];
+                "multipart/form-data": components["schemas"]["LoyaltyProgramCreateUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyProgramCreateUpdate"];
+                };
+            };
+        };
+    };
+    settings_loyalty_program_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty program. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    settings_loyalty_program_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty program. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedLoyaltyProgramCreateUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedLoyaltyProgramCreateUpdateRequest"];
+                "multipart/form-data": components["schemas"]["PatchedLoyaltyProgramCreateUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyProgramCreateUpdate"];
+                };
+            };
+        };
+    };
+    settings_loyalty_program_calculate_points_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty program. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LoyaltyProgramRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LoyaltyProgramRequest"];
+                "multipart/form-data": components["schemas"]["LoyaltyProgramRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyProgram"];
+                };
+            };
+        };
+    };
+    settings_loyalty_program_toggle_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty program. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LoyaltyProgramRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LoyaltyProgramRequest"];
+                "multipart/form-data": components["schemas"]["LoyaltyProgramRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyProgram"];
+                };
+            };
+        };
+    };
+    settings_loyalty_rewards_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedLoyaltyRewardList"];
+                };
+            };
+        };
+    };
+    settings_loyalty_rewards_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoyaltyRewardCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LoyaltyRewardCreateRequest"];
+                "multipart/form-data": components["schemas"]["LoyaltyRewardCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyRewardCreate"];
+                };
+            };
+        };
+    };
+    settings_loyalty_rewards_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty reward. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyReward"];
+                };
+            };
+        };
+    };
+    settings_loyalty_rewards_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty reward. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoyaltyRewardRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LoyaltyRewardRequest"];
+                "multipart/form-data": components["schemas"]["LoyaltyRewardRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyReward"];
+                };
+            };
+        };
+    };
+    settings_loyalty_rewards_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty reward. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    settings_loyalty_rewards_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) loyalty reward. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedLoyaltyRewardRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedLoyaltyRewardRequest"];
+                "multipart/form-data": components["schemas"]["PatchedLoyaltyRewardRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyReward"];
+                };
+            };
+        };
+    };
+    settings_organization_currencies_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationCurrency"][];
+                };
+            };
+        };
+    };
+    settings_organization_currencies_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationCurrencyCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OrganizationCurrencyCreateRequest"];
+                "multipart/form-data": components["schemas"]["OrganizationCurrencyCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationCurrencyCreate"];
+                };
+            };
+        };
+    };
+    settings_organization_currencies_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization currency. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationCurrency"];
+                };
+            };
+        };
+    };
+    settings_organization_currencies_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization currency. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["OrganizationCurrencyUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OrganizationCurrencyUpdateRequest"];
+                "multipart/form-data": components["schemas"]["OrganizationCurrencyUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationCurrencyUpdate"];
+                };
+            };
+        };
+    };
+    settings_organization_currencies_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization currency. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    settings_organization_currencies_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization currency. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedOrganizationCurrencyUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedOrganizationCurrencyUpdateRequest"];
+                "multipart/form-data": components["schemas"]["PatchedOrganizationCurrencyUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationCurrencyUpdate"];
+                };
+            };
+        };
+    };
+    settings_organization_currencies_set_primary_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization currency. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationCurrencyRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OrganizationCurrencyRequest"];
+                "multipart/form-data": components["schemas"]["OrganizationCurrencyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationCurrency"];
+                };
+            };
+        };
+    };
+    settings_organization_currencies_update_rate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization currency. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateExchangeRateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["UpdateExchangeRateRequest"];
+                "multipart/form-data": components["schemas"]["UpdateExchangeRateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateExchangeRate"];
+                };
+            };
+        };
+    };
+    settings_organization_currencies_convert_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CurrencyConversionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CurrencyConversionRequest"];
+                "multipart/form-data": components["schemas"]["CurrencyConversionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrencyConversion"];
+                };
+            };
+        };
+    };
+    settings_organization_settings_list: {
+        parameters: {
+            query?: {
+                /** @description Quel champ utiliser pour classer les résultats. */
+                ordering?: string;
+                /** @description Un numéro de page de l'ensemble des résultats. */
+                page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedOrganizationSettingsList"];
+                };
+            };
+        };
+    };
+    settings_organization_settings_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["OrganizationSettingsRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OrganizationSettingsRequest"];
+                "multipart/form-data": components["schemas"]["OrganizationSettingsRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSettings"];
+                };
+            };
+        };
+    };
+    settings_organization_settings_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization settings. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSettings"];
+                };
+            };
+        };
+    };
+    settings_organization_settings_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization settings. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["OrganizationSettingsRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OrganizationSettingsRequest"];
+                "multipart/form-data": components["schemas"]["OrganizationSettingsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSettings"];
+                };
+            };
+        };
+    };
+    settings_organization_settings_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization settings. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    settings_organization_settings_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) organization settings. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedOrganizationSettingsRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedOrganizationSettingsRequest"];
+                "multipart/form-data": components["schemas"]["PatchedOrganizationSettingsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSettings"];
+                };
+            };
+        };
+    };
     stock_adjustments_list: {
         parameters: {
             query?: {
@@ -13258,11 +22019,13 @@ export interface operations {
                  *     * `other` - Autre
                  */
                 adjustment_type?: "correction" | "count" | "damage" | "expired" | "other" | "theft";
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
                 /**
                  * @description * `draft` - Brouillon
@@ -13319,7 +22082,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock adjustment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock adjustment. */
                 id: string;
             };
             cookie?: never;
@@ -13341,7 +22104,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock adjustment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock adjustment. */
                 id: string;
             };
             cookie?: never;
@@ -13369,7 +22132,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock adjustment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock adjustment. */
                 id: string;
             };
             cookie?: never;
@@ -13390,7 +22153,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock adjustment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock adjustment. */
                 id: string;
             };
             cookie?: never;
@@ -13418,7 +22181,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock adjustment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock adjustment. */
                 id: string;
             };
             cookie?: never;
@@ -13446,7 +22209,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock adjustment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock adjustment. */
                 id: string;
             };
             cookie?: never;
@@ -13472,12 +22235,14 @@ export interface operations {
     stock_batches_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 product?: string;
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
                 warehouse?: string;
             };
@@ -13502,7 +22267,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock batch. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock batch. */
                 id: string;
             };
             cookie?: never;
@@ -13523,10 +22288,12 @@ export interface operations {
         parameters: {
             query?: {
                 is_active?: boolean;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 parent?: string;
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
                 warehouse?: string;
             };
@@ -13576,7 +22343,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock location. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock location. */
                 id: string;
             };
             cookie?: never;
@@ -13598,7 +22365,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock location. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock location. */
                 id: string;
             };
             cookie?: never;
@@ -13626,7 +22393,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock location. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock location. */
                 id: string;
             };
             cookie?: never;
@@ -13647,7 +22414,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock location. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock location. */
                 id: string;
             };
             cookie?: never;
@@ -13659,6 +22426,27 @@ export interface operations {
                 "multipart/form-data": components["schemas"]["PatchedStockLocationRequest"];
             };
         };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockLocation"];
+                };
+            };
+        };
+    };
+    stock_locations_by_warehouse_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                warehouse_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {
@@ -13687,14 +22475,17 @@ export interface operations {
                  *     * `initial` - Stock initial
                  *     * `production_in` - Production entrante
                  *     * `production_out` - Production sortante
+                 *     * `unpack` - Déconditionnement
                  */
-                movement_type?: "adjustment_in" | "adjustment_out" | "damage" | "expired" | "initial" | "production_in" | "production_out" | "purchase" | "return_in" | "return_out" | "sale" | "transfer_in" | "transfer_out";
-                /** @description Which field to use when ordering the results. */
+                movement_type?: "adjustment_in" | "adjustment_out" | "damage" | "expired" | "initial" | "production_in" | "production_out" | "purchase" | "return_in" | "return_out" | "sale" | "transfer_in" | "transfer_out" | "unpack";
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 product?: string;
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
                 warehouse?: string;
             };
@@ -13744,7 +22535,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock movement. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock movement. */
                 id: string;
             };
             cookie?: never;
@@ -13766,7 +22557,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock movement. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock movement. */
                 id: string;
             };
             cookie?: never;
@@ -13794,7 +22585,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock movement. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock movement. */
                 id: string;
             };
             cookie?: never;
@@ -13815,7 +22606,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock movement. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock movement. */
                 id: string;
             };
             cookie?: never;
@@ -13842,11 +22633,13 @@ export interface operations {
         parameters: {
             query?: {
                 destination_warehouse?: string;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
                 source_warehouse?: string;
                 /**
@@ -13904,7 +22697,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock transfer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock transfer. */
                 id: string;
             };
             cookie?: never;
@@ -13926,7 +22719,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock transfer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock transfer. */
                 id: string;
             };
             cookie?: never;
@@ -13954,7 +22747,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock transfer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock transfer. */
                 id: string;
             };
             cookie?: never;
@@ -13975,7 +22768,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock transfer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock transfer. */
                 id: string;
             };
             cookie?: never;
@@ -14003,7 +22796,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock transfer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock transfer. */
                 id: string;
             };
             cookie?: never;
@@ -14031,7 +22824,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock transfer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock transfer. */
                 id: string;
             };
             cookie?: never;
@@ -14059,7 +22852,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock transfer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock transfer. */
                 id: string;
             };
             cookie?: never;
@@ -14087,7 +22880,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock transfer. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock transfer. */
                 id: string;
             };
             cookie?: never;
@@ -14113,12 +22906,14 @@ export interface operations {
     stocks_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 product?: string;
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
                 variant?: string;
                 warehouse?: string;
@@ -14139,13 +22934,87 @@ export interface operations {
             };
         };
     };
+    stocks_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["StockDetailRequest"];
+                "multipart/form-data": components["schemas"]["StockDetailRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockDetail"];
+                };
+            };
+        };
+    };
     stocks_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this stock. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock. */
                 id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockDetail"];
+                };
+            };
+        };
+    };
+    stocks_unpack_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) stock. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockDetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["StockDetailRequest"];
+                "multipart/form-data": components["schemas"]["StockDetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockDetail"];
+                };
+            };
+        };
+    };
+    stocks_batches_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
             };
             cookie?: never;
         };
@@ -14241,15 +23110,179 @@ export interface operations {
             };
         };
     };
+    subscriptions_activate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptions_current_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptions_history_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptions_invoices_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptions_moko_callback_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptions_moko_initiate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptions_moko_status_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptions_payments_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptions_status_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     supplier_payments_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 payment_method?: string;
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
                 /**
                  * @description * `pending` - En attente
@@ -14305,7 +23338,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier payment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier payment. */
                 id: string;
             };
             cookie?: never;
@@ -14327,7 +23360,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier payment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier payment. */
                 id: string;
             };
             cookie?: never;
@@ -14355,7 +23388,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier payment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier payment. */
                 id: string;
             };
             cookie?: never;
@@ -14376,7 +23409,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier payment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier payment. */
                 id: string;
             };
             cookie?: never;
@@ -14404,7 +23437,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier payment. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier payment. */
                 id: string;
             };
             cookie?: never;
@@ -14431,11 +23464,13 @@ export interface operations {
         parameters: {
             query?: {
                 is_active?: boolean;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -14484,7 +23519,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier. */
                 id: string;
             };
             cookie?: never;
@@ -14506,7 +23541,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier. */
                 id: string;
             };
             cookie?: never;
@@ -14534,7 +23569,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier. */
                 id: string;
             };
             cookie?: never;
@@ -14555,7 +23590,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier. */
                 id: string;
             };
             cookie?: never;
@@ -14583,7 +23618,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier. */
                 id: string;
             };
             cookie?: never;
@@ -14605,7 +23640,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier. */
                 id: string;
             };
             cookie?: never;
@@ -14625,11 +23660,13 @@ export interface operations {
     suppliers_products_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -14682,7 +23719,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier product. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier product. */
                 id: string;
                 supplier_pk: string;
             };
@@ -14705,7 +23742,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier product. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier product. */
                 id: string;
                 supplier_pk: string;
             };
@@ -14734,7 +23771,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier product. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier product. */
                 id: string;
                 supplier_pk: string;
             };
@@ -14756,7 +23793,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this supplier product. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) supplier product. */
                 id: string;
                 supplier_pk: string;
             };
@@ -14818,14 +23855,96 @@ export interface operations {
             };
         };
     };
+    sync_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Unix timestamp in milliseconds of last pull. 0 or omit for initial sync. */
+                last_pulled_at?: number;
+                /** @description Comma-separated list of tables to sync. Omit for all tables. */
+                tables?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    sync_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "application/x-www-form-urlencoded": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    sync_status_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     units_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -14874,7 +23993,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this unit. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) unit. */
                 id: string;
             };
             cookie?: never;
@@ -14896,7 +24015,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this unit. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) unit. */
                 id: string;
             };
             cookie?: never;
@@ -14924,7 +24043,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this unit. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) unit. */
                 id: string;
             };
             cookie?: never;
@@ -14945,7 +24064,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this unit. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) unit. */
                 id: string;
             };
             cookie?: never;
@@ -14981,12 +24100,14 @@ export interface operations {
                  *     * `export` - Export
                  */
                 action?: "create" | "delete" | "export" | "login" | "logout" | "update" | "view";
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
                 resource_type?: string;
-                /** @description A search term. */
+                /** @description Un terme de recherche. */
                 search?: string;
                 user?: string;
             };
@@ -15011,7 +24132,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this user activity. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user activity. */
                 id: string;
             };
             cookie?: never;
@@ -15031,9 +24152,11 @@ export interface operations {
     users_list: {
         parameters: {
             query?: {
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -15082,7 +24205,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this user. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
                 id: string;
             };
             cookie?: never;
@@ -15104,7 +24227,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this user. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
                 id: string;
             };
             cookie?: never;
@@ -15132,7 +24255,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this user. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
                 id: string;
             };
             cookie?: never;
@@ -15153,7 +24276,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this user. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) user. */
                 id: string;
             };
             cookie?: never;
@@ -15288,17 +24411,38 @@ export interface operations {
             };
         };
     };
+    users_me_permissions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserDetail"];
+                };
+            };
+        };
+    };
     warehouses_list: {
         parameters: {
             query?: {
                 branch?: string;
                 is_active?: boolean;
                 is_default?: boolean;
-                /** @description Which field to use when ordering the results. */
+                /** @description Quel champ utiliser pour classer les résultats. */
                 ordering?: string;
-                /** @description A page number within the paginated result set. */
+                /** @description Un numéro de page de l'ensemble des résultats. */
                 page?: number;
-                /** @description A search term. */
+                /** @description Nombre de résultats à retourner par page. */
+                page_size?: number;
+                /** @description Un terme de recherche. */
                 search?: string;
             };
             header?: never;
@@ -15347,7 +24491,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this warehouse. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) warehouse. */
                 id: string;
             };
             cookie?: never;
@@ -15369,7 +24513,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this warehouse. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) warehouse. */
                 id: string;
             };
             cookie?: never;
@@ -15397,7 +24541,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this warehouse. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) warehouse. */
                 id: string;
             };
             cookie?: never;
@@ -15418,7 +24562,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this warehouse. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) warehouse. */
                 id: string;
             };
             cookie?: never;
@@ -15446,7 +24590,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A UUID string identifying this warehouse. */
+                /** @description Un(une) Chaîne UUID identifiant ce(cette) warehouse. */
                 id: string;
             };
             cookie?: never;

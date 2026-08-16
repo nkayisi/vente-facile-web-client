@@ -31,6 +31,7 @@ import { getUserOrganizations, Organization } from "@/actions/organization.actio
 import {
   getProduct,
   updateProduct,
+  uploadProductImage,
   Product,
   UpdateProductData,
 } from "@/actions/products.actions";
@@ -39,8 +40,13 @@ import {
   createBrandSearchHandler,
   createUnitSearchHandler,
 } from "@/lib/select-search-handlers";
+import {
+  SellingSetupFields,
+  validateSellingSetup,
+} from "@/components/products/selling-setup-fields";
+import { ProductImageField } from "@/components/products/product-image-field";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { formatPrice } from "@/lib/format";
 import { useCurrency } from "@/components/providers/currency-provider";
 
 export default function EditProductPage() {
@@ -55,6 +61,9 @@ export default function EditProductPage() {
 
   // Original product
   const [originalProduct, setOriginalProduct] = useState<Product | null>(null);
+  // La photo voyage en multipart, hors du corps JSON envoyé par `updateProduct`.
+  const [image, setImage] = useState<File | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
 
   // Form data
   const [formData, setFormData] = useState<UpdateProductData>({});
@@ -105,9 +114,16 @@ export default function EditProductPage() {
           category: product.category || null,
           brand: product.brand || null,
           unit: product.unit || null,
+          selling_mode: product.selling_mode ?? "retail_only",
+          packaging_unit: product.packaging_unit || null,
+          units_per_package: product.units_per_package ?? null,
+          allow_auto_unpacking: product.allow_auto_unpacking ?? true,
           cost_price: parseFloat(product.cost_price),
           selling_price: parseFloat(product.selling_price),
           wholesale_price: product.wholesale_price ? parseFloat(product.wholesale_price) : null,
+          package_cost_price: product.package_cost_price
+            ? parseFloat(product.package_cost_price)
+            : null,
           tax_rate: parseFloat(product.tax_rate),
           is_taxable: product.is_taxable,
           track_inventory: product.track_inventory,
@@ -150,15 +166,25 @@ export default function EditProductPage() {
     if (!formData.sku?.trim()) {
       newErrors.sku = "Le SKU est requis";
     }
-    if ((formData.selling_price ?? 0) <= 0) {
-      newErrors.selling_price = "Le prix de vente doit être supérieur à 0";
+    if (formData.selling_mode !== "wholesale_only") {
+      if ((formData.selling_price ?? 0) <= 0) {
+        newErrors.selling_price = "Le prix de vente doit être supérieur à 0";
+      }
+      if ((formData.selling_price ?? 0) < (formData.cost_price ?? 0)) {
+        newErrors.selling_price = "Le prix de vente ne peut pas être inférieur au prix d'achat";
+      }
     }
     if ((formData.cost_price ?? 0) < 0) {
       newErrors.cost_price = "Le prix d'achat ne peut pas être négatif";
     }
-    if ((formData.selling_price ?? 0) < (formData.cost_price ?? 0)) {
-      newErrors.selling_price = "Le prix de vente ne peut pas être inférieur au prix d'achat";
-    }
+    Object.assign(
+      newErrors,
+      validateSellingSetup({
+        ...formData,
+        cost_price: formData.cost_price ?? 0,
+        selling_price: formData.selling_price ?? 0,
+      }),
+    );
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -170,9 +196,28 @@ export default function EditProductPage() {
 
     setIsLoading(true);
 
-    const result = await updateProduct(session.accessToken, organization.id, productId, formData);
+    const result = await updateProduct(session.accessToken, organization.id, productId, {
+      ...formData,
+      // Retrait explicite de la photo : le serveur attend une valeur vide.
+      ...(removeImage && !image ? { image: null } : {}),
+    });
 
     if (result.success) {
+      // La photo suit la mise à jour, en multipart. Un échec ici ne doit pas
+      // faire croire que la modification n'a pas été enregistrée.
+      if (image) {
+        const upload = await uploadProductImage(
+          session.accessToken,
+          organization.id,
+          productId,
+          image
+        );
+        if (!upload.success) {
+          toast.warning("Modifications enregistrées, mais pas la photo", {
+            description: upload.message,
+          });
+        }
+      }
       router.push(`/dashboard/products/${productId}`);
     } else {
       if (result.errors) {
@@ -280,6 +325,15 @@ export default function EditProductPage() {
               <CardTitle className="text-lg">Informations générales</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Photo : ajoutable ici quand elle n'a pas été fournie à la
+                  création, ou remplaçable à tout moment. */}
+              <ProductImageField
+                currentUrl={originalProduct?.image}
+                onChange={setImage}
+                onRemoveExisting={() => setRemoveImage(true)}
+                error={errors.image}
+              />
+
               {/* Name */}
               <div className="space-y-2">
                 <Label htmlFor="name">Nom du produit *</Label>
@@ -414,65 +468,32 @@ export default function EditProductPage() {
         {activeTab === "pricing" && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Prix et taxes</CardTitle>
+              <CardTitle className="text-lg">Vente, prix et taxes</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Cost & Selling Price */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="cost_price">Prix d'achat ({defaultCurrency.symbol})</Label>
-                  <Input
-                    id="cost_price"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={formData.cost_price ?? 0}
-                    onChange={(e) => handleChange("cost_price", parseFloat(e.target.value) || 0)}
-                    className={errors.cost_price ? "border-red-500" : ""}
-                  />
-                  {errors.cost_price && <p className="text-sm text-red-500">{errors.cost_price}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="selling_price">Prix de vente ({defaultCurrency.symbol}) *</Label>
-                  <Input
-                    id="selling_price"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={formData.selling_price ?? 0}
-                    onChange={(e) => handleChange("selling_price", parseFloat(e.target.value) || 0)}
-                    className={errors.selling_price ? "border-red-500" : ""}
-                  />
-                  {errors.selling_price && <p className="text-sm text-red-500">{errors.selling_price}</p>}
-                </div>
-              </div>
-
-              {/* Wholesale Price */}
-              <div className="space-y-2">
-                <Label htmlFor="wholesale_price">Prix de gros ({defaultCurrency.symbol})</Label>
-                <Input
-                  id="wholesale_price"
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={formData.wholesale_price ?? ""}
-                  onChange={(e) => handleChange("wholesale_price", e.target.value ? parseFloat(e.target.value) : null)}
-                  placeholder="Optionnel"
+              {/* Type de vente, unités et les quatre prix */}
+              {session?.accessToken && organization?.id && (
+                <SellingSetupFields
+                  values={{
+                    ...formData,
+                    cost_price: formData.cost_price ?? 0,
+                    selling_price: formData.selling_price ?? 0,
+                  }}
+                  onChange={(field, value) => handleChange(field as keyof UpdateProductData, value)}
+                  errors={errors}
+                  accessToken={session.accessToken}
+                  organizationId={organization.id}
+                  currencySymbol={defaultCurrency.symbol}
+                  unitLabel={originalProduct?.unit_name}
+                  packagingUnitLabel={originalProduct?.packaging_unit_name}
+                  initialSellingMode={originalProduct?.selling_mode ?? "retail_only"}
+                  hadWholesalePrice={Boolean(originalProduct?.wholesale_price)}
                 />
-              </div>
-
-              {/* Profit Margin Preview */}
-              {(formData.cost_price ?? 0) > 0 && (formData.selling_price ?? 0) > 0 && (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-sm text-gray-600">Marge bénéficiaire</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {((((formData.selling_price ?? 0) - (formData.cost_price ?? 0)) / (formData.cost_price ?? 1)) * 100).toFixed(1)}%
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Bénéfice: {formatPrice((formData.selling_price ?? 0) - (formData.cost_price ?? 0))}
-                  </p>
-                </div>
               )}
+
+              {/* La marge est affichée par canal dans chaque bloc de prix
+                  ci-dessus. Un second calcul ici afficherait deux marges de
+                  détail avec deux formules différentes. */}
 
               {/* Tax */}
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">

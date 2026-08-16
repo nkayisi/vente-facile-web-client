@@ -362,7 +362,7 @@ export default function AdminPlansPage() {
                         disabled={currencies.length === 0}
                       >
                         <SelectTrigger id="currency" className="h-8 w-full text-sm">
-                          <SelectValue placeholder="—" />
+                          <SelectValue placeholder="-" />
                         </SelectTrigger>
                         <SelectContent>
                           {currencies.map((c) => (

@@ -21,9 +21,75 @@ const serverAxios: AxiosInstance = axios.create({
   timeout: 30000,
 });
 
+/**
+ * Origine par laquelle le navigateur peut joindre le backend, et celle que les
+ * server actions utilisent depuis le réseau Docker.
+ *
+ * DRF renvoie les fichiers (photos de produits, logos) en URL absolue,
+ * construite à partir de l'hôte de la requête reçue. Comme les server actions
+ * appellent le backend via son alias interne (`vfbackend:8000`), les images
+ * arrivaient avec cet hôte, que le navigateur ne peut pas résoudre : elles ne
+ * s'affichaient jamais.
+ */
+function origineDe(url?: string): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+const ORIGINE_INTERNE = origineDe(process.env.INTERNAL_API_URL);
+const ORIGINE_PUBLIQUE = origineDe(process.env.NEXT_PUBLIC_API_URL);
+
+/**
+ * Réécrit les URL de fichiers pour qu'elles soient joignables depuis le
+ * navigateur. Ne touche à rien quand les deux origines coïncident, c'est-à-dire
+ * hors Docker.
+ */
+function versUrlPublique<T>(donnees: T): T {
+  if (!ORIGINE_INTERNE || !ORIGINE_PUBLIQUE || ORIGINE_INTERNE === ORIGINE_PUBLIQUE) {
+    return donnees;
+  }
+
+  const reecrire = (valeur: unknown): unknown => {
+    if (typeof valeur === "string") {
+      return valeur.startsWith(ORIGINE_INTERNE)
+        ? ORIGINE_PUBLIQUE + valeur.slice(ORIGINE_INTERNE.length)
+        : valeur;
+    }
+    if (Array.isArray(valeur)) return valeur.map(reecrire);
+    if (valeur && typeof valeur === "object") {
+      const sortie: Record<string, unknown> = {};
+      for (const [cle, val] of Object.entries(valeur)) {
+        sortie[cle] = reecrire(val);
+      }
+      return sortie;
+    }
+    return valeur;
+  };
+
+  return reecrire(donnees) as T;
+}
+
 // Intercepteur de réponse : retry sur 401 avec token frais + gestion 402
 serverAxios.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Uniquement les réponses JSON : un export Excel ou PDF arrive en
+    // ArrayBuffer, que parcourir comme un objet viderait de son contenu.
+    const donnees = response.data;
+    const estJson =
+      Array.isArray(donnees) ||
+      (donnees !== null &&
+        typeof donnees === "object" &&
+        Object.getPrototypeOf(donnees) === Object.prototype);
+
+    if (estJson) {
+      response.data = versUrlPublique(donnees);
+    }
+    return response;
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 

@@ -323,8 +323,8 @@ export default function CustomerDetailPage() {
         toast.success("Paiement ajouté avec succès", {
           description:
             pdfOutcome === "opened"
-              ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
-              : "Reçu téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+              ? "PDF ouvert et enregistré - utilisez Thermer ou Partager pour imprimer."
+              : "Reçu téléchargé - l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
         });
 
         setShowInvoicePaymentDialog(false);

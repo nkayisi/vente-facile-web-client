@@ -497,7 +497,7 @@ export default function AdminSubscriptionsPage() {
               <div className="p-3 bg-muted rounded-lg">
                 <p className="font-medium">{selectedSubscription.organization_name}</p>
                 <p className="text-sm text-muted-foreground">
-                  {selectedSubscription.plan_name} — expire le {new Date(selectedSubscription.current_period_end).toLocaleDateString()}
+                  {selectedSubscription.plan_name} - expire le {new Date(selectedSubscription.current_period_end).toLocaleDateString()}
                 </p>
               </div>
               <div className="space-y-2">
@@ -530,7 +530,7 @@ export default function AdminSubscriptionsPage() {
           ) : (
             <form onSubmit={handleCreate} className="space-y-5 pt-2">
 
-              {/* Établissement — combobox */}
+              {/* Établissement - combobox */}
               <div className="space-y-2">
                 <Label>Établissement <span className="text-destructive">*</span></Label>
                 <Popover open={orgPopoverOpen} onOpenChange={setOrgPopoverOpen}>

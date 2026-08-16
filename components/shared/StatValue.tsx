@@ -26,10 +26,13 @@ export function StatValue({ value, className, color }: StatValueProps) {
   }
 
   return (
-    <div 
+    <div
       className={cn(
+        // `text-base` figurait ici après `sizeClass` : twMerge gardant la
+        // dernière classe d'un même groupe, toute la réduction progressive
+        // était annulée et chaque montant s'affichait en petit.
+        "font-bold truncate tabular-nums",
         sizeClass,
-        "font-bold truncate text-base",
         color,
         className
       )}

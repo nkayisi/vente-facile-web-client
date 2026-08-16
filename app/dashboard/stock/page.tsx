@@ -643,8 +643,8 @@ export default function StockPage() {
                             <p className="font-medium text-sm truncate">{item.product_name}</p>
                             <p className="text-xs text-gray-500">{item.warehouse_name}</p>
                           </div>
-                          <span className="font-semibold text-orange-600 text-sm ml-2">
-                            {parseFloat(item.quantity).toFixed(0)}
+                          <span className="font-semibold text-orange-600 text-sm ml-2 text-right">
+                            {item.stock_display?.trim() || parseFloat(item.quantity).toFixed(0)}
                           </span>
                         </div>
                       ))}
@@ -746,11 +746,11 @@ export default function StockPage() {
                         </div>
                         <div className="text-right">
                           <p
-                            className={`text-sm font-semibold ${qty > 0 ? "text-green-600" : "text-red-600"
+                            className={`text-sm font-semibold ${qty > 0 ? "text-green-600" : qty < 0 ? "text-red-600" : "text-gray-600"
                               }`}
                           >
-                            {qty > 0 ? "+" : ""}
-                            {qty.toFixed(0)}
+                            {qty > 0 ? "+" : qty < 0 ? "-" : ""}
+                            {movement.quantity_display?.trim() || Math.abs(qty).toFixed(0)}
                           </p>
                           <p className="text-xs text-gray-400">
                             {formatDateTime(movement.created_at)}

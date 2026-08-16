@@ -586,7 +586,7 @@ export default function InventoryPage() {
                               )}
                             </div>
                           ) : (
-                            <span className="text-xs text-gray-400">—</span>
+                            <span className="text-xs text-gray-400">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -595,7 +595,7 @@ export default function InventoryPage() {
                               {formatPrice(inv.total_difference_value)}
                             </span>
                           ) : (
-                            <span className="text-xs text-gray-400">—</span>
+                            <span className="text-xs text-gray-400">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-sm text-gray-500">{formatDate(inv.created_at)}</TableCell>
@@ -692,7 +692,7 @@ export default function InventoryPage() {
                     ? createWarehouseSearchHandler(session.accessToken, organization.id)
                     : async () => []
                 }
-                emptyLabel="—"
+                emptyLabel="-"
                 placeholder="Sélectionner un entrepôt"
                 searchPlaceholder="Rechercher un entrepôt..."
                 disabled={!session?.accessToken || !organization?.id}

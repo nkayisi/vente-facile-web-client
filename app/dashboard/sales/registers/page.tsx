@@ -33,6 +33,7 @@ import {
   Trash2,
   Clock,
   CheckCircle,
+  Warehouse,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
@@ -51,6 +52,30 @@ import {
 } from "@/actions/sales.actions";
 import { usePermissions } from "@/components/auth/permissions-provider";
 
+/**
+ * Durée écoulée depuis l'ouverture : « depuis 3 h 20 ».
+ *
+ * Une heure d'ouverture brute obligerait le gérant à faire la soustraction de
+ * tête pour savoir si une caisse traîne ouverte depuis la veille.
+ */
+function formatOpenSince(openedAt?: string | null): string | null {
+  if (!openedAt) return null;
+  const opened = new Date(openedAt);
+  if (Number.isNaN(opened.getTime())) return null;
+
+  const minutes = Math.max(0, Math.round((Date.now() - opened.getTime()) / 60000));
+  if (minutes < 60) return `depuis ${minutes} min`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest ? `depuis ${hours} h ${String(rest).padStart(2, "0")}` : `depuis ${hours} h`;
+  }
+
+  const days = Math.floor(hours / 24);
+  return `depuis ${days} j`;
+}
+
 export default function RegistersPage() {
   const { data: session } = useSession();
   const router = useRouter();
@@ -62,7 +87,7 @@ export default function RegistersPage() {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [registers, setRegisters] = useState<Register[]>([]);
   // Les selects async pour succursale + entrepôt chargent leur liste à la
-  // volée — pas besoin de state local complet.
+  // volée - pas besoin de state local complet.
   const [sessions, setSessions] = useState<RegisterSession[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -80,7 +105,7 @@ export default function RegistersPage() {
   const [closeCountedByCurrency, setCloseCountedByCurrency] = useState<Record<string, string>>({});
   const [closeNotes, setCloseNotes] = useState<string>("");
 
-  // Form state — plus de champ "branch" : la succursale est dérivée côté backend
+  // Form state - plus de champ "branch" : la succursale est dérivée côté backend
   // à partir de l'entrepôt (ou de la succursale principale).
   const [formData, setFormData] = useState<CreateRegisterData>({
     name: "",
@@ -102,7 +127,7 @@ export default function RegistersPage() {
           const org = orgResult.data[0];
           setOrganization(org);
 
-          // Fetch in parallel — la liste des succursales/entrepôts est
+          // Fetch in parallel - la liste des succursales/entrepôts est
           // résolue dynamiquement par les selects async.
           const [registersResult, sessionsResult] = await Promise.all([
             getRegisters(session.accessToken, org.id),
@@ -127,7 +152,7 @@ export default function RegistersPage() {
     fetchData();
   }, [session?.accessToken]);
 
-  // Mémo conservé pour la stabilité de la ref du handler warehouse —
+  // Mémo conservé pour la stabilité de la ref du handler warehouse -
   // sinon le composant async perd son cache à chaque render du parent.
 
   // Handle create/update register
@@ -383,16 +408,34 @@ export default function RegistersPage() {
 
 
   // Filter registers
-  const filteredRegisters = (Array.isArray(registers) ? registers : []).filter(
-    r =>
-      r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.code.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   // Get session for register
   const getRegisterSession = (registerId: string) => {
     return sessions.find(s => s.register === registerId);
   };
+
+  /**
+   * Caisses ouvertes d'abord, puis actives, puis le reste.
+   *
+   * C'est la seule chose que le caissier cherche en arrivant : où est ma
+   * session en cours. Un tri alphabétique la noierait au milieu des autres.
+   */
+  const filteredRegisters = (Array.isArray(registers) ? registers : [])
+    .filter(
+      r =>
+        r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.code.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => {
+      const rank = (r: Register) => {
+        if (getRegisterSession(r.id) || r.current_session) return 0;
+        return r.is_active ? 1 : 2;
+      };
+      return rank(a) - rank(b) || a.name.localeCompare(b.name, "fr");
+    });
+
+  const openSessionsCount = filteredRegisters.filter(
+    r => getRegisterSession(r.id) || r.current_session
+  ).length;
 
   if (isLoading) {
     return (
@@ -414,7 +457,14 @@ export default function RegistersPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Caisses</h1>
-            <p className="text-sm text-gray-500 mt-1">Gérez vos caisses et sessions</p>
+            {/* Le sous-titre dit l'état du parc plutôt que de répéter le titre :
+                « une session ouverte » est l'information qu'on vient chercher. */}
+            <p className="text-sm text-gray-500 mt-1">
+              {filteredRegisters.length} caisse{filteredRegisters.length > 1 ? "s" : ""}
+              {openSessionsCount > 0
+                ? ` · ${openSessionsCount} session${openSessionsCount > 1 ? "s" : ""} ouverte${openSessionsCount > 1 ? "s" : ""}`
+                : " · aucune session ouverte"}
+            </p>
           </div>
         </div>
         {canManageRegisters ? (
@@ -462,26 +512,40 @@ export default function RegistersPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid items-stretch gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredRegisters.map(register => {
             const activeSession = getRegisterSession(register.id);
             const hasSession = !!activeSession || !!register.current_session;
 
+            const openedBy =
+              activeSession?.opened_by_name || register.current_session?.opened_by;
+            const openSince = formatOpenSince(
+              activeSession?.opened_at || register.current_session?.opened_at
+            );
+
             return (
-              <Card key={register.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${hasSession ? "bg-green-100" : "bg-gray-100"}`}>
+              // `h-full` + colonne : toutes les cartes d'une même rangée ont la
+              // hauteur de la plus grande, et les boutons se collent en bas au
+              // lieu de laisser un vide sous une carte plus courte.
+              <Card
+                key={register.id}
+                className="flex h-full flex-col gap-0 py-0 transition-shadow hover:shadow-md"
+              >
+                <CardContent className="flex flex-1 flex-col p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className={`shrink-0 rounded-lg p-2 ${hasSession ? "bg-green-100" : "bg-gray-100"}`}>
                         <Calculator className={`h-5 w-5 ${hasSession ? "text-green-600" : "text-gray-600"}`} />
                       </div>
-                      <div>
-                        <h3 className="font-medium text-gray-900">{register.name}</h3>
-                        <p className="text-xs text-gray-500">{register.code}</p>
+                      <div className="min-w-0">
+                        <h3 className="truncate font-medium text-gray-900">{register.name}</h3>
+                        <p className="truncate text-xs text-gray-500">
+                          {register.code} · {register.branch_name}
+                        </p>
                       </div>
                     </div>
                     {canManageRegisters ? (
-                      <div className="flex items-center gap-1">
+                      <div className="flex shrink-0 items-center gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
@@ -505,36 +569,78 @@ export default function RegistersPage() {
                     ) : null}
                   </div>
 
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">Succursale</span>
-                      <span className="font-medium">{register.branch_name}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">Entrepôt</span>
-                      <span className="font-medium">{register.warehouse_name ?? "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">Statut</span>
-                      <Badge className={register.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}>
-                        {register.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                    </div>
+                  {/* Statut et entrepôt sur une seule ligne : trois rangées
+                      libellé/valeur pour trois mots gaspillaient la carte. */}
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <Badge
+                      className={
+                        register.is_active
+                          ? "bg-green-100 text-green-700 hover:bg-green-100"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-100"
+                      }
+                    >
+                      {register.is_active ? "Active" : "Inactive"}
+                    </Badge>
+                    <Badge variant="outline" className="max-w-full gap-1 font-normal text-gray-600">
+                      <Warehouse className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{register.warehouse_name ?? "Aucun entrepôt"}</span>
+                    </Badge>
                   </div>
 
+                  {/* Même bloc des deux côtés, ouvert ou non : c'est ce qui
+                      aligne les cartes et évite le trou dans celle sans
+                      session. */}
                   {hasSession ? (
-                    <div className="p-3 bg-green-50 rounded-lg mb-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                        <span className="text-sm font-medium text-green-900">Session active</span>
+                    <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2 text-sm font-medium text-green-900">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          Session ouverte
+                        </span>
+                        {openSince && (
+                          <span className="flex items-center gap-1 text-xs text-green-700">
+                            <Clock className="h-3 w-3" />
+                            {openSince}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-xs text-green-700">
-                        Ouvert par {register.current_session?.opened_by || activeSession?.opened_by_name}
+                      {openedBy && (
+                        <p className="mt-1 truncate text-xs text-green-700">Par {openedBy}</p>
+                      )}
+                      {activeSession && (
+                        <div className="mt-2 grid grid-cols-2 gap-2 border-t border-green-200 pt-2">
+                          <div>
+                            <p className="text-[11px] text-green-700">Ventes</p>
+                            <p className="text-sm font-semibold tabular-nums text-green-900">
+                              {activeSession.sales_count}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[11px] text-green-700">Encaissé</p>
+                            <p className="text-sm font-semibold tabular-nums text-green-900">
+                              {formatPrice(activeSession.sales_total)}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-lg border border-dashed bg-gray-50/60 p-3">
+                      <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                        <Square className="h-4 w-4 text-gray-400" />
+                        Aucune session ouverte
+                      </span>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {register.is_active
+                          ? "Ouvrez une session pour encaisser sur cette caisse."
+                          : "Cette caisse est désactivée : réactivez-la pour l'utiliser."}
                       </p>
                     </div>
-                  ) : null}
+                  )}
 
-                  <div className="flex gap-2">
+                  {/* `mt-auto` : les actions restent au bas de la carte, quelle
+                      que soit la hauteur imposée par la rangée. */}
+                  <div className="mt-auto flex gap-2 pt-3">
                     {hasSession ? (
                       <>
                         <Button
@@ -568,7 +674,7 @@ export default function RegistersPage() {
                         disabled={!register.is_active}
                         title={
                           !register.is_active
-                            ? "Cette caisse est désactivée — réactivez-la dans les paramètres pour ouvrir une session."
+                            ? "Cette caisse est désactivée - réactivez-la dans les paramètres pour ouvrir une session."
                             : undefined
                         }
                       >
@@ -632,7 +738,7 @@ export default function RegistersPage() {
                       })
                     : async () => []
                 }
-                emptyLabel="—"
+                emptyLabel="-"
                 placeholder="Sélectionner un entrepôt"
                 searchPlaceholder="Rechercher un entrepôt..."
                 disabled={!session?.accessToken || !organization?.id}
@@ -758,7 +864,7 @@ export default function RegistersPage() {
               <div className="space-y-2">
                 <Label>Montant réellement compté, par devise (optionnel)</Label>
                 <p className="text-xs text-gray-500">
-                  Le tiroir contient plusieurs devises. Comptez chacune séparément —
+                  Le tiroir contient plusieurs devises. Comptez chacune séparément -
                   le solde attendu est calculé par devise à la fermeture.
                 </p>
                 {closeCurrencies.map((code) => (

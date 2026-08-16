@@ -251,7 +251,7 @@ export default function CategoriesPage() {
         <span className="text-muted-foreground">
           {category.parent_name?.trim() ||
             (category.parent ? getCategoryName(category.parent) : null) ||
-            "—"}
+            "-"}
         </span>
       ),
     },

@@ -160,7 +160,7 @@ export default function UnitsPage() {
       id: "base",
       header: "Unité de base",
       cell: (unit) => (
-        <span className="text-muted-foreground">{unit.base_unit_name?.trim() || "—"}</span>
+        <span className="text-muted-foreground">{unit.base_unit_name?.trim() || "-"}</span>
       ),
     },
     {

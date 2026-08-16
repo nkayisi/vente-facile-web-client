@@ -257,7 +257,7 @@ export const authConfig: NextAuthConfig = {
     },
 
     async authorized({ auth, request }) {
-      // Toujours retourner true ici — le middleware custom gère
+      // Toujours retourner true ici - le middleware custom gère
       // les sessions expirées avec un nettoyage propre des cookies.
       // Retourner false ici causerait une boucle de redirection infinie
       // car next-auth redirige avant que les cookies soient effacés.

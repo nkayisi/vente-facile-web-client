@@ -56,6 +56,8 @@ import { formatDate } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
+import { getPackaging, formatPackaged } from "@/lib/packaging";
+import { PackagedQuantityInput } from "@/components/stock/packaged-quantity-input";
 import {
   getStockTransfers,
   createStockTransfer,
@@ -112,10 +114,18 @@ export default function TransfersPage() {
   });
 
   // Item being added
-  const [newItem, setNewItem] = useState({
+  const [newItem, setNewItem] = useState<{
+    product: string;
+    quantity_requested: number;
+    package_quantity?: number;
+    loose_quantity?: number;
+  }>({
     product: "",
     quantity_requested: 0,
   });
+
+  /** Conditionnement du produit en cours de saisie, `null` s'il se vend à l'unité. */
+  const newItemPackaging = getPackaging(products.find(p => p.id === newItem.product));
 
   const searchProducts = useCallback(
     async (query: string) => {
@@ -199,8 +209,8 @@ export default function TransfersPage() {
   }, [organization, fetchTransfers]);
 
   const addItem = async () => {
-    if (!newItem.product || newItem.quantity_requested <= 0) {
-      toast.error("Veuillez sélectionner un produit et une quantité valide");
+    if (!newItem.product) {
+      toast.error("Veuillez sélectionner un produit");
       return;
     }
 
@@ -217,13 +227,26 @@ export default function TransfersPage() {
       return;
     }
 
+    const packaging = getPackaging(product);
+    const packages = newItem.package_quantity ?? 0;
+    const loose = newItem.loose_quantity ?? 0;
+
+    if (packaging ? packages <= 0 && loose <= 0 : newItem.quantity_requested <= 0) {
+      toast.error("Veuillez indiquer une quantité valide");
+      return;
+    }
+
     setFormData({
       ...formData,
       items: [
         ...formData.items,
         {
           product: newItem.product,
-          quantity_requested: newItem.quantity_requested,
+          // Produit vendu par contenant : on charge le camion en cartons, le
+          // serveur convertit en unité de détail.
+          ...(packaging
+            ? { package_quantity: packages, loose_quantity: loose }
+            : { quantity_requested: newItem.quantity_requested }),
         },
       ],
     });
@@ -539,7 +562,7 @@ export default function TransfersPage() {
                       ? createWarehouseSearchHandler(session.accessToken, organization.id)
                       : async () => []
                   }
-                  emptyLabel="—"
+                  emptyLabel="-"
                   placeholder="Source"
                   searchPlaceholder="Rechercher un entrepôt..."
                   disabled={!session?.accessToken || !organization?.id}
@@ -558,7 +581,7 @@ export default function TransfersPage() {
                       ? createWarehouseSearchHandler(session.accessToken, organization.id)
                       : async () => []
                   }
-                  emptyLabel="—"
+                  emptyLabel="-"
                   placeholder="Destination"
                   searchPlaceholder="Rechercher un entrepôt..."
                   disabled={
@@ -575,25 +598,54 @@ export default function TransfersPage() {
                 <SearchableSelectAsync
                   onSearch={searchProducts}
                   value={newItem.product || undefined}
-                  onValueChange={value => setNewItem({ ...newItem, product: value })}
+                  onValueChange={value =>
+                    setNewItem({
+                      ...newItem,
+                      product: value,
+                      package_quantity: undefined,
+                      loose_quantity: undefined,
+                    })
+                  }
                   placeholder="Sélectionner un produit"
                   searchPlaceholder="Rechercher un produit..."
                   className="flex-1"
                 />
-                <Input
-                  type="number"
-                  placeholder="Qté"
-                  value={newItem.quantity_requested || ""}
-                  onChange={e =>
-                    setNewItem({ ...newItem, quantity_requested: parseInt(e.target.value) || 0 })
-                  }
-                  className="w-20"
-                  min="1"
-                />
+                {!newItemPackaging && (
+                  <Input
+                    type="number"
+                    placeholder="Qté"
+                    value={newItem.quantity_requested || ""}
+                    onChange={e =>
+                      setNewItem({ ...newItem, quantity_requested: parseInt(e.target.value) || 0 })
+                    }
+                    className="w-20"
+                    min="1"
+                  />
+                )}
                 <Button type="button" variant="outline" onClick={addItem}>
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+
+              {/* Saisie en contenants pour les produits vendus en gros */}
+              {newItemPackaging && (
+                <div className="rounded-lg border p-3">
+                  <PackagedQuantityInput
+                    packaging={newItemPackaging}
+                    packages={newItem.package_quantity}
+                    loose={newItem.loose_quantity}
+                    onChange={next =>
+                      setNewItem({
+                        ...newItem,
+                        package_quantity: next.packages,
+                        loose_quantity: next.loose,
+                      })
+                    }
+                    verb="transférez"
+                    idPrefix="transfer"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Items List */}
@@ -608,7 +660,19 @@ export default function TransfersPage() {
                         <p className="text-xs text-gray-500">{product?.sku}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-medium">{item.quantity_requested}</span>
+                        <span className="font-medium">
+                          {(() => {
+                            const packaging = getPackaging(product);
+                            if (!packaging) return item.quantity_requested;
+                            const packages = item.package_quantity ?? 0;
+                            const loose = item.loose_quantity ?? 0;
+                            return formatPackaged(
+                              packaging,
+                              packages * packaging.factor + loose,
+                              loose
+                            );
+                          })()}
+                        </span>
                         <Button
                           type="button"
                           variant="ghost"

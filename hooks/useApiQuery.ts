@@ -9,7 +9,7 @@ import { usePermissions } from "@/components/auth/permissions-provider";
  * - n'exécute la query que quand ``session.accessToken`` ET ``organizationId``
  *   sont disponibles (évite les calls avant hydration / login) ;
  * - injecte automatiquement ``accessToken`` + ``organizationId`` dans la
- *   fonction de fetch — les server actions du projet attendent ces deux
+ *   fonction de fetch - les server actions du projet attendent ces deux
  *   arguments en premier ;
  * - dépape la réponse ``ApiResponse<T>`` : retourne directement ``data`` ou
  *   throw avec le message d'erreur (pour que ``useQuery`` passe en ``error``).

@@ -172,7 +172,7 @@ export default function CurrenciesSettingsPage() {
           </div>
         </div>
 
-        {/* Taux saisi — formule : montant {défaut} {op} taux → {nouvelle} */}
+        {/* Taux saisi - formule : montant {défaut} {op} taux → {nouvelle} */}
         <div className="flex items-center gap-2">
           <span className="text-sm whitespace-nowrap">
             Montant {defaultCode} {rateOp === "divide" ? "÷" : "×"}
@@ -534,7 +534,7 @@ export default function CurrenciesSettingsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Modifier le taux — {editingCurrency?.currency_code}
+              Modifier le taux - {editingCurrency?.currency_code}
             </DialogTitle>
             <DialogDescription>
               Ajustez le taux de change entre {defaultCode} et {editingCurrency?.currency_code}

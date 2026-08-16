@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 
 function SuccessContent() {
   const searchParams = useSearchParams();
-  const reference = searchParams.get("reference") || "—";
+  const reference = searchParams.get("reference") || "-";
   const activated = searchParams.get("activated") === "1";
   const tx = searchParams.get("tx");
 

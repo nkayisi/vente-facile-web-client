@@ -144,6 +144,7 @@ export default function SaleDetailPage() {
         items: sale.items?.map(item => ({
           name: item.product_name,
           quantity: parseFloat(item.quantity),
+          quantity_label: item.packaging_factor ? item.quantity_display : undefined,
           unit_price: parseFloat(item.unit_price),
           discount_percentage: parseFloat(item.discount_percentage),
           total: parseFloat(item.total),
@@ -180,8 +181,8 @@ export default function SaleDetailPage() {
         toast.success("Reçu prêt", {
           description:
             pdfOutcome === "opened"
-              ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
-              : "Reçu téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+              ? "PDF ouvert et enregistré - utilisez Thermer ou Partager pour imprimer."
+              : "Reçu téléchargé - l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
         });
       }
     } catch (error) {
@@ -263,7 +264,7 @@ export default function SaleDetailPage() {
       const res = await addPaymentToSale(session.accessToken, organization.id, sale.id, {
         payment_method: addPaymentMethod,
         amount: amt,
-        // Devise du règlement si différente de la vente — conversion backend.
+        // Devise du règlement si différente de la vente - conversion backend.
         ...(addPaymentCurrency && addPaymentCurrency !== sale.currency
           ? { currency: addPaymentCurrency }
           : {}),
@@ -656,7 +657,7 @@ export default function SaleDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Payment Dialog — encaisser un paiement sur une vente pending / partially_paid */}
+      {/* Add Payment Dialog - encaisser un paiement sur une vente pending / partially_paid */}
       <Dialog
         open={showAddPaymentDialog}
         onOpenChange={(open) => {
@@ -702,7 +703,7 @@ export default function SaleDetailPage() {
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 {paymentMethods.length === 0 && (
-                  <option value="">— Chargement —</option>
+                  <option value="">- Chargement -</option>
                 )}
                 {paymentMethods.map((m) => (
                   <option key={m.id} value={m.id}>

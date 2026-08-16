@@ -10,7 +10,7 @@ import type { PaginatedResponse } from "@/actions/products.actions";
  * Pattern à dupliquer pour les autres entités (products, categories, brands,
  * customers, sales, etc.). Conventions :
  * - ``queryKey`` commence par un identifiant stable de l'entité, suivi des
- *   filtres sérialisés — ainsi deux pages avec des filtres différents ont
+ *   filtres sérialisés - ainsi deux pages avec des filtres différents ont
  *   leur propre cache.
  * - Les mutations correspondantes invalident cette key via
  *   ``queryClient.invalidateQueries({ queryKey: ["units"] })`` (préfixe).

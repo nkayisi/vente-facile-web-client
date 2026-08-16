@@ -34,7 +34,7 @@ interface SearchableSelectAsyncWithEmptyProps {
   value: string | null | undefined
   /**
    * Callback : reçoit ``null`` pour l'option vide, sinon l'id sélectionné.
-   * Le second argument fournit le label associé — utile pour afficher un
+   * Le second argument fournit le label associé - utile pour afficher un
    * badge "Filtre actif" sans devoir relire la liste.
    */
   onValueChange: (value: string | null, label: string | null) => void

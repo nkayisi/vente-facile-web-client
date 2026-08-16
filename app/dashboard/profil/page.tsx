@@ -248,7 +248,7 @@ export default function ProfilePage() {
                                     {profile.organizations.map((org) => (
                                         <Badge key={org.id} variant="outline" className="text-xs">
                                             <Building2 className="h-3 w-3 mr-1" />
-                                            {org.name} — {org.role_display}
+                                            {org.name} - {org.role_display}
                                         </Badge>
                                     ))}
                                 </div>
@@ -341,7 +341,7 @@ export default function ProfilePage() {
                                     placeholder="Votre prénom"
                                 />
                             ) : (
-                                <p className="text-sm font-medium text-gray-900">{profile.first_name || "—"}</p>
+                                <p className="text-sm font-medium text-gray-900">{profile.first_name || "-"}</p>
                             )}
                         </div>
                         <div className="space-y-1.5">
@@ -356,7 +356,7 @@ export default function ProfilePage() {
                                     placeholder="Votre nom"
                                 />
                             ) : (
-                                <p className="text-sm font-medium text-gray-900">{profile.last_name || "—"}</p>
+                                <p className="text-sm font-medium text-gray-900">{profile.last_name || "-"}</p>
                             )}
                         </div>
                     </div>
@@ -381,7 +381,7 @@ export default function ProfilePage() {
                                     placeholder="Votre numéro de téléphone"
                                 />
                             ) : (
-                                <p className="text-sm font-medium text-gray-900">{profile.phone || "—"}</p>
+                                <p className="text-sm font-medium text-gray-900">{profile.phone || "-"}</p>
                             )}
                         </div>
                     </div>
@@ -434,7 +434,7 @@ export default function ProfilePage() {
                                 Membre depuis
                             </Label>
                             <p className="text-sm font-medium text-gray-900">
-                                {profile.date_joined ? formatDateTime(profile.date_joined) : "—"}
+                                {profile.date_joined ? formatDateTime(profile.date_joined) : "-"}
                             </p>
                         </div>
                         <div className="space-y-1.5">
@@ -443,7 +443,7 @@ export default function ProfilePage() {
                                 Dernière connexion
                             </Label>
                             <p className="text-sm font-medium text-gray-900">
-                                {profile.last_login ? formatDateTime(profile.last_login) : "—"}
+                                {profile.last_login ? formatDateTime(profile.last_login) : "-"}
                             </p>
                         </div>
                         {profile.organizations.length > 0 && (

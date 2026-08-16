@@ -406,10 +406,16 @@ export default function AdjustmentDetailPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className="text-gray-600">{item.quantity_expected}</span>
+                          {/* Rendus par le serveur pour les produits vendus par
+                              contenant : « 3 cartons + 2 bouteilles ». */}
+                          <span className="text-gray-600">
+                            {item.expected_display || item.quantity_expected}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className="font-medium">{item.quantity_counted}</span>
+                          <span className="font-medium">
+                            {item.counted_display || item.quantity_counted}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">

@@ -669,7 +669,7 @@ export default function UsersPage() {
                       )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-gray-500">
-                      {member.user_phone || "—"}
+                      {member.user_phone || "-"}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {member.is_active ? (

@@ -145,7 +145,7 @@ export default function AdminOrganizationDetailPage() {
               <span className="text-muted-foreground">Téléphone (contact)</span>
               <span className="flex items-center gap-1.5 text-right">
                 <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {org.phone?.trim() ? org.phone : "—"}
+                {org.phone?.trim() ? org.phone : "-"}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -248,7 +248,7 @@ export default function AdminOrganizationDetailPage() {
                 <div key={idx} className="flex items-center justify-between py-3 text-sm">
                   <div>
                     <span className="font-medium">{activity.user}</span>
-                    <span className="text-muted-foreground"> — {activity.action}</span>
+                    <span className="text-muted-foreground"> - {activity.action}</span>
                     {activity.resource_type && (
                       <Badge variant="outline" className="ml-2 text-xs">{activity.resource_type}</Badge>
                     )}

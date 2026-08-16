@@ -18,7 +18,7 @@ export interface DrfErrorBody {
   // ``detail`` peut être string DRF standard, objet (``ValidationError``
   // non-field avec code/message), ou tableau de strings (validation par
   // field). Typage volontairement permissif pour éviter un cast à chaque
-  // caller — le format précis dépend de l'endpoint backend.
+  // caller - le format précis dépend de l'endpoint backend.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   detail?: any;
   error?: string;
@@ -39,7 +39,7 @@ export interface DrfErrorBody {
  *   }
  *
  * Retourne ``undefined`` si l'erreur n'a pas la forme d'une réponse Axios
- * (par ex. erreur réseau, timeout) — le caller doit alors retomber sur
+ * (par ex. erreur réseau, timeout) - le caller doit alors retomber sur
  * ``formatAxiosErrorMessage`` pour un message générique.
  */
 export function getErrorBody(error: unknown): DrfErrorBody | undefined {
@@ -133,7 +133,7 @@ export function formatAxiosErrorMessage(error: unknown, fallback: string): strin
   const err = error as { response?: { data?: unknown; status?: number }; message?: string };
   const data = err?.response?.data;
 
-  // Django DEBUG=True renvoie souvent une page HTML sur 500 — pas du JSON DRF.
+  // Django DEBUG=True renvoie souvent une page HTML sur 500 - pas du JSON DRF.
   if (typeof data === "string") {
     const s = data.trim();
     if (s.startsWith("<!DOCTYPE") || s.startsWith("<html")) {

@@ -113,7 +113,7 @@ export default function PendingPaymentsPage() {
 
           // Récupérer les ventes partiellement payées ET en attente.
           // Chaque fetch est indépendant : si l'un échoue, on prévient
-          // explicitement l'utilisateur et on affiche l'autre — pas de
+          // explicitement l'utilisateur et on affiche l'autre - pas de
           // données incomplètes en silence.
           const [partiallyPaidResult, pendingResult, methodsResult, currenciesResult] = await Promise.all([
             getSales(session.accessToken, org.id, { status: "partially_paid" }),
@@ -124,12 +124,12 @@ export default function PendingPaymentsPage() {
 
           if (!partiallyPaidResult.success) {
             toast.warning(
-              "Ventes partiellement payées non chargées — la liste est incomplète."
+              "Ventes partiellement payées non chargées - la liste est incomplète."
             );
           }
           if (!pendingResult.success) {
             toast.warning(
-              "Ventes en attente non chargées — la liste est incomplète."
+              "Ventes en attente non chargées - la liste est incomplète."
             );
           }
 
@@ -199,7 +199,7 @@ export default function PendingPaymentsPage() {
     try {
       // On envoie la devise du règlement si elle diffère de celle de la vente ;
       // la conversion vers la devise de la vente est faite (autoritairement) par
-      // le backend via CurrencyService — évite toute hypothèse « vente = devise
+      // le backend via CurrencyService - évite toute hypothèse « vente = devise
       // principale » côté client.
       const paymentData: AddPaymentData = {
         payment_method: selectedPaymentMethod,
@@ -251,8 +251,8 @@ export default function PendingPaymentsPage() {
         toast.success("Paiement ajouté avec succès", {
           description:
             pdfOutcome === "opened"
-              ? "PDF ouvert et enregistré — utilisez Thermer ou Partager pour imprimer."
-              : "Reçu téléchargé — l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+              ? "PDF ouvert et enregistré - utilisez Thermer ou Partager pour imprimer."
+              : "Reçu téléchargé - l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
         });
 
         setShowPaymentDialog(false);

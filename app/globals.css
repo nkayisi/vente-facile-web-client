@@ -69,19 +69,19 @@
   --popover:            #ffffff;
   --popover-foreground: #111827;
 
-  /* Primaire — orange */
+  /* Primaire - orange */
   --primary:            #ea580c;
   --primary-foreground: #ffffff;
 
-  /* Secondaire — gris clair */
+  /* Secondaire - gris clair */
   --secondary:          #e5e7eb;
   --secondary-foreground: #374151;
 
-  /* Muted — fond atténué + texte secondaire */
+  /* Muted - fond atténué + texte secondaire */
   --muted:              #f9fafb;
   --muted-foreground:   #6b7280;
 
-  /* Accent — hover dans les menus et selects */
+  /* Accent - hover dans les menus et selects */
   --accent:             #fff7ed;
   --accent-foreground:  #c2410c;
 
@@ -163,7 +163,7 @@
 
 /* ─────────────────────────────────────────────────────────────
    BASE STYLES
-   Ne pas surcharger les inputs ici — shadcn les gère via ses classes
+   Ne pas surcharger les inputs ici - shadcn les gère via ses classes
 ───────────────────────────────────────────────────────────── */
 @layer base {
   * {

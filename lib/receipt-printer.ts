@@ -9,6 +9,12 @@ import { jsPDF } from "jspdf";
 export interface ReceiptItem {
   name: string;
   quantity: number;
+  /**
+   * Quantité telle que le client l'a achetée : « 2 cartons + 3 bouteilles ».
+   * Sur un ticket, « 27 » ne dit pas au client ce qu'il emporte. Absent pour un
+   * produit vendu à l'unité, où le nombre suffit.
+   */
+  quantity_label?: string;
   unit_price: number;
   discount_percentage: number;
   total: number;
@@ -50,7 +56,7 @@ export interface ReceiptData {
   showLoyaltyPoints?: boolean;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
-  /** Document d’offre — pas de vente, pas de paiement affiché */
+  /** Document d’offre - pas de vente, pas de paiement affiché */
   isProforma?: boolean;
 }
 
@@ -70,7 +76,7 @@ const FONT_SIZE_SMALL = 9;
 const LINE_HEIGHT = 4.2;
 const LINE_HEIGHT_SMALL = 3.5;
 const MARGIN = 2.5;
-/** Espace blanc au-dessus de l’en-tête (mm) — confort sur imprimante thermique / Thermer */
+/** Espace blanc au-dessus de l’en-tête (mm) - confort sur imprimante thermique / Thermer */
 const TOP_MARGIN_BEFORE_HEADER = 5;
 
 const DEFAULT_REVOKE_OPEN_MS = 180_000;
@@ -416,6 +422,15 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
       }
       y += LINE_HEIGHT_SMALL;
     });
+
+    // Détail du conditionnement sous la ligne : la colonne quantité est trop
+    // étroite pour « 2 cartons + 3 bouteilles » sur un ticket de 58 mm.
+    if (item.quantity_label) {
+      doc.setFontSize(FONT_SIZE_SMALL - 0.5);
+      doc.text(`  ${item.quantity_label}`, leftX + 2, y);
+      doc.setFontSize(FONT_SIZE_SMALL);
+      y += LINE_HEIGHT_SMALL;
+    }
 
     if (item.discount_percentage > 0) {
       doc.setFontSize(FONT_SIZE_SMALL - 0.5);

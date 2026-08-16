@@ -145,7 +145,7 @@ export default function TransferDetailPage() {
   };
 
   const formatDateOpt = (dateString?: string) => {
-    if (!dateString) return "—";
+    if (!dateString) return "-";
     return formatDateTime(dateString);
   };
 
@@ -342,7 +342,7 @@ export default function TransferDetailPage() {
               <p className="text-xs text-gray-500">Demandé par</p>
               <p className="text-sm font-medium flex items-center gap-1 mt-0.5">
                 <User className="h-3.5 w-3.5 text-gray-400" />
-                {transfer.requested_by_name || "—"}
+                {transfer.requested_by_name || "-"}
               </p>
             </div>
             {transfer.approved_by_name && (
@@ -434,22 +434,25 @@ export default function TransferDetailPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
+                          {/* « 4 cartons + 3 bouteilles » quand le produit se
+                              vend par contenant, rendu par le serveur. */}
                           <span className="font-medium text-sm">
-                            {parseFloat(item.quantity_requested).toFixed(0)}
+                            {item.requested_display ||
+                              parseFloat(item.quantity_requested).toFixed(0)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className="text-sm text-blue-600 font-medium">
                             {item.quantity_shipped
                               ? parseFloat(item.quantity_shipped).toFixed(0)
-                              : "—"}
+                              : "-"}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className="text-sm text-green-600 font-medium">
                             {item.quantity_received
                               ? parseFloat(item.quantity_received).toFixed(0)
-                              : "—"}
+                              : "-"}
                           </span>
                         </td>
                       </tr>

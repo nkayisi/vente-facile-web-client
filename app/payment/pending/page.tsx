@@ -123,7 +123,7 @@ function PendingContent() {
                 <span className="text-red-600 font-medium">Échoué</span>
               </>
             )}
-            {!status && <span className="text-slate-400">—</span>}
+            {!status && <span className="text-slate-400">-</span>}
           </span>
         </div>
         {lastCheck && (

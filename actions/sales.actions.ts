@@ -93,9 +93,21 @@ export interface SaleItem {
   variant_name: string | null;
   batch: string | null;
   description: string;
+  /** Quantité totale, toujours exprimée en unité de détail */
   quantity: string;
   unit_price: string;
   cost_price: string;
+  /** Part vendue en conditionnements entiers ("0.000" pour une vente à l'unité) */
+  package_quantity?: string;
+  package_unit_price?: string | null;
+  /** Contenu d'un conditionnement figé au moment de la vente */
+  packaging_factor?: number | null;
+  /** Part vendue à l'unité, dérivée par le serveur */
+  loose_quantity?: string;
+  /** Ligne prête à imprimer : « 2 paquets + 3 bouteilles » */
+  quantity_display?: string;
+  package_unit_name?: string | null;
+  unit_name?: string | null;
   discount_amount: string;
   discount_percentage: string;
   tax_rate: string;
@@ -103,6 +115,14 @@ export interface SaleItem {
   subtotal: string;
   total: string;
   notes: string;
+}
+
+/** Emballage ouvert automatiquement pour servir une vente au détail. */
+export interface UnpackingNotice {
+  product: string;
+  product_name: string;
+  packages_opened: number;
+  message: string;
 }
 
 export interface Payment {
@@ -164,6 +184,11 @@ export interface Sale {
   items_count: number;
   items?: SaleItem[];
   payments?: Payment[];
+  /**
+   * Emballages ouverts automatiquement pour servir cette vente. Le caissier en
+   * est informé sans être interrompu ; la notice reste consultable ensuite.
+   */
+  unpacking_notices?: UnpackingNotice[];
   created_at: string;
   updated_at: string;
 }
@@ -254,7 +279,7 @@ export interface CreateRegisterData {
   name: string;
   code: string;
   /**
-   * Succursale : optionnelle. Le champ a été retiré de l'UI — le backend la
+   * Succursale : optionnelle. Le champ a été retiré de l'UI - le backend la
    * dérive de l'entrepôt (ou de la succursale principale) si elle est absente.
    */
   branch?: string;
@@ -280,7 +305,7 @@ export interface CloseSessionData {
   counted_balance?: string | number;
   /** Comptage réel PAR devise (ex. [{currency:"USD", amount:20}]). */
   counted_balances?: CurrencyAmount[];
-  /** Note explicative — obligatoire côté backend si un écart est non nul. */
+  /** Note explicative - obligatoire côté backend si un écart est non nul. */
   notes?: string;
 }
 
@@ -298,8 +323,18 @@ export interface CreateSaleItemData {
   product: string;
   variant?: string;
   batch?: string;
-  quantity: number;
+  /**
+   * Quantité en unité de détail. Optionnelle pour un produit vendu en gros :
+   * le serveur la calcule alors depuis `package_quantity` et `loose_quantity`.
+   */
+  quantity?: number;
   unit_price?: number;
+  /** Nombre de conditionnements entiers vendus */
+  package_quantity?: number;
+  /** Nombre d'unités vendues hors conditionnement */
+  loose_quantity?: number;
+  /** Prix d'un conditionnement, dans la devise de la facture */
+  package_unit_price?: number;
   discount_percentage?: number;
   tax_rate?: number;
   notes?: string;

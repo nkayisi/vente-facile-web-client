@@ -1,0 +1,100 @@
+/**
+ * Vocabulaire de conditionnement côté navigateur.
+ *
+ * Miroir strict de `apps/inventory/packaging.py` : mêmes règles de partage
+ * scellé/vrac et même formatage, pour que l'écran annonce exactement ce que le
+ * serveur enregistrera. Le serveur reste l'autorité : rien ici ne calcule une
+ * quantité qui serait ensuite envoyée telle quelle, on n'envoie que la saisie.
+ */
+import { pluralizeUnit } from "@/lib/units";
+
+export interface PackagedProductLike {
+  selling_mode?: string | null;
+  units_per_package?: number | null;
+  unit_name?: string | null;
+  packaging_unit_name?: string | null;
+}
+
+export interface Packaging {
+  /** Nombre d'unités de détail par contenant */
+  factor: number;
+  /** Libellé de l'unité de détail : bouteille, pièce, sachet… */
+  retailWord: string;
+  /** Libellé du contenant : carton, casier, paquet… */
+  packageWord: string;
+  /** Le produit ne se vend que par contenant entier */
+  packageOnly: boolean;
+}
+
+/**
+ * Conditionnement d'un produit, ou `null` s'il se vend à l'unité seule.
+ *
+ * Un produit mal configuré (mode gros sans nombre d'unités) est traité comme
+ * mono-unité plutôt que de faire échouer l'écran, comme le fait
+ * `PackagingService.factor` côté serveur.
+ */
+export function getPackaging(product?: PackagedProductLike | null): Packaging | null {
+  if (!product) return null;
+  const mode = product.selling_mode ?? "retail_only";
+  if (mode === "retail_only") return null;
+
+  const factor = product.units_per_package ?? 0;
+  if (!factor || factor < 2) return null;
+
+  return {
+    factor,
+    retailWord: (product.unit_name || "").trim() || "unité",
+    packageWord: (product.packaging_unit_name || "").trim() || "contenant",
+    packageOnly: mode === "wholesale_only",
+  };
+}
+
+/**
+ * Partage une quantité de base en (contenants scellés, unités en vrac).
+ *
+ * Le reste de la division rejoint le vrac : un contenant entamé ne se rescelle
+ * pas. Même règle que `PackagingService.split`.
+ */
+export function splitPackaged(
+  baseQuantity: number,
+  looseQuantity: number,
+  factor: number
+): { packages: number; loose: number } {
+  if (!factor || factor < 2) return { packages: 0, loose: baseQuantity };
+
+  const loose = Math.max(0, Math.min(looseQuantity, Math.max(baseQuantity, 0)));
+  const sealedBase = baseQuantity - loose;
+  if (sealedBase < 0) return { packages: 0, loose: baseQuantity };
+
+  const packages = Math.floor(sealedBase / factor);
+  return { packages, loose: loose + (sealedBase - packages * factor) };
+}
+
+/** Rend une quantité lisible : « 3 cartons + 2 bouteilles ». */
+export function formatPackaged(
+  packaging: Packaging | null,
+  baseQuantity: number,
+  looseQuantity = 0
+): string {
+  if (!packaging) return String(baseQuantity);
+
+  const { packages, loose } = splitPackaged(baseQuantity, looseQuantity, packaging.factor);
+  const parts: string[] = [];
+  if (packages) {
+    parts.push(`${packages} ${pluralizeUnit(packaging.packageWord, packages)}`);
+  }
+  if (loose || parts.length === 0) {
+    parts.push(`${loose} ${pluralizeUnit(packaging.retailWord, loose)}`);
+  }
+  return parts.join(" + ");
+}
+
+/** Somme d'une saisie « X contenants + Y unités » en unité de détail. */
+export function toBaseQuantity(
+  packaging: Packaging | null,
+  packages = 0,
+  loose = 0
+): number {
+  if (!packaging) return loose;
+  return packages * packaging.factor + loose;
+}

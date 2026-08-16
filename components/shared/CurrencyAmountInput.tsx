@@ -40,7 +40,7 @@ interface CurrencyAmountInputProps {
  * puces au-dessus : la ligne de label reste alignée sur les autres champs du
  * formulaire, et la devise se lit là où on lit le montant.
  *
- * Il n'apparaît que si l'établissement a plusieurs devises activées — une
+ * Il n'apparaît que si l'établissement a plusieurs devises activées - une
  * boutique mono-devise voit un champ ordinaire.
  */
 export function CurrencyAmountInput({
