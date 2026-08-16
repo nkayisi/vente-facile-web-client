@@ -115,6 +115,11 @@ export function formatApiErrorBody(
 ): string {
   if (!data || typeof data !== "object") return fallback;
 
+  // Corps DRF de premier niveau sous forme de liste : c'est ce que produit un
+  // `raise ValidationError("message")` non lié à un champ. On le lit tel quel,
+  // sans passer par l'aplatissement qui préfixerait d'un "[0]" parasite.
+  if (Array.isArray(data)) return parseDrfDetail(data, fallback);
+
   const d = parseDrfDetail(data.detail, "");
   if (d) return d;
 
@@ -122,6 +127,22 @@ export function formatApiErrorBody(
   if (err) return err;
 
   if (typeof data.message === "string" && data.message.trim()) return data.message.trim();
+
+  // Erreurs par champ (``{point_value: ["Un nombre valide est requis."]}``).
+  // Sans ce repli, une 400 de validation retombait sur le message générique
+  // du caller et l'utilisateur ne savait jamais QUEL champ posait problème.
+  // On borne à 3 messages : au-delà, un toast devient illisible.
+  const fieldMessages: string[] = [];
+  for (const [key, value] of Object.entries(data)) {
+    const message = parseDrfDetail(value, "");
+    if (message) fieldMessages.push(`${key} : ${message}`);
+  }
+  if (fieldMessages.length > 0) return fieldMessages.slice(0, 3).join(" ");
+
+  // Structures imbriquées (``{items: [{quantity: ["msg"]}]}``) : on retombe
+  // sur l'aplatissement, qui garde les index pour situer la ligne fautive.
+  const nested = flattenDrfErrors(data);
+  if (nested.length > 0) return nested.slice(0, 3).join(" ");
 
   return fallback;
 }

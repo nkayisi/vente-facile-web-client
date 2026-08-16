@@ -57,6 +57,13 @@ import {
 } from "@/actions/sales.actions";
 import Link from "next/link";
 import { DataPagination } from "@/components/shared/DataPagination";
+import {
+  getCustomerLoyalty,
+  getLoyaltyProgram,
+  CustomerLoyalty,
+  LoyaltyProgram,
+} from "@/actions/settings.actions";
+import { Star } from "lucide-react";
 
 export default function PendingPaymentsPage() {
   const { data: session } = useSession();
@@ -75,6 +82,11 @@ export default function PendingPaymentsPage() {
   // Payment dialog
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  // Fidélité : chargée à l'ouverture du dialogue, pour proposer un règlement
+  // en points sur la facture sélectionnée.
+  const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
+  const [saleCustomerLoyalty, setSaleCustomerLoyalty] = useState<CustomerLoyalty | null>(null);
+  const [pointsUsed, setPointsUsed] = useState("");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
@@ -100,6 +112,23 @@ export default function PendingPaymentsPage() {
     if (rate <= 0) return amount;
     return Math.round(amount * rate * 100) / 100;
   };
+
+  // Fidélité : le barème est libellé en devise principale, on ne propose donc
+  // le règlement en points que sur une facture dans cette même devise.
+  const availablePoints = saleCustomerLoyalty?.current_points ?? 0;
+  const pointValue = parseFloat(loyaltyProgram?.point_value ?? "0");
+  const canUsePoints =
+    !!loyaltyProgram?.is_active &&
+    availablePoints > 0 &&
+    pointValue > 0 &&
+    !!selectedSale?.customer &&
+    selectedSale?.currency === (getPrimaryCurrency()?.currency_code || defaultCurrency.code);
+  const maxUsablePoints = canUsePoints
+    ? Math.min(
+        availablePoints,
+        Math.floor(parseFloat(selectedSale?.amount_due || "0") / pointValue)
+      )
+    : 0;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -169,27 +198,42 @@ export default function PendingPaymentsPage() {
     // Reset to primary currency
     const primary = getPrimaryCurrency();
     setPaymentCurrency(primary?.currency_code || "CDF");
+    setPointsUsed("");
+    setSaleCustomerLoyalty(null);
     setShowPaymentDialog(true);
+
+    // Points du client : uniquement si la facture est nominative.
+    if (sale.customer && session?.accessToken && organization) {
+      Promise.all([
+        getCustomerLoyalty(session.accessToken, organization.id, sale.customer),
+        getLoyaltyProgram(session.accessToken, organization.id),
+      ]).then(([loyaltyRes, programRes]) => {
+        if (loyaltyRes.success && loyaltyRes.data) setSaleCustomerLoyalty(loyaltyRes.data);
+        if (programRes.success && programRes.data) setLoyaltyProgram(programRes.data);
+      });
+    }
   };
 
   const handleAddPayment = async () => {
     if (!selectedSale || !session?.accessToken || !organization) return;
 
-    if (!selectedPaymentMethod) {
+    const points = parseInt(pointsUsed, 10) || 0;
+    const rawAmount = parseFloat(paymentAmount) || 0;
+
+    if (rawAmount <= 0 && points <= 0) {
+      toast.error("Indiquez un montant ou un nombre de points à utiliser");
+      return;
+    }
+    if (rawAmount > 0 && !selectedPaymentMethod) {
       toast.error("Sélectionnez un mode de paiement");
       return;
     }
 
-    const rawAmount = parseFloat(paymentAmount);
-    if (rawAmount <= 0) {
-      toast.error("Montant invalide");
-      return;
-    }
-
-    const amountInPrimary = getAmountInPrimary();
+    const amountInPrimary = rawAmount > 0 ? getAmountInPrimary() : 0;
     const amountDue = parseFloat(selectedSale.amount_due);
-    if (amountInPrimary > amountDue * 1.001) { // small tolerance for rounding
-      toast.error(`Le montant converti (${formatPrice(amountInPrimary)}) dépasse le restant dû (${formatPrice(amountDue)})`);
+    const coveredByPoints = points * pointValue;
+    if (amountInPrimary + coveredByPoints > amountDue * 1.001) { // tolérance d'arrondi
+      toast.error(`Le règlement (${formatPrice(amountInPrimary + coveredByPoints)}) dépasse le restant dû (${formatPrice(amountDue)})`);
       return;
     }
 
@@ -202,12 +246,17 @@ export default function PendingPaymentsPage() {
       // le backend via CurrencyService - évite toute hypothèse « vente = devise
       // principale » côté client.
       const paymentData: AddPaymentData = {
-        payment_method: selectedPaymentMethod,
-        amount: rawAmount,
         reference: paymentReference || undefined,
-        ...(paymentCurrency && paymentCurrency !== selectedSale.currency
-          ? { currency: paymentCurrency }
+        ...(rawAmount > 0
+          ? {
+              payment_method: selectedPaymentMethod,
+              amount: rawAmount,
+              ...(paymentCurrency && paymentCurrency !== selectedSale.currency
+                ? { currency: paymentCurrency }
+                : {}),
+            }
           : {}),
+        ...(points > 0 ? { points_used: points } : {}),
       };
 
       const result = await addPaymentToSale(
@@ -220,7 +269,7 @@ export default function PendingPaymentsPage() {
       if (result.success) {
         const selectedMethod = paymentMethods.find(m => m.id === selectedPaymentMethod);
         const previouslyPaid = parseFloat(selectedSale.amount_paid);
-        const remainingBalance = amountDue - amountInPrimary;
+        const remainingBalance = amountDue - amountInPrimary - coveredByPoints;
 
         const primaryCode = getPrimaryCurrency()?.currency_code || "CDF";
         const payLabel = !isPrimaryPayment()
@@ -620,6 +669,53 @@ export default function PendingPaymentsPage() {
                 </div>
               )}
             </div>
+
+            {/* Règlement en points. Le total de la facture émise ne change pas :
+                les points s'imputent comme un moyen de paiement. */}
+            {canUsePoints && (
+              <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700">
+                    <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
+                    Payer avec les points
+                  </Label>
+                  <span className="text-xs font-medium text-amber-700">
+                    {availablePoints} pts disponibles
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={maxUsablePoints}
+                    value={pointsUsed}
+                    onChange={(e) => setPointsUsed(e.target.value)}
+                    placeholder="0"
+                    className="h-11"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 shrink-0 border-amber-300 text-amber-700"
+                    onClick={() => setPointsUsed(String(maxUsablePoints))}
+                  >
+                    Maximum
+                  </Button>
+                </div>
+
+                {(parseInt(pointsUsed, 10) || 0) > 0 && (
+                  <p className="text-sm text-amber-800">
+                    {pointsUsed} points = {formatPrice((parseInt(pointsUsed, 10) || 0) * pointValue)} déduits
+                  </p>
+                )}
+                {loyaltyProgram && loyaltyProgram.min_points_to_redeem > 0 && (
+                  <p className="text-xs text-amber-600">
+                    Minimum {loyaltyProgram.min_points_to_redeem} points par utilisation
+                  </p>
+                )}
+              </div>
+            )}
 
           </div>
 

@@ -169,7 +169,15 @@ export function OrganizationChecker({ children }: { children: React.ReactNode })
     refreshOrganization: loadOrganization,
   }), [organization, loadOrganization]);
 
-  if (status === "loading" || isChecking) {
+  // Loader plein écran UNIQUEMENT tant qu'aucune organisation n'a encore été
+  // chargée. Une fois l'espace de travail monté, un état transitoire
+  // (`status === "loading"` pendant un refetch de session déclenché par
+  // `update()`, ou `isChecking` pendant un refetch d'orgs après rotation du
+  // JWT) ne doit PLUS démonter l'arbre : chaque démontage relançait le fetch
+  // des permissions, de l'abonnement et du profil, réarmait le refresh
+  // proactif de SessionMonitor et repartait en boucle - d'où le « chargement
+  // infini » visible dans les logs.
+  if (!organization && (status === "loading" || isChecking)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">

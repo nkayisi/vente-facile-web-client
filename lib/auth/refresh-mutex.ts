@@ -1,60 +1,112 @@
 import type { JWT } from "next-auth/jwt";
 
 /**
- * Mutex pour sérialiser les appels de refresh token.
- * 
- * Problème résolu : Avec ROTATE_REFRESH_TOKENS=True côté backend,
- * chaque refresh invalide l'ancien token. Si deux requêtes simultanées
- * tentent de rafraîchir avec le même token, la seconde échouera car
- * son token aura été blacklisté par la première.
- * 
- * Solution : On stocke la promesse de refresh en cours. Si un second
- * appel arrive pendant qu'un refresh est en cours, il attend le résultat
- * du premier au lieu de lancer un nouveau refresh.
+ * Sérialise et mémorise les refresh de token.
+ *
+ * Problème résolu : le backend a ROTATE_REFRESH_TOKENS + BLACKLIST. Chaque
+ * refresh réussi bannit le refresh token consommé. Deux cas produisent alors
+ * un 401 « Le jeton a été banni », qui se propage en RefreshAccessTokenError
+ * et déconnecte l'utilisateur :
+ *
+ *  1. Deux requêtes rafraîchissent EN MÊME TEMPS avec le même token. La
+ *     seconde perd la course.
+ *  2. Une requête rafraîchit APRÈS qu'une autre a déjà tourné le token, mais
+ *     en portant encore l'ancien cookie de session (onglet resté ouvert,
+ *     requête déjà en vol, server action partie avant la mise à jour du
+ *     cookie). Elle rejoue un refresh token déjà banni.
+ *
+ * Le cas 1 se règle avec une promesse partagée, le cas 2 avec un cache de
+ * résultat : on mémorise, pour un refresh token donné, le JWT produit. Toute
+ * requête ultérieure qui présente ce même (ancien) token récupère le résultat
+ * au lieu d'appeler le backend. La fenêtre est courte, le temps que le cookie
+ * de session se propage à tous les appelants.
+ *
+ * Portée : mémoire du process Next. Suffisant pour un déploiement à une
+ * instance (cas actuel). Avec plusieurs instances, il faudrait déporter le
+ * cache dans Redis, sinon le cas 2 réapparaît entre instances.
  */
 
-let refreshPromise: Promise<JWT> | null = null;
-let lastRefreshTime = 0;
-const MIN_REFRESH_INTERVAL = 1000; // 1 seconde minimum entre deux refresh
+type RefreshFn = (token: JWT) => Promise<JWT>;
+
+/** Durée de réutilisation du résultat par un porteur de l'ancien token. */
+const RESULT_TTL_MS = 60 * 1000;
+/** Garde-fou mémoire : au-delà, on purge les entrées les plus anciennes. */
+const MAX_RESULTS = 50;
+
+/** Refresh en cours, indexés par le refresh token consommé. */
+const inFlight = new Map<string, Promise<JWT>>();
+/** Résultats récents, indexés par le refresh token consommé. */
+const results = new Map<string, { jwt: JWT; at: number }>();
+
+function pruneResults(): void {
+  const now = Date.now();
+  for (const [key, entry] of results) {
+    if (now - entry.at > RESULT_TTL_MS) results.delete(key);
+  }
+  // Map conserve l'ordre d'insertion : les plus anciennes sortent d'abord.
+  while (results.size > MAX_RESULTS) {
+    const oldest = results.keys().next();
+    if (oldest.done) break;
+    results.delete(oldest.value);
+  }
+}
+
+/**
+ * Reporte le résultat d'un refresh sur le token de l'appelant courant.
+ * On ne renvoie jamais l'objet mémorisé tel quel : l'appelant peut porter
+ * d'autres champs (email, isStaff, sub…) qu'il faut préserver.
+ */
+function applyRefreshed(token: JWT, refreshed: JWT): JWT {
+  return {
+    ...token,
+    accessToken: refreshed.accessToken,
+    accessTokenExpires: refreshed.accessTokenExpires,
+    refreshToken: refreshed.refreshToken,
+    refreshTokenExpires: refreshed.refreshTokenExpires,
+    error: refreshed.error,
+  };
+}
 
 export async function refreshWithMutex(
   token: JWT,
-  refreshFn: (token: JWT) => Promise<JWT>
+  refreshFn: RefreshFn
 ): Promise<JWT> {
-  const now = Date.now();
-  
-  // Si un refresh est déjà en cours, attendre son résultat
-  if (refreshPromise) {
-    console.log("[RefreshMutex] Refresh déjà en cours, attente du résultat...");
-    return refreshPromise;
-  }
-  
-  // Éviter les refresh trop rapprochés (protection supplémentaire)
-  if (now - lastRefreshTime < MIN_REFRESH_INTERVAL) {
-    console.log("[RefreshMutex] Refresh trop récent, skip");
-    return token;
-  }
-  
-  // Lancer le refresh et stocker la promesse.
-  // Important : on libère le mutex DANS le `then`/`catch` final (pas via
-  // setTimeout) pour garantir que toute requête concurrente qui voit
-  // `refreshPromise != null` attend bien la fin du refresh. Le setTimeout
-  // précédent introduisait une fenêtre probabiliste où une seconde requête
-  // pouvait passer le check (ligne 27), démarrer un nouveau refresh, et
-  // invalider le premier token (ROTATE_REFRESH_TOKENS).
-  console.log("[RefreshMutex] Démarrage d'un nouveau refresh");
-  lastRefreshTime = now;
+  const key = typeof token.refreshToken === "string" ? token.refreshToken : null;
 
-  const promise = refreshFn(token).finally(() => {
-    // Libération synchrone : si la promesse stockée est toujours celle-ci,
-    // on la déréférence. Toute requête qui aurait pris une référence à
-    // `refreshPromise` (ligne 27/29) résoudra avec le même résultat que
-    // ce caller.
-    if (refreshPromise === promise) {
-      refreshPromise = null;
-    }
-  });
-  refreshPromise = promise;
+  // Sans refresh token, rien à dédupliquer : l'appel échouera proprement.
+  if (!key) return refreshFn(token);
+
+  pruneResults();
+
+  // Cas 2 : ce token a déjà été échangé récemment, on rejoue le résultat.
+  const cached = results.get(key);
+  if (cached) {
+    console.log("[RefreshMutex] Token déjà échangé, réutilisation du résultat");
+    return applyRefreshed(token, cached.jwt);
+  }
+
+  // Cas 1 : un échange est en cours pour ce token, on attend le même résultat.
+  const pending = inFlight.get(key);
+  if (pending) {
+    console.log("[RefreshMutex] Refresh déjà en cours, attente du résultat...");
+    return applyRefreshed(token, await pending);
+  }
+
+  console.log("[RefreshMutex] Démarrage d'un nouveau refresh");
+  const promise = refreshFn(token)
+    .then((refreshed) => {
+      // On ne mémorise qu'un succès : mémoriser un échec condamnerait toutes
+      // les requêtes suivantes pendant la durée du TTL.
+      if (refreshed.accessToken && !refreshed.error) {
+        results.set(key, { jwt: refreshed, at: Date.now() });
+      }
+      return refreshed;
+    })
+    .finally(() => {
+      if (inFlight.get(key) === promise) inFlight.delete(key);
+    });
+
+  inFlight.set(key, promise);
 
   try {
     const result = await promise;
@@ -67,9 +119,9 @@ export async function refreshWithMutex(
 }
 
 /**
- * Réinitialise le mutex (utile pour les tests ou après une déconnexion)
+ * Réinitialise l'état (tests, ou après une déconnexion explicite).
  */
 export function resetRefreshMutex(): void {
-  refreshPromise = null;
-  lastRefreshTime = 0;
+  inFlight.clear();
+  results.clear();
 }

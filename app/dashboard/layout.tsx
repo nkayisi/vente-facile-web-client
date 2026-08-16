@@ -35,10 +35,13 @@ export default function DashboardLayout({
     // Filet externe : dernier recours si un crash survient dans une garde,
     // un provider ou la structure du dashboard.
     <ErrorBoundary name="dashboard-shell">
+      {/* Monté HORS des gardes : à l'intérieur, le moindre écran de chargement
+          d'une garde le démontait, réarmant son refresh proactif à chaque
+          remontage. */}
+      <SessionMonitor />
       <OrganizationChecker>
         <PermissionsProvider>
           <SubscriptionGuard>
-            <SessionMonitor />
             <div className="flex h-screen bg-gray-50">
               {/* Sidebar */}
               <Sidebar

@@ -3,8 +3,23 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useSession, signOut } from "next-auth/react";
 
-// Rafraîchir 5 minutes avant l'expiration du token
-const PROACTIVE_REFRESH_BUFFER = 5 * 60 * 1000; // 5 minutes
+// Le callback jwt (lib/auth/config.ts) ne rafraîchit le token QUE dans les
+// 2 dernières minutes de sa validité (REFRESH_BUFFER). Déclencher `update()`
+// plus tôt renvoie exactement la même session : un no-op qui repasse
+// pourtant useSession() en `status === "loading"`. La fenêtre proactive doit
+// donc tomber À L'INTÉRIEUR de celle du serveur pour que chaque update()
+// produise réellement un nouveau token.
+const SERVER_REFRESH_BUFFER = 2 * 60 * 1000; // doit rester = REFRESH_BUFFER (config.ts)
+const PROACTIVE_REFRESH_BUFFER = SERVER_REFRESH_BUFFER - 30 * 1000; // 1 min 30
+
+// Garde-fous au niveau module (et non `useRef`) : une ref est réinitialisée à
+// chaque remontage du composant. Si une garde parente démonte l'arbre, le
+// composant se remonte, la ref repart à zéro et l'action est rejouée en
+// boucle. Ces drapeaux vivent le temps de la page.
+/** Jeton pour lequel un refresh immédiat a déjà été demandé. */
+let immediateRefreshRequestedFor: string | null = null;
+/** Une déconnexion sur session expirée a déjà été déclenchée. */
+let signOutRequested = false;
 
 /**
  * Composant pour surveiller l'état de la session et synchroniser le token.
@@ -15,17 +30,24 @@ const PROACTIVE_REFRESH_BUFFER = 5 * 60 * 1000; // 5 minutes
  *
  * 2. Détecte les erreurs de refresh (RefreshAccessTokenError) et déconnecte l'utilisateur.
  * 
- * 3. Rafraîchit proactivement le token 5 minutes avant son expiration pour éviter
+ * 3. Rafraîchit proactivement le token 1 min 30 avant son expiration pour éviter
  *    les interruptions lors d'une inactivité prolongée.
  */
 export function SessionMonitor() {
   const { data: session, status, update } = useSession();
-  const hasShownError = useRef(false);
   const proactiveRefreshTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // `update` change d'identité à chaque mise à jour de session (next-auth le
+  // recrée dans un useMemo sur [session, loading]). L'utiliser en dépendance
+  // d'effet rearmait le timer de refresh proactif en boucle, si bien qu'il
+  // n'arrivait jamais à échéance. On le garde dans une ref.
+  const updateRef = useRef(update);
+  updateRef.current = update;
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      hasShownError.current = false;
+      signOutRequested = false;
+      immediateRefreshRequestedFor = null;
     }
   }, [status]);
 
@@ -55,12 +77,11 @@ export function SessionMonitor() {
       return;
     }
 
-    // Récupérer l'expiration depuis la session (si disponible)
-    // Note: accessTokenExpires n'est pas exposé par défaut dans la session client,
-    // donc on utilise un fallback de 25 minutes (30 min - 5 min buffer)
+    // Échéance réelle propagée par le callback session (lib/auth/config.ts).
+    // Fallback à 25 minutes (sous les 30 min de durée de vie) si le champ
+    // manque, par exemple sur une session créée avant cette version.
     const now = Date.now();
-    const defaultExpiry = now + 25 * 60 * 1000; // 25 minutes par défaut
-    const expiresAt = (session as any).accessTokenExpires || defaultExpiry;
+    const expiresAt = session.accessTokenExpires ?? now + 25 * 60 * 1000;
 
     const refreshAt = expiresAt - PROACTIVE_REFRESH_BUFFER;
     const delay = refreshAt - now;
@@ -69,12 +90,17 @@ export function SessionMonitor() {
       console.log(`[SessionMonitor] Prochain refresh proactif dans ${Math.round(delay / 1000 / 60)} minutes`);
       proactiveRefreshTimer.current = setTimeout(() => {
         console.log("[SessionMonitor] Refresh proactif déclenché");
-        update();
+        immediateRefreshRequestedFor = session.accessToken ?? null;
+        updateRef.current();
       }, delay);
-    } else if (delay > -PROACTIVE_REFRESH_BUFFER) {
-      // Token proche de l'expiration, refresh immédiat
+    } else if (immediateRefreshRequestedFor !== session.accessToken) {
+      // Token dans la fenêtre de rafraîchissement (ou déjà expiré) : refresh
+      // immédiat, mais UNE SEULE FOIS par jeton. Sans ce verrou, un remontage
+      // du composant relance update(), qui repasse la session en « loading »,
+      // ce qui provoque un nouveau remontage : boucle infinie.
       console.log("[SessionMonitor] Token proche de l'expiration, refresh immédiat");
-      update();
+      immediateRefreshRequestedFor = session.accessToken ?? null;
+      updateRef.current();
     }
 
     return () => {
@@ -83,17 +109,17 @@ export function SessionMonitor() {
         proactiveRefreshTimer.current = null;
       }
     };
-  }, [session?.accessToken, session?.error, update]);
+  }, [session?.accessToken, session?.accessTokenExpires, session?.error]);
 
   // Détecter les erreurs de refresh et déconnecter (ne pas se baser sur l'absence
   // transitoire de accessToken : le JWT peut être en cours de mise à jour côté client).
   useEffect(() => {
-    if (hasShownError.current) return;
+    if (signOutRequested) return;
 
     const hasError = session?.error === "RefreshAccessTokenError";
 
     if (hasError) {
-      hasShownError.current = true;
+      signOutRequested = true;
 
       console.log("[SessionMonitor] Session expirée détectée, déconnexion...");
       signOut({

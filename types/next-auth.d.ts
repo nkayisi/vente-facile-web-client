@@ -5,6 +5,8 @@ declare module "next-auth" {
   interface Session extends DefaultSession {
     accessToken?: string;
     refreshToken?: string;
+    /** Échéance (ms epoch) de l'access token, propagée depuis le JWT. */
+    accessTokenExpires?: number;
     error?: string;
     isStaff?: boolean;
     user: {

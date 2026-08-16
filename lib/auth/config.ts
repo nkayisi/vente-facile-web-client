@@ -246,6 +246,11 @@ export const authConfig: NextAuthConfig = {
       // Propager les informations du token vers la session
       session.accessToken = token.accessToken as string;
       session.refreshToken = token.refreshToken as string;
+      // Exposé au client pour que SessionMonitor programme son refresh
+      // proactif sur la vraie échéance (sinon il retombe sur une estimation
+      // et le refresh proactif ne tombe jamais au bon moment). Ce n'est
+      // qu'un horodatage, aucun secret.
+      session.accessTokenExpires = token.accessTokenExpires as number | undefined;
       session.error = token.error as string | undefined;
       session.isStaff = token.isStaff as boolean | undefined;
 

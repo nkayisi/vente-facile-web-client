@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Gift, Edit, Plus, ToggleLeft, ToggleRight, Loader2, Info } from "lucide-react";
 
@@ -155,6 +156,14 @@ export default function LoyaltySettingsPage() {
               <CardDescription>Récompensez vos clients fidèles avec des points</CardDescription>
             </div>
             <div className="flex items-center gap-2">
+              {loyaltyProgram && (
+                <Link href="/dashboard/settings/loyalty/rewards">
+                  <Button variant="outline">
+                    <Gift className="h-4 w-4 mr-2" />
+                    Récompenses
+                  </Button>
+                </Link>
+              )}
               {loyaltyProgram && (
                 <Button
                   variant={loyaltyProgram.is_active ? "outline" : "default"}
@@ -373,11 +382,18 @@ export default function LoyaltySettingsPage() {
               <Label>Expiration des points (jours, 0 = jamais)</Label>
               <Input
                 type="number"
+                min={0}
                 value={loyaltyForm.points_expiry_days}
                 onChange={(e) =>
                   setLoyaltyForm({ ...loyaltyForm, points_expiry_days: parseInt(e.target.value) || 0 })
                 }
               />
+              <p className="text-sm text-gray-500">
+                Chaque point a sa propre durée de vie, comptée depuis le jour où
+                il a été gagné. Les points les plus anciens sont utilisés en
+                premier, et le contrôle passe chaque nuit. Désactiver le
+                programme gèle les points au lieu de les faire expirer.
+              </p>
             </div>
 
             <div className="flex items-center justify-between">

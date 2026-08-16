@@ -1,7 +1,7 @@
 "use server";
 
 import axios from "@/lib/auth/api-helper";
-import { getErrorBody } from "@/lib/api/drf-error";
+import { formatAxiosErrorMessage, getErrorBody } from "@/lib/api/drf-error";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -90,6 +90,12 @@ export interface CustomerLoyalty {
   tier: string;
   last_points_earned_at: string | null;
   last_points_redeemed_at: string | null;
+  /** Prochaine échéance de points (null si aucune expiration configurée). */
+  next_expiry_at: string | null;
+  /** Nombre de points concernés par cette échéance. */
+  next_expiry_points: number;
+  /** Durée de vie d'un point sur le programme actif ; 0 = jamais. */
+  points_expiry_days: number;
   created_at: string;
   updated_at: string;
 }
@@ -98,7 +104,15 @@ export interface LoyaltyTransaction {
   id: string;
   customer_loyalty: string;
   customer_name: string;
-  transaction_type: "earn" | "redeem" | "expire" | "adjust" | "bonus";
+  transaction_type:
+    | "earn"
+    | "redeem"
+    | "expire"
+    | "adjust"
+    | "bonus"
+    // Inversions écrites lors d'une annulation ou d'un retour de vente.
+    | "earn_reversal"
+    | "redeem_reversal";
   transaction_type_display: string;
   points: number;
   balance_after: number;
@@ -137,7 +151,7 @@ export async function getCurrencies(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Get currencies error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la récupération des devises" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des devises") };
   }
 }
 
@@ -153,7 +167,7 @@ export async function getOrganizationCurrencies(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Get org currencies error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la récupération des devises" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des devises") };
   }
 }
 
@@ -201,7 +215,7 @@ export async function updateOrganizationCurrency(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Update org currency error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la mise à jour de la devise" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour de la devise") };
   }
 }
 
@@ -239,7 +253,7 @@ export async function setPrimaryCurrency(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Set primary currency error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors du changement de devise principale" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors du changement de devise principale") };
   }
 }
 
@@ -258,7 +272,7 @@ export async function updateExchangeRate(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Update exchange rate error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la mise à jour du taux de change" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour du taux de change") };
   }
 }
 
@@ -278,7 +292,7 @@ export async function convertCurrency(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Convert currency error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la conversion" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la conversion") };
   }
 }
 
@@ -307,7 +321,7 @@ export async function getLoyaltyProgram(
       url: `${API_BASE_URL}/settings/loyalty-program/`,
       organizationId
     });
-    return { success: false, message: "Erreur lors de la récupération du programme de fidélité" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération du programme de fidélité") };
   }
 }
 
@@ -325,7 +339,7 @@ export async function createLoyaltyProgram(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Create loyalty program error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la création du programme de fidélité" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la création du programme de fidélité") };
   }
 }
 
@@ -344,7 +358,7 @@ export async function updateLoyaltyProgram(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Update loyalty program error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la mise à jour du programme de fidélité" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour du programme de fidélité") };
   }
 }
 
@@ -362,7 +376,7 @@ export async function toggleLoyaltyProgram(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Toggle loyalty program error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de l'activation/désactivation" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de l'activation/désactivation") };
   }
 }
 
@@ -377,12 +391,17 @@ export async function getLoyaltyRewards(
   try {
     const response = await axios.get(
       `${API_BASE_URL}/settings/loyalty-rewards/`,
-      { headers: getHeaders(accessToken, organizationId) }
+      { headers: getHeaders(accessToken, organizationId), params: { page_size: 200 } }
     );
-    return { success: true, data: response.data };
+    // L'endpoint est paginé côté DRF : on renvoie toujours un tableau, que la
+    // réponse soit une liste brute ou une enveloppe { count, results }.
+    const list: LoyaltyReward[] = Array.isArray(response.data)
+      ? response.data
+      : response.data?.results || [];
+    return { success: true, data: list };
   } catch (error: unknown) {
     console.error("[Settings] Get loyalty rewards error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la récupération des récompenses" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des récompenses") };
   }
 }
 
@@ -400,7 +419,7 @@ export async function createLoyaltyReward(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Create loyalty reward error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la création de la récompense" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la création de la récompense") };
   }
 }
 
@@ -419,7 +438,7 @@ export async function updateLoyaltyReward(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Update loyalty reward error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la mise à jour de la récompense" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour de la récompense") };
   }
 }
 
@@ -436,7 +455,7 @@ export async function deleteLoyaltyReward(
     return { success: true };
   } catch (error: unknown) {
     console.error("[Settings] Delete loyalty reward error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la suppression de la récompense" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la suppression de la récompense") };
   }
 }
 
@@ -458,7 +477,7 @@ export async function getCustomerLoyalty(
     return { success: true, data: Array.isArray(data) && data.length > 0 ? data[0] : null };
   } catch (error: unknown) {
     console.error("[Settings] Get customer loyalty error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la récupération des points de fidélité" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des points de fidélité") };
   }
 }
 
@@ -520,7 +539,7 @@ export async function getCustomerLoyaltyTransactions(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Get loyalty transactions error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la récupération de l'historique" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération de l'historique") };
   }
 }
 
@@ -540,7 +559,7 @@ export async function getOrganizationSettings(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Get org settings error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la récupération des paramètres" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des paramètres") };
   }
 }
 
@@ -558,6 +577,6 @@ export async function updateOrganizationSettings(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Settings] Update org settings error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la mise à jour des paramètres" };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour des paramètres") };
   }
 }

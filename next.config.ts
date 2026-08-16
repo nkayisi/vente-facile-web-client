@@ -16,5 +16,11 @@ export default withSentryConfig(nextConfig, {
 
   // Masque les requêtes Sentry derrière une route de l'app pour contourner
   // les bloqueurs de pub (améliore le taux de capture côté navigateur).
-  tunnelRoute: "/monitoring",
+  //
+  // Uniquement en production : le tunnel fait relayer les envelopes par le
+  // serveur Next, donc en dev c'est le conteneur Docker qui doit joindre
+  // ingest.sentry.io. Sa résolution DNS échoue par intermittence (EAI_AGAIN)
+  // et pollue les logs. Sans tunnel, c'est le navigateur qui parle à Sentry
+  // directement : le conteneur sort du chemin.
+  tunnelRoute: process.env.NODE_ENV === "production" ? "/monitoring" : undefined,
 });

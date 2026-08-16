@@ -10,6 +10,16 @@ const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API
 // TYPES
 // =============================================================================
 
+/**
+ * Dette d'un client dans UNE devise. Un client peut devoir en CDF et en USD :
+ * ces montants ne s'additionnent jamais. `Customer.current_balance` reste la
+ * vue agrégée convertie en devise principale.
+ */
+export interface CustomerBalance {
+  currency: string;
+  amount: string;
+}
+
 export interface Customer {
   id: string;
   code: string;
@@ -23,6 +33,7 @@ export interface Customer {
   tax_id: string;
   credit_limit: string;
   current_balance: string;
+  balances: CustomerBalance[];
   available_credit: string;
   notes: string;
   is_active: boolean;
@@ -46,6 +57,8 @@ export interface CustomerTransaction {
   transaction_type: "credit_sale" | "payment" | "advance" | "adjustment" | "refund";
   transaction_type_display: string;
   amount: string;
+  currency: string;
+  exchange_rate: string;
   balance_before: string;
   balance_after: string;
   reference: string;
@@ -337,12 +350,33 @@ export async function getCustomerTransactions(
   }
 }
 
+/**
+ * Retour commun des opérations de dette. `settled_invoices` liste les factures
+ * réellement soldées par le règlement : c'est ce qui manquait, le solde bougeait
+ * sans qu'aucune facture n'avance.
+ */
+export interface DebtOperationResult {
+  transaction: CustomerTransaction | null;
+  new_balance: string;
+  balances: Record<string, string>;
+  settled_invoices?: string[];
+  advance_amount?: string;
+  currency?: string;
+}
+
 export async function recordCustomerPayment(
   accessToken: string,
   organizationId: string,
   customerId: string,
-  data: { amount: number; payment_method?: string; reference?: string; notes?: string }
-): Promise<ApiResponse<{ transaction: CustomerTransaction; new_balance: string }>> {
+  data: {
+    amount: number;
+    currency?: string;
+    exchange_rate?: number;
+    payment_method?: string;
+    reference?: string;
+    notes?: string;
+  }
+): Promise<ApiResponse<DebtOperationResult>> {
   try {
     const response = await axios.post(
       `${API_BASE_URL}/customers/${customerId}/record-payment/`,
@@ -360,8 +394,15 @@ export async function recordCustomerAdvance(
   accessToken: string,
   organizationId: string,
   customerId: string,
-  data: { amount: number; payment_method?: string; reference?: string; notes?: string }
-): Promise<ApiResponse<{ transaction: CustomerTransaction; new_balance: string }>> {
+  data: {
+    amount: number;
+    currency?: string;
+    exchange_rate?: number;
+    payment_method?: string;
+    reference?: string;
+    notes?: string;
+  }
+): Promise<ApiResponse<DebtOperationResult>> {
   try {
     const response = await axios.post(
       `${API_BASE_URL}/customers/${customerId}/record-advance/`,
@@ -379,8 +420,8 @@ export async function adjustCustomerBalance(
   accessToken: string,
   organizationId: string,
   customerId: string,
-  data: { amount: number; notes?: string }
-): Promise<ApiResponse<{ transaction: CustomerTransaction; new_balance: string }>> {
+  data: { amount: number; currency?: string; exchange_rate?: number; notes?: string }
+): Promise<ApiResponse<DebtOperationResult>> {
   try {
     const response = await axios.post(
       `${API_BASE_URL}/customers/${customerId}/adjust-balance/`,
@@ -577,3 +618,38 @@ export async function getCustomerStats(
 }
 
 // getCustomersWithBalance is defined above in the CUSTOMER TRANSACTION section
+
+/**
+ * Utilise les points de fidélité d'un client pour éponger sa dette.
+ * Les points sont convertis en montant puis imputés sur les factures ouvertes.
+ */
+export async function redeemCustomerPointsToDebt(
+  accessToken: string,
+  organizationId: string,
+  customerId: string,
+  data: { points: number; notes?: string }
+): Promise<
+  ApiResponse<{
+    points_used: number;
+    amount: string;
+    currency: string;
+    settled_invoices: string[];
+    new_balance: string;
+    balances: Record<string, string>;
+  }>
+> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/customers/${customerId}/redeem-points/`,
+      data,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error("[Contacts] Redeem points error:", getErrorBody(error) || (error as Error)?.message);
+    return {
+      success: false,
+      message: getErrorBody(error)?.error || "Erreur lors de l'utilisation des points",
+    };
+  }
+}

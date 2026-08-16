@@ -379,9 +379,16 @@ export interface CreateSaleData {
 }
 
 export interface AddPaymentData {
-  payment_method: string;
+  /** Requis dès que `amount` est renseigné ; inutile pour un règlement en points. */
+  payment_method?: string;
   /** Montant réellement remis, dans `currency`. */
-  amount: number;
+  amount?: number;
+  /**
+   * Points de fidélité à utiliser sur cette facture. Contrairement au POS (où
+   * la remise précède l'émission), le total de la facture ne bouge pas : les
+   * points s'imputent comme un moyen de paiement. Cumulable avec `amount`.
+   */
+  points_used?: number;
   /** Devise du paiement (par défaut = devise de la vente). */
   currency?: string;
   /** Taux : devise de la vente pour 1 unité de `currency`. */
