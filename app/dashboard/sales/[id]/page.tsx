@@ -29,9 +29,10 @@ import {
   Clock,
   DollarSign,
   Percent,
+  Star,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatDateTime } from "@/lib/format";
+import { formatPrice, formatDateTime, formatPoints } from "@/lib/format";
 import { PermissionGate } from "@/components/auth/permission-gate";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
@@ -512,16 +513,43 @@ export default function SaleDetailPage() {
                   <span>{formatPrice(sale.tax_amount)}</span>
                 </div>
               )}
-              {parseFloat(sale.discount_amount) > 0 && (
-                <div className="flex justify-between text-sm text-orange-600">
-                  <span className="flex items-center gap-1">
-                    <Percent className="h-3 w-3" />
-                    Remise
-                    {parseFloat(sale.discount_percentage) > 0 && ` (${sale.discount_percentage}%)`}
-                  </span>
-                  <span>-{formatPrice(sale.discount_amount)}</span>
-                </div>
-              )}
+              {/* `discount_amount` englobe la part réglée en points : les
+                  afficher l'une sous l'autre sans retrancher montrerait deux
+                  fois la même somme. Même découpage que `splitDiscount` du
+                  reçu, pour que l'écran et le papier racontent la même chose. */}
+              {(() => {
+                const loyaltyDiscount = Math.max(
+                  0, parseFloat(sale.loyalty_redemption_amount || "0") || 0,
+                );
+                const commercialDiscount = Math.max(
+                  0, parseFloat(sale.discount_amount) - loyaltyDiscount,
+                );
+                return (
+                  <>
+                    {commercialDiscount > 0 && (
+                      <div className="flex justify-between text-sm text-orange-600">
+                        <span className="flex items-center gap-1">
+                          <Percent className="h-3 w-3" />
+                          Remise
+                          {parseFloat(sale.discount_percentage) > 0 && ` (${sale.discount_percentage}%)`}
+                        </span>
+                        <span>-{formatPrice(commercialDiscount)}</span>
+                      </div>
+                    )}
+                    {loyaltyDiscount > 0 && (
+                      <div className="flex justify-between text-sm text-amber-600">
+                        <span className="flex items-center gap-1">
+                          <Star className="h-3 w-3" />
+                          Remise fidélité
+                          {(sale.loyalty_points_used ?? 0) > 0 &&
+                            ` (${formatPoints(sale.loyalty_points_used)} pts)`}
+                        </span>
+                        <span>-{formatPrice(loyaltyDiscount)}</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               <div className="flex justify-between text-lg font-bold pt-2 border-t">
                 <span>Total</span>
                 <span className="text-orange-600">{formatPrice(sale.total)}</span>
@@ -546,6 +574,46 @@ export default function SaleDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Fidélité : même prédicat que `showsLoyaltyBlock` du reçu, pour
+                que l'écran n'affiche jamais un bloc que le papier tait, ni
+                l'inverse. Les valeurs viennent du registre côté serveur, jamais
+                d'un recalcul de barème. */}
+            {sale.loyalty_program_active && sale.customer &&
+              ((sale.loyalty_points_earned ?? 0) > 0 ||
+                (sale.loyalty_points_used ?? 0) > 0 ||
+                sale.loyalty_points_balance !== undefined) && (
+              <div className="pt-4 border-t">
+                <p className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-1.5">
+                  <Star className="h-4 w-4 text-amber-500" />
+                  Points de fidélité
+                </p>
+                <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  {(sale.loyalty_points_earned ?? 0) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-amber-700">Points gagnés</span>
+                      <span className="font-medium text-amber-800">
+                        +{formatPoints(sale.loyalty_points_earned)} pts
+                      </span>
+                    </div>
+                  )}
+                  {(sale.loyalty_points_used ?? 0) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-amber-700">Points utilisés</span>
+                      <span className="font-medium text-amber-800">
+                        -{formatPoints(sale.loyalty_points_used)} pts
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t border-amber-200 pt-2 text-sm">
+                    <span className="text-amber-700">Solde du client</span>
+                    <span className="font-bold text-amber-800">
+                      {formatPoints(sale.loyalty_points_balance)} pts
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Payments List */}
             {sale.payments && sale.payments.length > 0 && (

@@ -56,6 +56,14 @@ export interface LoyaltyProgram {
   points_percentage: string;
   point_value: string;
   min_points_to_redeem: number;
+  /** Part maximale d'une facture réglable en points. */
+  max_redemption_percent: string;
+  /**
+   * Borne dure imposée par le serveur, que `max_redemption_percent` ne peut
+   * pas dépasser. Lecture seule : elle vit dans le modèle Django. Sort en
+   * nombre JSON (champ calculé), contrairement aux champs Decimal du modèle.
+   */
+  max_redemption_percent_ceiling: number;
   points_expiry_days: number;
   only_registered_customers: boolean;
   created_at: string;

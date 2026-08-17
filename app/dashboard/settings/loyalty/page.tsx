@@ -56,11 +56,17 @@ export default function LoyaltySettingsPage() {
     points_percentage: "1",
     point_value: "1",
     min_points_to_redeem: 100,
+    max_redemption_percent: "50",
     points_expiry_days: 0,
     only_registered_customers: true,
   });
 
   const primaryCurrency = orgCurrencies.find((c) => c.is_primary);
+  // Borne dure servie par le serveur : on ne la code pas en dur ici, elle vit
+  // dans `LoyaltyProgram`. Repli à 70 tant qu'aucun programme n'est chargé.
+  const redemptionCeiling = Number(
+    loyaltyProgram?.max_redemption_percent_ceiling ?? 70,
+  );
 
   const loadData = useCallback(async () => {
     if (!session?.accessToken || !organization?.id) return;
@@ -96,6 +102,7 @@ export default function LoyaltySettingsPage() {
         points_percentage: loyaltyProgram.points_percentage,
         point_value: loyaltyProgram.point_value,
         min_points_to_redeem: loyaltyProgram.min_points_to_redeem,
+        max_redemption_percent: loyaltyProgram.max_redemption_percent,
         points_expiry_days: loyaltyProgram.points_expiry_days,
         only_registered_customers: loyaltyProgram.only_registered_customers,
       });
@@ -239,6 +246,12 @@ export default function LoyaltySettingsPage() {
                 <div className="font-medium mt-1">{loyaltyProgram.min_points_to_redeem} points</div>
               </div>
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
+                <div className="text-sm text-orange-600 font-medium">Part réglable en points</div>
+                <div className="font-medium mt-1">
+                  {Number(loyaltyProgram.max_redemption_percent)} % de la facture
+                </div>
+              </div>
+              <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
                 <div className="text-sm text-orange-600 font-medium">Expiration</div>
                 <div className="font-medium mt-1">
                   {loyaltyProgram.points_expiry_days > 0
@@ -281,6 +294,11 @@ export default function LoyaltySettingsPage() {
                     {primaryCurrency?.currency_symbol || "FC"}
                   </li>
                   <li>Minimum requis pour utiliser : {loyaltyProgram.min_points_to_redeem} points</li>
+                  <li>
+                    Les points couvrent au plus{" "}
+                    {Number(loyaltyProgram.max_redemption_percent)} % d&apos;une
+                    facture : le client règle toujours le reste en monnaie
+                  </li>
                 </ul>
               </div>
             </div>
@@ -376,6 +394,26 @@ export default function LoyaltySettingsPage() {
                   }
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Part maximale d&apos;une facture réglable en points (%)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={redemptionCeiling}
+                step="any"
+                value={loyaltyForm.max_redemption_percent}
+                onChange={(e) =>
+                  setLoyaltyForm({ ...loyaltyForm, max_redemption_percent: e.target.value })
+                }
+              />
+              <p className="text-sm text-gray-500">
+                Les points ne soldent jamais toute une facture : au delà de
+                cette part, le client règle le reste en monnaie. Maximum{" "}
+                {redemptionCeiling} %, une facture garde toujours une part à
+                encaisser.
+              </p>
             </div>
 
             <div className="space-y-2">
