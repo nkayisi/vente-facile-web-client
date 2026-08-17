@@ -56,6 +56,14 @@ export interface ReceiptData {
   showLoyaltyPoints?: boolean;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
+  /** Points consommés sur cette vente, remise et règlements confondus. */
+  loyaltyPointsUsed?: number;
+  /**
+   * Part du total réglée par les points. Déjà comprise dans `discountAmount` :
+   * on l'isole pour que le client voie que ses points ont payé, au lieu de lire
+   * une remise anonyme.
+   */
+  loyaltyRedemptionAmount?: number;
   /** Document d’offre - pas de vente, pas de paiement affiché */
   isProforma?: boolean;
 }
@@ -70,6 +78,40 @@ const PROFORMA_FOOTER_LINES = [
 ];
 
 type PaperWidth = 58 | 80;
+
+/**
+ * Sépare la remise affichée en « remise commerciale » et « remise fidélité ».
+ *
+ * `discountAmount` renvoyé par le backend inclut déjà la part payée en points.
+ * Les afficher l'une sous l'autre sans retrancher ferait apparaître la même
+ * somme deux fois ; les additionner redonne bien `discountAmount`.
+ */
+function splitDiscount(data: ReceiptData): { commercial: number; loyalty: number } {
+  const loyalty = Math.max(0, data.loyaltyRedemptionAmount || 0);
+  return {
+    commercial: Math.max(0, data.discountAmount - loyalty),
+    loyalty,
+  };
+}
+
+/**
+ * Le bloc fidélité s'imprime dès qu'un programme est actif et qu'un client est
+ * rattaché, même si la vente en cours ne rapporte rien : le client vient
+ * justement lire son **cumul**. La garde précédente (« points gagnés > 0 »)
+ * faisait disparaître le solde sur toute vente sous le seuil de gain.
+ *
+ * Prédicat unique, partagé par le calcul de hauteur et le tracé : les deux
+ * doivent décider exactement la même chose, faute de quoi le PDF se termine par
+ * une bande blanche ou tronque la dernière ligne.
+ */
+function showsLoyaltyBlock(data: ReceiptData): boolean {
+  if (data.isProforma || !data.showLoyaltyPoints) return false;
+  return (
+    (data.loyaltyPointsEarned || 0) > 0 ||
+    (data.loyaltyPointsUsed || 0) > 0 ||
+    data.loyaltyPointsBalance !== undefined
+  );
+}
 
 const FONT_SIZE_NORMAL = 11;
 const FONT_SIZE_SMALL = 9;
@@ -100,6 +142,22 @@ function formatAmount(amount: number, decimals: number = 2): string {
 
 function formatAmountWithCurrency(amount: number, currency: string, decimals: number = 2): string {
   return `${formatAmount(amount, decimals)} ${currency}`;
+}
+
+/**
+ * Points de fidélité sur le ticket.
+ *
+ * Les points sont fractionnaires : 1 % d'un panier de 58 USD vaut 0,58 point,
+ * et l'arrondir à l'entier revenait à ne rien créditer. On garde donc la
+ * fraction, mais seulement quand elle existe : « 3 pts », pas « 3.00 pts ».
+ * Séparateur décimal en point, comme les montants, pour rester lisible sur une
+ * imprimante thermique qui ne rend pas toujours les caractères accentués.
+ */
+function formatPoints(points: number | undefined): string {
+  const n = points ?? 0;
+  if (!Number.isFinite(n)) return "0";
+  const rounded = Math.round(n * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : formatAmount(rounded, 2);
 }
 
 /** Line count for text wrapped like jsPDF splitTextToSize (mm width, helvetica). */
@@ -167,7 +225,9 @@ function estimateSaleReceiptHeightMm(data: ReceiptData, paperWidth: PaperWidth):
   h += LINE_HEIGHT_SMALL;
 
   h += LINE_HEIGHT_SMALL;
-  if (data.discountAmount > 0) h += LINE_HEIGHT_SMALL;
+  const discountLines = splitDiscount(data);
+  if (discountLines.commercial > 0) h += LINE_HEIGHT_SMALL;
+  if (discountLines.loyalty > 0) h += LINE_HEIGHT_SMALL;
   if (data.taxAmount > 0) h += LINE_HEIGHT_SMALL;
   h += 0.5 + LINE_HEIGHT_SMALL + LINE_HEIGHT + LINE_HEIGHT_SMALL;
 
@@ -178,13 +238,10 @@ function estimateSaleReceiptHeightMm(data: ReceiptData, paperWidth: PaperWidth):
     if (data.isCreditSale && data.amountDue && data.amountDue > 0) h += LINE_HEIGHT_SMALL;
   }
 
-  if (
-    !data.isProforma &&
-    data.showLoyaltyPoints &&
-    data.loyaltyPointsEarned &&
-    data.loyaltyPointsEarned > 0
-  ) {
-    h += 1 + LINE_HEIGHT_SMALL + LINE_HEIGHT_SMALL * 2;
+  if (showsLoyaltyBlock(data)) {
+    // séparateur + titre + « Points gagnes »
+    h += 1 + LINE_HEIGHT_SMALL + LINE_HEIGHT_SMALL;
+    if ((data.loyaltyPointsUsed || 0) > 0) h += LINE_HEIGHT_SMALL;
     if (data.loyaltyPointsBalance !== undefined) h += LINE_HEIGHT_SMALL;
   }
 
@@ -442,7 +499,9 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
 
   drawLeftRightText("Sous-total", formatAmount(data.subtotal, 2), FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
 
-  if (data.discountAmount > 0) {
+  const discounts = splitDiscount(data);
+
+  if (discounts.commercial > 0) {
     const globalAmt = data.globalDiscountAmount ?? 0;
     const globalPct = data.globalDiscountPercent ?? 0;
     let discLabel = "Remises";
@@ -451,7 +510,17 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
     } else if (globalPct > 0) {
       discLabel = `Remise (${globalPct}%)`;
     }
-    drawLeftRightText(discLabel, `-${formatAmount(data.discountAmount, 2)}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    drawLeftRightText(discLabel, `-${formatAmount(discounts.commercial, 2)}`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+  }
+
+  if (discounts.loyalty > 0) {
+    drawLeftRightText(
+      "Remise fidelite",
+      `-${formatAmount(discounts.loyalty, 2)}`,
+      FONT_SIZE_SMALL,
+      false,
+      LINE_HEIGHT_SMALL
+    );
   }
 
   if (data.taxAmount > 0) {
@@ -500,18 +569,28 @@ export function generateReceiptPdfUrl(data: ReceiptData, paperWidth: PaperWidth 
     }
   }
 
-  if (
-    !data.isProforma &&
-    data.showLoyaltyPoints &&
-    data.loyaltyPointsEarned &&
-    data.loyaltyPointsEarned > 0
-  ) {
+  if (showsLoyaltyBlock(data)) {
     y += 1;
     drawSeparator();
     drawCenteredText("*** POINTS DE FIDELITE ***", FONT_SIZE_SMALL, true, LINE_HEIGHT_SMALL);
-    drawLeftRightText("Points gagnes", `+${data.loyaltyPointsEarned} pts`, FONT_SIZE_SMALL, false, LINE_HEIGHT_SMALL);
+    drawLeftRightText(
+      "Points gagnes",
+      `+${formatPoints(data.loyaltyPointsEarned)} pts`,
+      FONT_SIZE_SMALL,
+      false,
+      LINE_HEIGHT_SMALL
+    );
+    if ((data.loyaltyPointsUsed || 0) > 0) {
+      drawLeftRightText(
+        "Points utilises",
+        `-${formatPoints(data.loyaltyPointsUsed)} pts`,
+        FONT_SIZE_SMALL,
+        false,
+        LINE_HEIGHT_SMALL
+      );
+    }
     if (data.loyaltyPointsBalance !== undefined) {
-      drawLeftRightText("Solde total", `${data.loyaltyPointsBalance} pts`, FONT_SIZE_SMALL, true, LINE_HEIGHT_SMALL);
+      drawLeftRightText("Solde total", `${formatPoints(data.loyaltyPointsBalance)} pts`, FONT_SIZE_SMALL, true, LINE_HEIGHT_SMALL);
     }
   }
 
@@ -557,6 +636,19 @@ export interface PaymentReceiptData {
   newDebt?: number;
   cashierName?: string;
   notes?: string;
+  /**
+   * Fidélité. Un règlement peut être fait en points ; le client doit lire ce
+   * qu'il a consommé et ce qui lui reste, comme sur le reçu de vente.
+   */
+  showLoyaltyPoints?: boolean;
+  loyaltyPointsUsed?: number;
+  loyaltyPointsBalance?: number;
+}
+
+/** Même prédicat que `showsLoyaltyBlock`, appliqué au reçu de règlement. */
+function showsPaymentLoyaltyBlock(data: PaymentReceiptData): boolean {
+  if (!data.showLoyaltyPoints) return false;
+  return (data.loyaltyPointsUsed || 0) > 0 || data.loyaltyPointsBalance !== undefined;
 }
 
 function estimatePaymentReceiptHeightMm(data: PaymentReceiptData, paperWidth: PaperWidth): number {
@@ -593,6 +685,12 @@ function estimatePaymentReceiptHeightMm(data: PaymentReceiptData, paperWidth: Pa
 
   if (data.previousDebt !== undefined && data.newDebt !== undefined) {
     h += 1 + 2 * LINE_HEIGHT_SMALL;
+  }
+
+  if (showsPaymentLoyaltyBlock(data)) {
+    h += 1 + LINE_HEIGHT_SMALL;
+    if ((data.loyaltyPointsUsed || 0) > 0) h += LINE_HEIGHT_SMALL;
+    if (data.loyaltyPointsBalance !== undefined) h += LINE_HEIGHT_SMALL;
   }
 
   if (data.notes) {
@@ -711,6 +809,17 @@ export function generatePaymentReceiptPdfUrl(
       drawLeftRightText("Dette restante:", formatAmountWithCurrency(data.newDebt, data.currency), FONT_SIZE_SMALL);
     } else {
       drawLeftRightText("Dette restante:", "SOLDÉE", FONT_SIZE_SMALL);
+    }
+  }
+
+  if (showsPaymentLoyaltyBlock(data)) {
+    y += 1;
+    drawCenteredText("*** POINTS DE FIDELITE ***", FONT_SIZE_SMALL, true);
+    if ((data.loyaltyPointsUsed || 0) > 0) {
+      drawLeftRightText("Points utilisés:", `-${formatPoints(data.loyaltyPointsUsed)} pts`, FONT_SIZE_SMALL);
+    }
+    if (data.loyaltyPointsBalance !== undefined) {
+      drawLeftRightText("Solde total:", `${formatPoints(data.loyaltyPointsBalance)} pts`, FONT_SIZE_SMALL);
     }
   }
 

@@ -53,7 +53,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { formatPrice, formatDateTime } from "@/lib/format";
+import { formatPoints, formatPrice, formatDateTime } from "@/lib/format";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
@@ -90,6 +90,16 @@ import {
   OrganizationCurrency,
 } from "@/actions/settings.actions";
 import { Star } from "lucide-react";
+
+/**
+ * Arrondi d'une saisie de points au centième.
+ *
+ * Les points sont fractionnaires : tronquer à l'entier interdisait au client
+ * d'utiliser le solde qu'il vient de gagner (0,58 point devenait 0).
+ */
+function roundPoints(value: number): number {
+  return Math.floor(value * 100) / 100;
+}
 
 export default function CustomerDetailPage() {
   const { data: session } = useSession();
@@ -168,9 +178,6 @@ export default function CustomerDetailPage() {
               getLoyaltyProgram(session.accessToken, org.id),
             ]);
 
-            console.log('[Customer Detail] Loyalty result:', loyaltyResult);
-            console.log('[Customer Detail] Program result:', programResult);
-
             if (loyaltyResult.success && loyaltyResult.data) {
               setCustomerLoyalty(loyaltyResult.data);
               const txnsResult = await getCustomerLoyaltyTransactions(
@@ -179,16 +186,11 @@ export default function CustomerDetailPage() {
               if (txnsResult.success && txnsResult.data) {
                 setLoyaltyTransactions(txnsResult.data);
               }
-            } else {
-              console.log('[Customer Detail] No loyalty data for customer');
             }
 
             if (programResult.success) {
               if (programResult.data) {
-                console.log('[Customer Detail] Setting loyalty program:', programResult.data);
                 setLoyaltyProgram(programResult.data);
-              } else {
-                console.log('[Customer Detail] Program result is null');
               }
             } else {
               console.error('[Customer Detail] Failed to load loyalty program:', programResult.message);
@@ -207,11 +209,6 @@ export default function CustomerDetailPage() {
 
     fetchData();
   }, [session?.accessToken, customerId]);
-
-  // Debug loyalty program state
-  useEffect(() => {
-    console.log('[Customer Detail] loyaltyProgram state changed:', loyaltyProgram);
-  }, [loyaltyProgram]);
 
   // Refresh all data (customer + transactions)
   const refreshData = useCallback(async () => {
@@ -280,7 +277,7 @@ export default function CustomerDetailPage() {
   const handleInvoicePayment = async () => {
     if (!session?.accessToken || !organization || !customer || !selectedSale) return;
 
-    const pointsUsed = parseInt(invoicePointsUsed, 10) || 0;
+    const pointsUsed = parseFloat(invoicePointsUsed) || 0;
     const amount = parseFloat(invoicePaymentAmount) || 0;
 
     // Une facture peut être réglée uniquement en points, uniquement en argent,
@@ -345,6 +342,11 @@ export default function CustomerDetailPage() {
           saleTotalAmount: parseFloat(selectedSale.total),
           previouslyPaid: previouslyPaid,
           remainingBalance: remainingBalance,
+          // Valeurs autoritatives de la vente rafraîchie : le règlement a pu
+          // être fait en points.
+          showLoyaltyPoints: !!result.data?.loyalty_program_active,
+          loyaltyPointsUsed: result.data?.loyalty_points_used ?? 0,
+          loyaltyPointsBalance: result.data?.loyalty_points_balance ?? 0,
         };
 
         const pdfUrl = generatePaymentReceiptPdfUrl(receiptData);
@@ -388,7 +390,7 @@ export default function CustomerDetailPage() {
   const handleRedeemPointsToDebt = async () => {
     if (!session?.accessToken || !organization || !customer) return;
 
-    const points = parseInt(debtPointsUsed, 10) || 0;
+    const points = parseFloat(debtPointsUsed) || 0;
     if (points <= 0) {
       toast.error("Indiquez un nombre de points");
       return;
@@ -571,10 +573,10 @@ export default function CustomerDetailPage() {
   const maxUsablePoints = canUsePointsOnInvoice
     ? Math.min(
         availablePoints,
-        Math.floor(parseFloat(selectedSale?.amount_due || "0") / pointValue)
+        roundPoints(parseFloat(selectedSale?.amount_due || "0") / pointValue)
       )
     : 0;
-  const pointsValue = (parseInt(invoicePointsUsed, 10) || 0) * pointValue;
+  const pointsValue = (parseFloat(invoicePointsUsed) || 0) * pointValue;
 
   // Dette épongeable par les points : elle est libellée en devise principale,
   // comme le barème.
@@ -583,9 +585,9 @@ export default function CustomerDetailPage() {
   );
   const maxPointsForDebt =
     pointValue > 0 && primaryDebt > 0
-      ? Math.min(availablePoints, Math.floor(primaryDebt / pointValue))
+      ? Math.min(availablePoints, roundPoints(primaryDebt / pointValue))
       : 0;
-  const debtPointsValue = (parseInt(debtPointsUsed, 10) || 0) * pointValue;
+  const debtPointsValue = (parseFloat(debtPointsUsed) || 0) * pointValue;
   const creditLimit = parseFloat(customer.credit_limit);
   const availableCredit = parseFloat(customer.available_credit || "0");
   const totalPurchases = parseFloat(customer.total_purchases || "0");
@@ -728,16 +730,16 @@ export default function CustomerDetailPage() {
                   Points de fidélité {!loyaltyProgram?.is_active && '(Programme inactif)'}
                 </p>
                 <p className={`text-4xl font-bold ${loyaltyProgram?.is_active ? 'text-amber-800' : 'text-gray-400'}`}>
-                  {customerLoyalty?.current_points || 0} <span className="text-xl font-normal">pts</span>
+                  {formatPoints(customerLoyalty?.current_points)} <span className="text-xl font-normal">pts</span>
                 </p>
               </div>
             </div>
             <div className="text-right space-y-1">
               <p className={`text-sm ${loyaltyProgram?.is_active ? 'text-amber-700' : 'text-gray-500'}`}>
-                Total gagné: <span className="font-semibold">{customerLoyalty?.total_points_earned || 0} pts</span>
+                Total gagné: <span className="font-semibold">{formatPoints(customerLoyalty?.total_points_earned)} pts</span>
               </p>
               <p className={`text-sm ${loyaltyProgram?.is_active ? 'text-amber-700' : 'text-gray-500'}`}>
-                Total utilisé: <span className="font-semibold">{customerLoyalty?.total_points_redeemed || 0} pts</span>
+                Total utilisé: <span className="font-semibold">{formatPoints(customerLoyalty?.total_points_redeemed)} pts</span>
               </p>
               {loyaltyProgram?.is_active && loyaltyProgram.min_points_to_redeem > 0 && (
                 <p className="text-xs text-amber-600 mt-2">
@@ -778,7 +780,7 @@ export default function CustomerDetailPage() {
                 Utiliser ces points pour réduire la dette du client
                 {pointValue > 0 && (
                   <span className="block text-xs text-amber-600">
-                    {availablePoints} pts = {formatPrice(availablePoints * pointValue)} maximum
+                    {formatPoints(availablePoints)} pts = {formatPrice(availablePoints * pointValue)} maximum
                   </span>
                 )}
               </p>
@@ -1057,9 +1059,9 @@ export default function CustomerDetailPage() {
                           }`}
                         >
                           {txn.points >= 0 ? "+" : ""}
-                          {txn.points} pts
+                          {formatPoints(txn.points)} pts
                         </p>
-                        <p className="text-xs text-gray-400">Solde : {txn.balance_after} pts</p>
+                        <p className="text-xs text-gray-400">Solde : {formatPoints(txn.balance_after)} pts</p>
                       </div>
                     </div>
                   ))}
@@ -1259,6 +1261,7 @@ export default function CustomerDetailPage() {
                   type="number"
                   min={0}
                   max={maxPointsForDebt}
+                  step="0.01"
                   value={debtPointsUsed}
                   onChange={(e) => setDebtPointsUsed(e.target.value)}
                   className="h-11"
@@ -1295,7 +1298,7 @@ export default function CustomerDetailPage() {
             </Button>
             <Button
               onClick={handleRedeemPointsToDebt}
-              disabled={isSubmitting || (parseInt(debtPointsUsed, 10) || 0) <= 0}
+              disabled={isSubmitting || (parseFloat(debtPointsUsed) || 0) <= 0}
               className="bg-amber-600 hover:bg-amber-700 sm:flex-1"
             >
               {isSubmitting ? "Traitement..." : "Confirmer"}
@@ -1449,7 +1452,7 @@ export default function CustomerDetailPage() {
                     Payer avec les points
                   </Label>
                   <span className="text-xs font-medium text-amber-700">
-                    {availablePoints} pts disponibles
+                    {formatPoints(availablePoints)} pts disponibles
                   </span>
                 </div>
 
@@ -1458,6 +1461,7 @@ export default function CustomerDetailPage() {
                     type="number"
                     min={0}
                     max={maxUsablePoints}
+                    step="0.01"
                     value={invoicePointsUsed}
                     onChange={(e) => setInvoicePointsUsed(e.target.value)}
                     placeholder="0"

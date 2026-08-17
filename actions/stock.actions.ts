@@ -641,6 +641,49 @@ export async function getStocks(
   }
 }
 
+/**
+ * Ouvre un ou plusieurs conditionnements d'un produit dans un entrepôt donné.
+ *
+ * Le POS ne connaît que le produit ; l'endpoint travaille sur une ligne de
+ * stock. On la résout d'abord, puis on ouvre. Deux allers-retours pour un geste
+ * délibéré et rare, plutôt qu'une variante d'endpoint de plus.
+ *
+ * Le déconditionnement est un transfert entre les deux compteurs : la quantité
+ * totale ne change pas, seul le partage scellé / vrac bouge.
+ */
+export async function unpackStock(
+  accessToken: string,
+  organizationId: string,
+  productId: string,
+  warehouseId: string,
+  packages = 1
+): Promise<ApiResponse<{ packages_opened: number; stock_display: string }>> {
+  try {
+    const headers = getHeaders(accessToken, organizationId);
+    const params = new URLSearchParams({ product: productId, warehouse: warehouseId });
+    const lookup = await axios.get(`${API_BASE_URL}/stocks/?${params.toString()}`, { headers });
+    const rows = Array.isArray(lookup.data) ? lookup.data : lookup.data?.results || [];
+    if (rows.length === 0) {
+      return { success: false, message: "Aucun stock pour ce produit dans cet entrepôt" };
+    }
+
+    const response = await axios.post(
+      `${API_BASE_URL}/stocks/${rows[0].id}/unpack/`,
+      { packages },
+      { headers }
+    );
+
+    revalidatePath("/dashboard/stock");
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error("[stock] Unpack error:", getErrorBody(error) || (error as Error)?.message);
+    return {
+      success: false,
+      message: formatAxiosErrorMessage(error, "Impossible d'ouvrir le conditionnement"),
+    };
+  }
+}
+
 export async function getStockByProduct(
   accessToken: string,
   organizationId: string,

@@ -35,7 +35,7 @@ import {
   CircleDollarSign,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatNumber, formatDate, formatDateTime } from "@/lib/format";
+import { formatPoints, formatPrice, formatNumber, formatDate, formatDateTime } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
@@ -64,6 +64,16 @@ import {
   LoyaltyProgram,
 } from "@/actions/settings.actions";
 import { Star } from "lucide-react";
+
+/**
+ * Arrondi d'une saisie de points au centième.
+ *
+ * Les points sont fractionnaires : tronquer à l'entier interdisait au client
+ * d'utiliser le solde qu'il vient de gagner (0,58 point devenait 0).
+ */
+function roundPoints(value: number): number {
+  return Math.floor(value * 100) / 100;
+}
 
 export default function PendingPaymentsPage() {
   const { data: session } = useSession();
@@ -126,7 +136,7 @@ export default function PendingPaymentsPage() {
   const maxUsablePoints = canUsePoints
     ? Math.min(
         availablePoints,
-        Math.floor(parseFloat(selectedSale?.amount_due || "0") / pointValue)
+        roundPoints(parseFloat(selectedSale?.amount_due || "0") / pointValue)
       )
     : 0;
 
@@ -217,7 +227,7 @@ export default function PendingPaymentsPage() {
   const handleAddPayment = async () => {
     if (!selectedSale || !session?.accessToken || !organization) return;
 
-    const points = parseInt(pointsUsed, 10) || 0;
+    const points = parseFloat(pointsUsed) || 0;
     const rawAmount = parseFloat(paymentAmount) || 0;
 
     if (rawAmount <= 0 && points <= 0) {
@@ -290,6 +300,12 @@ export default function PendingPaymentsPage() {
           saleTotalAmount: parseFloat(selectedSale.total),
           previouslyPaid: previouslyPaid,
           remainingBalance: remainingBalance,
+          // Un règlement peut être fait en points : le client doit lire ce qui
+          // a été consommé et ce qui lui reste. Valeurs autoritatives de la
+          // vente rafraîchie, jamais un recalcul de barème.
+          showLoyaltyPoints: !!result.data?.loyalty_program_active,
+          loyaltyPointsUsed: result.data?.loyalty_points_used ?? 0,
+          loyaltyPointsBalance: result.data?.loyalty_points_balance ?? 0,
         };
 
         const pdfUrl = generatePaymentReceiptPdfUrl(receiptData);
@@ -680,7 +696,7 @@ export default function PendingPaymentsPage() {
                     Payer avec les points
                   </Label>
                   <span className="text-xs font-medium text-amber-700">
-                    {availablePoints} pts disponibles
+                    {formatPoints(availablePoints)} pts disponibles
                   </span>
                 </div>
 
@@ -689,6 +705,7 @@ export default function PendingPaymentsPage() {
                     type="number"
                     min={0}
                     max={maxUsablePoints}
+                    step="0.01"
                     value={pointsUsed}
                     onChange={(e) => setPointsUsed(e.target.value)}
                     placeholder="0"
@@ -704,9 +721,9 @@ export default function PendingPaymentsPage() {
                   </Button>
                 </div>
 
-                {(parseInt(pointsUsed, 10) || 0) > 0 && (
+                {(parseFloat(pointsUsed) || 0) > 0 && (
                   <p className="text-sm text-amber-800">
-                    {pointsUsed} points = {formatPrice((parseInt(pointsUsed, 10) || 0) * pointValue)} déduits
+                    {formatPoints(parseFloat(pointsUsed) || 0)} points = {formatPrice((parseFloat(pointsUsed) || 0) * pointValue)} déduits
                   </p>
                 )}
                 {loyaltyProgram && loyaltyProgram.min_points_to_redeem > 0 && (

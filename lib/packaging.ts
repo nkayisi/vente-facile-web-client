@@ -98,3 +98,48 @@ export function toBaseQuantity(
   if (!packaging) return loose;
   return packages * packaging.factor + loose;
 }
+
+/** Ce que les deux canaux d'un stock offrent encore. */
+export interface ChannelAvailability {
+  /** Contenants encore scellés, `null` si le partage n'est pas connu. */
+  sealed: number | null;
+  /** Unités déjà hors emballage, `null` si le partage n'est pas connu. */
+  loose: number | null;
+}
+
+/**
+ * Retranche d'un stock ce qu'une saisie consomme déjà, canal par canal.
+ *
+ * Rejoue l'ordre exact du serveur (`SaleStockService.apply_decrement`) : la
+ * part en contenants sort du scellé, puis la part au détail puise dans le vrac
+ * et, s'il ne suffit pas, ouvre autant de contenants que nécessaire. Sans cette
+ * simulation, deux lignes du même produit dans le panier se comptent mal et le
+ * caissier découvre le refus seulement à l'encaissement.
+ *
+ * `null` en entrée signifie « partage inconnu » (stock multi-entrepôts, produit
+ * non suivi) et se propage : on n'invente jamais un zéro bloquant.
+ */
+export function remainingChannels(
+  stock: ChannelAvailability,
+  used: { packages: number; loose: number },
+  factor: number
+): ChannelAvailability {
+  if (stock.sealed === null || stock.loose === null || !factor || factor < 2) {
+    return { sealed: stock.sealed, loose: stock.loose };
+  }
+
+  const sealed = stock.sealed - Math.max(0, used.packages);
+  let loose = stock.loose;
+  let remainingSealed = sealed;
+
+  const neededLoose = Math.max(0, used.loose);
+  if (neededLoose > loose) {
+    // Ouverture : le déficit se comble par contenants entiers, jamais l'inverse.
+    const toOpen = Math.ceil((neededLoose - loose) / factor);
+    remainingSealed -= toOpen;
+    loose += toOpen * factor;
+  }
+  loose -= neededLoose;
+
+  return { sealed: remainingSealed, loose };
+}

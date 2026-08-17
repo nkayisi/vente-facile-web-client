@@ -81,6 +81,17 @@ export interface QuantityPickerProps {
    * dérivable (stock multi-entrepôts). Ne jamais traiter `null` comme `0`.
    */
   looseAvailable: number | null;
+  /**
+   * Contenants encore scellés, seuls réellement vendables en gros. `null` si la
+   * borne n'existe pas (entrepôt tolérant le découvert) ou n'est pas connue.
+   */
+  sealedAvailable?: number | null;
+  /**
+   * Ouvre `packages` conditionnements en stock. Fourni seulement quand le
+   * caissier en a le droit ; sans lui, le sélecteur se contente d'expliquer le
+   * refus. Doit résoudre une fois le stock rafraîchi.
+   */
+  onUnpack?: (packages: number) => Promise<void>;
   onConfirm: (selection: PackagedSelection) => void;
   submitLabel?: string;
   /**
@@ -101,6 +112,8 @@ export function QuantityPicker({
   initial,
   maxBase,
   looseAvailable,
+  sealedAvailable = null,
+  onUnpack,
   onConfirm,
   submitLabel = "Ajouter au panier",
   discountPercent,
@@ -115,6 +128,8 @@ export function QuantityPicker({
       initial={initial}
       maxBase={maxBase}
       looseAvailable={looseAvailable}
+      sealedAvailable={sealedAvailable}
+      onUnpack={onUnpack}
       submitLabel={submitLabel}
       discountPercent={discountPercent}
       maxDiscountPercent={maxDiscountPercent}
@@ -188,6 +203,8 @@ function QuantityPickerBody({
   initial,
   maxBase,
   looseAvailable,
+  sealedAvailable,
+  onUnpack,
   submitLabel,
   discountPercent,
   maxDiscountPercent,
@@ -199,6 +216,8 @@ function QuantityPickerBody({
   initial?: PackagedSelection;
   maxBase: number | null;
   looseAvailable: number | null;
+  sealedAvailable: number | null;
+  onUnpack?: (packages: number) => Promise<void>;
   submitLabel: string;
   discountPercent?: number;
   maxDiscountPercent: number;
@@ -235,6 +254,7 @@ function QuantityPickerBody({
   const [loose, setLoose] = useState(startLoose);
   const [channel, setChannel] = useState<Channel>(startChannel);
   const [draft, setDraft] = useState(seed ? String(seed) : "");
+  const [unpacking, setUnpacking] = useState(false);
   const showDiscount = discountPercent !== undefined;
   const [discount, setDiscount] = useState(discountPercent ?? 0);
   const [discountDraft, setDiscountDraft] = useState(
@@ -283,6 +303,26 @@ function QuantityPickerBody({
   }, [maxBase, looseAvailable, packaging, factor, packageWord, retailWord]);
 
   const overStock = maxBase !== null && base > maxBase;
+
+  // Miroir de `PackagingService.assert_sealed_available` : le gros ne se sert
+  // que dans les contenants encore scellés. Sans ce garde-fou, demander
+  // 3 casiers avec 2 casiers + 12 bouteilles en stock passait le contrôle local
+  // (36 unités disponibles, 36 demandées) et se faisait refuser par un 400 à
+  // l'encaissement, devant le client.
+  const overSealed =
+    packaging !== null && sealedAvailable !== null && packages > sealedAvailable;
+
+  // Repli proposé au caissier : tout ce qui reste scellé, le manque basculé sur
+  // le canal détail. C'est la seule issue réelle, les unités déjà sorties d'un
+  // emballage ne peuvent pas y être remises.
+  const fallbackSelection = useMemo(() => {
+    if (!overSealed || sealedAvailable === null) return null;
+    const missingLoose = (packages - sealedAvailable) * factor;
+    const nextLoose = loose + missingLoose;
+    if (maxBase !== null && sealedAvailable * factor + nextLoose > maxBase) return null;
+    return { packages: sealedAvailable, loose: nextLoose };
+  }, [overSealed, sealedAvailable, packages, loose, factor, maxBase]);
+
   // Refus symétrique de `PackagingService.ensure_loose_available` : sans
   // déconditionnement automatique, on ne sert au détail que le vrac déjà ouvert.
   const needsOpening =
@@ -290,7 +330,30 @@ function QuantityPickerBody({
     product.allow_auto_unpacking === false &&
     looseAvailable !== null &&
     loose > looseAvailable;
-  const canSubmit = base >= 1 && !overStock && !needsOpening;
+
+  // Ouverture qui aura lieu automatiquement : on l'annonce avant l'ajout plutôt
+  // que de la constater après la vente. Le geste se prépare, il ne se subit pas.
+  const packagesToOpen =
+    packaging !== null &&
+    product.allow_auto_unpacking !== false &&
+    looseAvailable !== null &&
+    loose > looseAvailable
+      ? Math.ceil((loose - looseAvailable) / factor)
+      : 0;
+
+  const canSubmit = base >= 1 && !overStock && !overSealed && !needsOpening;
+
+  // Ouverture manuelle : elle ne se propose que si elle est possible, c'est à
+  // dire s'il reste des contenants scellés à ouvrir. Le message renvoyait
+  // jusqu'ici vers un écran qui n'existait pas.
+  const packagesToOpenManually =
+    needsOpening && looseAvailable !== null
+      ? Math.ceil((loose - looseAvailable) / factor)
+      : 0;
+  const canUnpackHere =
+    !!onUnpack &&
+    packagesToOpenManually > 0 &&
+    (sealedAvailable === null || packagesToOpenManually <= sealedAvailable);
 
   const currentValue = channel === "package" ? packages : loose;
 
@@ -530,13 +593,83 @@ function QuantityPickerBody({
         </p>
       ) : null}
 
-      {overStock || needsOpening ? (
-        <p className="flex items-start gap-1 rounded-lg bg-red-50 px-1.5 py-1 text-[10px] font-medium leading-snug text-red-700">
-          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+      {overStock || overSealed || needsOpening ? (
+        <div className="space-y-1 rounded-lg bg-red-50 px-1.5 py-1">
+          <p className="flex items-start gap-1 text-[10px] font-medium leading-snug text-red-700">
+            <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+            <span>
+              {overStock
+                ? `Il ne reste que ${availabilityLabel}.`
+                : overSealed
+                  ? `Il ne reste que ${sealedAvailable} ${pluralizeUnit(packageWord, sealedAvailable ?? 0)} ${
+                      (sealedAvailable ?? 0) > 1 ? "scellés" : "scellé"
+                    }. Les ${pluralizeUnit(retailWord, 2)} déjà sorties d'un emballage ne peuvent pas y être remises.`
+                  : `Aucune ${retailWord} à l'unité disponible : ouvrez un ${packageWord} pour continuer.`}
+            </span>
+          </p>
+
+          {/* Repli en un geste : le caissier n'a rien à recalculer devant le client. */}
+          {fallbackSelection ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 w-full border-red-200 bg-white text-[11px] font-semibold text-red-700 hover:bg-red-50"
+              onClick={() => {
+                setPackages(fallbackSelection.packages);
+                setLoose(fallbackSelection.loose);
+                setDraft(
+                  channel === "package"
+                    ? String(fallbackSelection.packages || "")
+                    : String(fallbackSelection.loose || "")
+                );
+              }}
+            >
+              Vendre{" "}
+              {fallbackSelection.packages > 0
+                ? `${fallbackSelection.packages} ${pluralizeUnit(packageWord, fallbackSelection.packages)} + `
+                : ""}
+              {formatNumber(fallbackSelection.loose)}{" "}
+              {pluralizeUnit(retailWord, fallbackSelection.loose)}
+            </Button>
+          ) : null}
+
+          {/* Débloquer sans quitter la caisse : l'ouverture est un geste de
+              stock, mais il se décide au comptoir, client devant soi. */}
+          {canUnpackHere ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={unpacking}
+              className="h-8 w-full border-red-200 bg-white text-[11px] font-semibold text-red-700 hover:bg-red-50"
+              onClick={async () => {
+                if (!onUnpack) return;
+                setUnpacking(true);
+                try {
+                  await onUnpack(packagesToOpenManually);
+                } finally {
+                  setUnpacking(false);
+                }
+              }}
+            >
+              {unpacking
+                ? "Ouverture…"
+                : `Ouvrir ${packagesToOpenManually} ${pluralizeUnit(packageWord, packagesToOpenManually)} (${formatNumber(packagesToOpenManually * factor)} ${pluralizeUnit(retailWord, packagesToOpenManually * factor)})`}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Ouverture automatique annoncée AVANT l'ajout : c'est une conséquence
+          du geste, pas une surprise à découvrir sur le ticket. */}
+      {packagesToOpen > 0 && !overStock && !overSealed ? (
+        <p className="flex items-start gap-1 rounded-lg bg-amber-50 px-1.5 py-1 text-[10px] font-medium leading-snug text-amber-700">
+          <Package className="mt-px h-3 w-3 shrink-0" />
           <span>
-            {overStock
-              ? `Il ne reste que ${availabilityLabel}.`
-              : `Aucune ${retailWord} à l'unité disponible : ouvrez un ${packageWord} depuis le stock.`}
+            {packagesToOpen} {pluralizeUnit(packageWord, packagesToOpen)}{" "}
+            {packagesToOpen > 1 ? "seront ouverts" : "sera ouvert"} pour servir{" "}
+            {formatNumber(loose)} {pluralizeUnit(retailWord, loose)}.
           </span>
         </p>
       ) : null}

@@ -166,6 +166,19 @@ export default function SaleDetailPage() {
         receiptFooter: settingsResult.success && settingsResult.data?.receipt_footer ? settingsResult.data.receipt_footer : undefined,
         isCreditSale: sale.sale_type === "credit",
         amountDue: parseFloat(sale.amount_due),
+        // Une réimpression doit être identique au reçu d'origine : sans ces
+        // champs, le bloc fidélité disparaissait silencieusement. Les valeurs
+        // viennent du serveur, jamais d'un recalcul de barème.
+        showLoyaltyPoints: !!(
+          settingsResult.success &&
+          settingsResult.data?.show_loyalty_points_on_receipt &&
+          sale.customer &&
+          sale.loyalty_program_active
+        ),
+        loyaltyPointsEarned: sale.loyalty_points_earned ?? 0,
+        loyaltyPointsUsed: sale.loyalty_points_used ?? 0,
+        loyaltyPointsBalance: sale.loyalty_points_balance ?? 0,
+        loyaltyRedemptionAmount: parseFloat(sale.loyalty_redemption_amount || "0") || 0,
       };
 
       const paperWidth = (settingsResult.success && settingsResult.data?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;

@@ -65,11 +65,14 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { formatPrice, formatNumber } from "@/lib/format";
+import { formatPoints, formatPrice, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { StatValue } from "@/components/shared/StatValue";
 import { ProductThumb } from "@/components/products/product-thumb";
 import { PackagedSelection, QuantityPicker } from "@/components/sales/quantity-picker";
+import { ChannelAvailability, remainingChannels } from "@/lib/packaging";
+import { unpackStock } from "@/actions/stock.actions";
+import { usePermissions } from "@/components/auth/permissions-provider";
 import { pluralizeUnit } from "@/lib/units";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
@@ -193,6 +196,8 @@ function CartLineQuantityEditor({
   onOpenKeyChange,
   maxBase,
   looseAvailable,
+  sealedAvailable,
+  onUnpack,
   maxDiscountPercent,
   onConfirm,
   onRemove,
@@ -204,6 +209,8 @@ function CartLineQuantityEditor({
   onOpenKeyChange: (key: string | null) => void;
   maxBase: number | null;
   looseAvailable: number | null;
+  sealedAvailable: number | null;
+  onUnpack?: (packages: number) => Promise<void>;
   maxDiscountPercent: number;
   onConfirm: (selection: PackagedSelection) => void;
   onRemove: () => void;
@@ -234,6 +241,8 @@ function CartLineQuantityEditor({
         initial={{ packages: item.packageQuantity, loose: looseQuantityOf(item) }}
         maxBase={maxBase}
         looseAvailable={looseAvailable}
+        sealedAvailable={sealedAvailable}
+        onUnpack={onUnpack}
         discountPercent={item.discount_percentage}
         maxDiscountPercent={maxDiscountPercent}
         onConfirm={onConfirm}
@@ -280,12 +289,26 @@ function describeCartLine(item: CartItem): string {
   return parts.join(" + ");
 }
 
+/**
+ * Arrondi d'une saisie de points au centième.
+ *
+ * Les points sont fractionnaires : tronquer à l'entier interdisait au client
+ * d'utiliser le solde qu'il vient de gagner (0,58 point devenait 0).
+ */
+function roundPoints(value: number): number {
+  return Math.floor(value * 100) / 100;
+}
+
 export default function POSPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const justAddedTimerRef = useRef<number | null>(null);
   const { currency: defaultCurrency } = useCurrency();
+  // Même droit que la saisie d'un mouvement de stock : ouvrir un conditionnement
+  // est un mouvement, il est simplement déclenché depuis la caisse.
+  const { hasPermission } = usePermissions();
+  const canCreateStockMovement = hasPermission("stock_movements.create");
 
   // State
   const [isLoading, setIsLoading] = useState(true);
@@ -568,6 +591,22 @@ export default function POSPage() {
       return;
     }
 
+    // Fusion avec une ligne existante : le sélecteur a validé le scellé pour sa
+    // propre saisie, mais la somme des deux lignes peut dépasser ce qui reste.
+    // Sans ce contrôle, le refus n'arriverait qu'au 400 de l'encaissement.
+    const sealedLeft = addableSealed(product);
+    if (existingIndex >= 0 && packages > 0 && sealedLeft !== null && packages > sealedLeft) {
+      const packageWord = pluralizeUnit(
+        product.packaging_unit_name || "conditionnement",
+        sealedLeft
+      );
+      toast.warning(
+        `"${product.name}" : il ne reste que ${sealedLeft} ${packageWord} scellé${sealedLeft > 1 ? "s" : ""} en tenant compte du panier.`,
+        { duration: 5000 }
+      );
+      return;
+    }
+
     if (existingIndex >= 0) {
       const newCart = [...cart];
       const line = newCart[existingIndex];
@@ -652,17 +691,93 @@ export default function POSPage() {
   };
 
   /**
-   * Unités déjà hors emballage scellé, diminuées de ce que le panier consomme
-   * déjà. `null` quand le partage n'est pas dérivable (multi-entrepôts) : le
-   * serveur reste seul juge, on n'invente pas un zéro bloquant.
+   * Ce que les deux canaux offrent encore, une fois retranché ce que le panier
+   * consomme déjà. `null` quand le partage n'est pas connu (multi-entrepôts) :
+   * le serveur reste seul juge, on n'invente pas un zéro bloquant.
+   *
+   * La simulation rejoue l'ordre du serveur (contenants scellés d'abord, puis
+   * ouverture pour servir le détail), sans quoi deux lignes du même produit se
+   * compteraient mal.
    */
-  const addableLoose = (product: Product, ignoreCartLine = false): number | null => {
-    if (product.stock_loose === null || product.stock_loose === undefined) return null;
-    const stockLoose = parseFloat(product.stock_loose) || 0;
-    if (ignoreCartLine) return stockLoose;
+  const addableChannels = (
+    product: Product,
+    ignoreCartLine = false
+  ): ChannelAvailability => {
+    const factor = packagingFactorOf(product);
+    if (product.stock_loose === null || product.stock_loose === undefined) {
+      return { sealed: null, loose: null };
+    }
+    const stock: ChannelAvailability = {
+      sealed:
+        product.stock_packages === null || product.stock_packages === undefined
+          ? null
+          : product.stock_packages,
+      loose: parseFloat(product.stock_loose) || 0,
+    };
+    if (ignoreCartLine || !factor) return stock;
+
     const line = cart.find(item => item.product.id === product.id);
-    const used = line ? looseQuantityOf(line) : 0;
-    return Math.max(0, stockLoose - used);
+    if (!line) return stock;
+    return remainingChannels(
+      stock,
+      { packages: line.packageQuantity, loose: looseQuantityOf(line) },
+      factor
+    );
+  };
+
+  const addableLoose = (product: Product, ignoreCartLine = false): number | null =>
+    addableChannels(product, ignoreCartLine).loose;
+
+  /**
+   * Contenants encore scellés et donc réellement vendables en gros. Borne
+   * absente si l'entrepôt tolère le découvert, comme le fait
+   * `PackagingService.assert_sealed_available`.
+   */
+  const addableSealed = (product: Product, ignoreCartLine = false): number | null => {
+    if (!product.track_inventory || product.allow_negative_stock) return null;
+    return addableChannels(product, ignoreCartLine).sealed;
+  };
+
+  /** Relit le catalogue de l'entrepôt courant après un mouvement de stock. */
+  const refreshProducts = async () => {
+    if (!session?.accessToken || !organization) return;
+    const result = await getProducts(session.accessToken, organization.id, {
+      is_active: true,
+      in_stock: true,
+      ...(currentSession?.warehouse ? { warehouse: currentSession.warehouse } : {}),
+    });
+    if (result.success && result.data) {
+      setProducts(result.data.results || []);
+    }
+  };
+
+  /**
+   * Ouvre des conditionnements depuis la caisse, quand le produit interdit le
+   * déconditionnement automatique. Sans cela, le sélecteur renvoyait vers un
+   * écran de stock qui n'offrait aucune action : impasse pour le caissier.
+   *
+   * `undefined` quand le droit manque ou qu'aucun entrepôt n'est rattaché à la
+   * session : le sélecteur se contente alors d'expliquer le refus.
+   */
+  const unpackHandlerFor = (product: Product) => {
+    if (!canCreateStockMovement || !currentSession?.warehouse) return undefined;
+    if (product.allow_auto_unpacking !== false) return undefined;
+    return async (packages: number) => {
+      if (!session?.accessToken || !organization || !currentSession.warehouse) return;
+      const result = await unpackStock(
+        session.accessToken,
+        organization.id,
+        product.id,
+        currentSession.warehouse,
+        packages
+      );
+      if (!result.success) {
+        toast.error(result.message || "Impossible d'ouvrir le conditionnement");
+        return;
+      }
+      toast.success(`${product.name} : ${result.data?.stock_display ?? "stock mis à jour"}`);
+      await refreshProducts();
+    };
   };
 
   // Update cart item quantity
@@ -774,6 +889,23 @@ export default function POSPage() {
     return r2(subtotal - itemDiscount - globalDiscountAmount + tax);
   };
 
+  /**
+   * Remise obtenue en réglant une part de la vente en points, en devise
+   * principale (`point_value` y est libellé).
+   *
+   * `calculateTotal()` reste volontairement **brut** : c'est lui qui plafonne le
+   * nombre de points saisissables, un total déjà net rendrait le calcul
+   * circulaire.
+   */
+  const calculateLoyaltyDiscount = () => {
+    if (!usePoints || pointsToUse <= 0 || !loyaltyProgram?.is_active) return 0;
+    const pointValue = loyaltyProgram.point_value ? parseFloat(loyaltyProgram.point_value) : 1;
+    return r2(Math.min(pointsToUse * pointValue, calculateTotal()));
+  };
+
+  /** Ce que le client doit réellement, points déduits, en devise principale. */
+  const calculateNetTotal = () => r2(calculateTotal() - calculateLoyaltyDiscount());
+
   // ---------------------------------------------------------------------------
   // Multi-devise : conversions basées sur OrganizationCurrency.exchange_rate
   // (= unités de devise principale pour 1 unité de cette devise ; principale = 1).
@@ -854,7 +986,12 @@ export default function POSPage() {
       }
     }
     const globalDisc = convMoney(calculateGlobalDiscountAmount(), primaryCode(), cur);
-    return roundMoney(subtotal - itemDiscount - globalDisc + tax, cur);
+    // La remise fidélité s'applique après coup, comme côté serveur : elle
+    // s'ajoute à `discount_amount` sur la vente déjà totalisée. Sans elle, la
+    // modale annonçait un montant à encaisser pré-remise, corrigé seulement
+    // après le retour du serveur.
+    const loyaltyDisc = convMoney(calculateLoyaltyDiscount(), primaryCode(), cur);
+    return roundMoney(subtotal - itemDiscount - globalDisc - loyaltyDisc + tax, cur);
   };
   // Somme des règlements convertie (et arrondie) dans la devise de la vente.
   const paidInSale = () =>
@@ -938,7 +1075,6 @@ export default function POSPage() {
     }
 
     const invCur = saleCurrency();
-    const isPrimaryInvoice = invCur === primaryCode();
     const total = calculateTotal();               // en devise principale
     const totalSale = totalInSale();               // en devise de facture
     const paidSale = paidInSale();                 // en devise de facture
@@ -1035,11 +1171,12 @@ export default function POSPage() {
 
       const saleType = isCreditSale ? "credit" : "retail";
 
-      // Réduction des points (loyauté en devise principale ; limitée aux ventes
-      // en devise principale pour éviter le mélange de devises).
-      const pointsDiscount = isPrimaryInvoice && usePoints && pointsToUse > 0 && loyaltyProgram
-        ? pointsToUse * (loyaltyProgram.point_value ? parseFloat(loyaltyProgram.point_value) : 1)
-        : 0;
+      // Réduction obtenue par les points, en devise principale (`point_value` y
+      // est libellé). Le serveur la reconvertit dans la devise de facture via
+      // `resolve_redemption(target_currency=...)`, on ne la restreint donc plus
+      // aux factures en principale : cette garde faisait disparaître les points
+      // en silence, sans le moindre message au caissier.
+      const pointsDiscount = calculateLoyaltyDiscount();
 
       const result = await createSale(session.accessToken, organization.id, {
         register: currentSession.register,
@@ -1055,8 +1192,8 @@ export default function POSPage() {
         is_pos: true,
         items,
         payments,
-        // Points de fidélité utilisés (uniquement si facture en devise principale)
-        points_used: isPrimaryInvoice && usePoints ? pointsToUse : undefined,
+        // Points de fidélité utilisés. Le serveur plafonne et convertit.
+        points_used: usePoints ? pointsToUse : undefined,
       });
 
       if (result.success && result.data) {
@@ -1157,26 +1294,16 @@ export default function POSPage() {
             showLoyaltyPoints: !!(
               orgSettings?.show_loyalty_points_on_receipt &&
               selectedCustomer &&
-              loyaltyProgram?.is_active
+              saleAuthoritative.loyalty_program_active
             ),
-            // Points gagnés/balance basés sur le total autoritatif renvoyé par
-            // le backend (qui a déjà déduit la part loyauté du total).
-            loyaltyPointsEarned: loyaltyProgram?.is_active
-              ? Math.floor(
-                  (backendTotal *
-                    (loyaltyProgram.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1)) /
-                    100
-                )
-              : 0,
-            loyaltyPointsBalance: customerLoyalty
-              ? customerLoyalty.current_points -
-                (usePoints ? pointsToUse : 0) +
-                Math.floor(
-                  (backendTotal *
-                    (loyaltyProgram?.points_percentage ? parseFloat(loyaltyProgram.points_percentage) : 1)) /
-                    100
-                )
-              : 0,
+            // Valeurs telles qu'écrites au registre par le serveur. Le POS
+            // rejouait auparavant le barème avec la seule formule « pourcentage »
+            // en dur : sur un programme `fixed_per_amount`, qui est le défaut,
+            // le reçu annonçait dix fois les points réellement crédités.
+            loyaltyPointsEarned: saleAuthoritative.loyalty_points_earned ?? 0,
+            loyaltyPointsUsed: saleAuthoritative.loyalty_points_used ?? 0,
+            loyaltyPointsBalance: saleAuthoritative.loyalty_points_balance ?? 0,
+            loyaltyRedemptionAmount: backendLoyaltyRedemption,
           };
           const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
           return assignPdfToPrintWindow(printTab, pdfUrl, {
@@ -1478,7 +1605,9 @@ export default function POSPage() {
     );
   }
 
-  const total = calculateTotal();
+  // Ce que le client doit, points déduits. Hors modale d'encaissement,
+  // `usePoints` est faux et cette valeur vaut le total brut.
+  const total = calculateNetTotal();
   const change = getAmountInPrimary() - total;
 
   return (
@@ -1727,6 +1856,8 @@ export default function POSPage() {
                         }
                         maxBase={addableBase(product)}
                         looseAvailable={addableLoose(product)}
+                        sealedAvailable={addableSealed(product)}
+                        onUnpack={unpackHandlerFor(product)}
                         onConfirm={(selection) => addToCart(product, selection)}
                       >
                         <button
@@ -1889,6 +2020,8 @@ export default function POSPage() {
                             : null
                         }
                         looseAvailable={addableLoose(item.product, true)}
+                        sealedAvailable={addableSealed(item.product, true)}
+                        onUnpack={unpackHandlerFor(item.product)}
                         maxDiscountPercent={MAX_SALE_DISCOUNT_PERCENT}
                         onConfirm={(selection) => setCartLineSelection(index, selection)}
                         onRemove={() => removeFromCart(index)}
@@ -2064,6 +2197,8 @@ export default function POSPage() {
                           : null
                       }
                       looseAvailable={addableLoose(item.product, true)}
+                      sealedAvailable={addableSealed(item.product, true)}
+                      onUnpack={unpackHandlerFor(item.product)}
                       maxDiscountPercent={MAX_SALE_DISCOUNT_PERCENT}
                       onConfirm={(selection) => setCartLineSelection(index, selection)}
                       onRemove={() => removeFromCart(index)}
@@ -2212,7 +2347,7 @@ export default function POSPage() {
                     <div className="flex items-center gap-2">
                       <Star className="h-4 w-4 text-amber-600" />
                       <span className="font-medium text-amber-800">
-                        {customerLoyalty.current_points} pts disponibles
+                        {formatPoints(customerLoyalty.current_points)} pts disponibles
                       </span>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2224,7 +2359,7 @@ export default function POSPage() {
                           if (e.target.checked) {
                             // Par défaut, utiliser tous les points disponibles (max = total de la facture en points)
                             const maxPointsValue = calculateTotal() / (loyaltyProgram.point_value ? parseFloat(loyaltyProgram.point_value) : 1);
-                            const pointsToApply = Math.min(customerLoyalty.current_points, Math.floor(maxPointsValue));
+                            const pointsToApply = Math.min(customerLoyalty.current_points, roundPoints(maxPointsValue));
                             setPointsToUse(pointsToApply);
                           } else {
                             setPointsToUse(0);
@@ -2250,15 +2385,17 @@ export default function POSPage() {
                               : 1;
                             const totalNow = calculateTotal();
                             const maxByTotal = pointValue > 0
-                              ? Math.floor(totalNow / pointValue)
+                              ? roundPoints(totalNow / pointValue)
                               : customerLoyalty.current_points;
                             const value = Math.min(
-                              Math.max(0, parseInt(e.target.value) || 0),
+                              Math.max(0, roundPoints(parseFloat(e.target.value) || 0)),
                               customerLoyalty.current_points,
                               maxByTotal,
                             );
                             setPointsToUse(value);
                           }}
+                          // Pas de pas entier : le solde peut être fractionnaire.
+                          step="0.01"
                           min={loyaltyProgram.min_points_to_redeem || 100}
                           max={customerLoyalty.current_points}
                           className="w-24 h-8 text-center"

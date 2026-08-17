@@ -189,6 +189,15 @@ export interface Sale {
    * est informé sans être interrompu ; la notice reste consultable ensuite.
    */
   unpacking_notices?: UnpackingNotice[];
+  /**
+   * Fidélité, telle qu'elle a réellement été écrite au registre. Le reçu doit
+   * lire ces valeurs et ne jamais rejouer le barème du programme : la formule
+   * n'est pas la même selon `points_calculation_type`.
+   */
+  loyalty_points_earned?: number;
+  loyalty_points_used?: number;
+  loyalty_points_balance?: number;
+  loyalty_program_active?: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -473,8 +473,13 @@ export async function getCustomerLoyalty(
       `${API_BASE_URL}/settings/customer-loyalty/?customer=${customerId}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
+    // Même précaution que `getLoyaltyRewards` : la réponse peut être une liste
+    // brute ou une enveloppe { count, results }. Ne lire que le tableau nu
+    // renvoyait `null` en permanence, ce qui masquait tout le panneau fidélité
+    // du POS et affichait « 0 pts » sur la fiche client.
     const data = response.data;
-    return { success: true, data: Array.isArray(data) && data.length > 0 ? data[0] : null };
+    const list: CustomerLoyalty[] = Array.isArray(data) ? data : data?.results || [];
+    return { success: true, data: list.length > 0 ? list[0] : null };
   } catch (error: unknown) {
     console.error("[Settings] Get customer loyalty error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des points de fidélité") };
