@@ -51,6 +51,14 @@ import {
   CreateRegisterData,
 } from "@/actions/sales.actions";
 import { usePermissions } from "@/components/auth/permissions-provider";
+import { useCurrency } from "@/components/providers/currency-provider";
+import {
+  buildCashSessionReceipt,
+  type CashSessionCurrencyLine,
+  type CashSessionReceiptData,
+} from "@/lib/receipt";
+import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
+import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 
 /**
  * Durée écoulée depuis l'ouverture : « depuis 3 h 20 ».
@@ -85,6 +93,9 @@ export default function RegistersPage() {
   // State
   const [isLoading, setIsLoading] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const { currency: defaultCurrency } = useCurrency();
+  const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
+  const printer = useReceiptPrinter();
   const [registers, setRegisters] = useState<Register[]>([]);
   // Les selects async pour succursale + entrepôt chargent leur liste à la
   // volée - pas besoin de state local complet.
@@ -320,6 +331,8 @@ export default function RegistersPage() {
       return;
     }
 
+    // Ouvert sur le geste, avant l'appel réseau : sinon le navigateur bloque.
+    const closeJob = printer.begin();
     setIsSubmitting(true);
 
     try {
@@ -349,7 +362,66 @@ export default function RegistersPage() {
       );
 
       if (result.success) {
-        toast.success("Session fermée avec succès");
+        // Ticket Z : fermer une caisse ne laissait jusqu'ici aucune trace
+        // papier, alors que c'est le moment où le fond est remis et où un écart
+        // doit être constaté puis signé.
+        const closed = result.data;
+        if (chrome && closed) {
+          const num = (v: string | null | undefined) => {
+            const n = parseFloat(v ?? "0");
+            return Number.isFinite(n) ? n : 0;
+          };
+          const balances: CashSessionCurrencyLine[] = (
+            closed.currency_balances?.length
+              ? closed.currency_balances
+              : [{
+                  // Session mono-devise : les soldes plats sont dans la devise
+                  // par défaut de l'organisation.
+                  currency: defaultCurrency?.code || "CDF",
+                  opening_balance: closed.opening_balance,
+                  expected_balance: closed.expected_balance,
+                  counted_balance: closed.counted_balance,
+                  difference: closed.difference,
+                }]
+          ).map((b) => ({
+            currency: b.currency,
+            opening: num(b.opening_balance),
+            expected: num(b.expected_balance),
+            counted: b.counted_balance === null ? null : num(b.counted_balance),
+            difference: b.difference === null ? null : num(b.difference),
+          }));
+
+          const receipt: CashSessionReceiptData = {
+            kind: "cash_session",
+            chrome,
+            // La session n'est pas numérotée côté serveur : sa référence est son
+            // identifiant, réduit à une forme lisible au comptoir.
+            number: `CZ-${closed.id.slice(0, 8).toUpperCase()}`,
+            date: new Date().toLocaleString("fr-CD"),
+            registerName: closed.register_name,
+            // Pas de `cashierName` : les lignes « Ouverte par » et « Fermée par »
+            // le disent mieux, et plus précisément.
+            warehouseName: closed.warehouse_name || undefined,
+            openedAt: new Date(closed.opened_at).toLocaleString("fr-CD"),
+            closedAt: closed.closed_at
+              ? new Date(closed.closed_at).toLocaleString("fr-CD")
+              : new Date().toLocaleString("fr-CD"),
+            openedByName: closed.opened_by_name,
+            closedByName: closed.closed_by_name || undefined,
+            salesCount: closed.sales_count,
+            paymentsSummary: closed.payments_summary ?? [],
+            balances,
+          };
+
+          closeJob.present(buildCashSessionReceipt(receipt), {
+            filename: `cloture-caisse-${closed.register_name}.pdf`,
+            paperWidth,
+            successMessage: "Session fermée",
+          });
+        } else {
+          closeJob.abort();
+          toast.success("Session fermée avec succès");
+        }
 
         // Refresh data
         const [registersResult, sessionsResult] = await Promise.all([
@@ -370,9 +442,11 @@ export default function RegistersPage() {
         setCloseCountedByCurrency({});
         setCloseNotes("");
       } else {
+        closeJob.abort();
         toast.error(result.message || "Erreur lors de la fermeture");
       }
     } catch (error) {
+      closeJob.abort();
       toast.error("Une erreur est survenue");
     } finally {
       setIsSubmitting(false);

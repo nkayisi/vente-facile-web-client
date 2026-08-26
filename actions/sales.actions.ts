@@ -13,7 +13,24 @@ const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API
 export type SaleStatus = "draft" | "pending" | "completed" | "partially_paid" | "cancelled" | "refunded";
 export type SaleType = "retail" | "wholesale" | "credit";
 export type SessionStatus = "open" | "closed";
-export type PaymentMethodType = "cash" | "card" | "mobile_money" | "bank_transfer" | "check" | "credit" | "other";
+/**
+ * Types de moyens de paiement, alignés sur `PaymentMethod.MethodType`.
+ *
+ * `loyalty` et `advance` ne sont pas de l'argent physique : le backend les
+ * exclut des mouvements de caisse (les points ont été gagnés, l'avance est
+ * entrée au tiroir quand elle a été enregistrée). Ils manquaient ici, si bien
+ * que les filtrer côté client était signalé comme une comparaison impossible.
+ */
+export type PaymentMethodType =
+  | "cash"
+  | "card"
+  | "mobile_money"
+  | "bank_transfer"
+  | "check"
+  | "credit"
+  | "loyalty"
+  | "advance"
+  | "other";
 export type ReturnStatus = "draft" | "pending" | "approved" | "completed" | "rejected";
 export type ReturnType = "full" | "partial" | "exchange";
 export type QuotationStatus = "draft" | "sent" | "accepted" | "rejected" | "expired" | "converted";
@@ -135,7 +152,10 @@ export interface Payment {
   tendered_amount: string | null;
   currency: string;
   exchange_rate: string;
+  /** Référence EXTERNE saisie au comptoir : transaction mobile money, chèque. */
   reference: string;
+  /** Numéro du reçu remis au client, alloué par le serveur (RGL-2026-00042). */
+  receipt_number: string;
   status: string;
   received_by: string;
   received_by_name: string;
@@ -198,6 +218,14 @@ export interface Sale {
   loyalty_points_used?: number;
   loyalty_points_balance?: number;
   loyalty_program_active?: boolean;
+  /**
+   * Part de cette facture encore réglable en points, dans sa devise, déjà
+   * bornée par le reste à payer. Calculée par le serveur avec la fonction qu'il
+   * applique lui-même : ne jamais rejouer le plafond du programme côté client,
+   * l'écran proposerait un maximum que `resolve_redemption` refuserait.
+   * Absente des réponses de LISTE, qui ne portent aucun champ de fidélité.
+   */
+  loyalty_max_redeemable?: string;
   created_at: string;
   updated_at: string;
 }
@@ -452,6 +480,9 @@ export interface SaleFilters {
   search?: string;
   page?: number;
   page_size?: number;
+  /** Factures encore dues dont l'échéance (`due_date`) est dépassée. */
+  overdue?: boolean;
+  ordering?: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -867,6 +898,8 @@ export async function getSales(
     if (filters?.search) params.append("search", filters.search);
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.page_size) params.append("page_size", String(filters.page_size));
+    if (filters?.overdue) params.append("overdue", "true");
+    if (filters?.ordering) params.append("ordering", filters.ordering);
 
     const response = await axios.get(
       `${API_BASE_URL}/sales/?${params.toString()}`,

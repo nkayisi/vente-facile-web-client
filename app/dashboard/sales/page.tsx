@@ -26,6 +26,10 @@ import {
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
+import { MultiCurrencyTotal } from "@/components/shared/MultiCurrencyTotal";
+import { createMoneyHelpers } from "@/lib/currency";
+import { useCurrency } from "@/components/providers/currency-provider";
+import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import { getUserOrganizations } from "@/actions/organization.actions";
 import {
   getSales,
@@ -102,6 +106,13 @@ export default function SalesPage() {
   const [stats, setStats] = useState<SalesStats | null>(null);
   const [currentSession, setCurrentSession] = useState<RegisterSession | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
+
+  const { currency: defaultCurrency } = useCurrency();
+  const money = useMemo(
+    () => createMoneyHelpers(orgCurrencies, defaultCurrency),
+    [orgCurrencies, defaultCurrency]
+  );
 
   // Fetch data
   useEffect(() => {
@@ -116,13 +127,14 @@ export default function SalesPage() {
           // Fetch in parallel. La liste des caisses n'est plus chargée ici :
           // le compteur « caisses actives » a cédé la place au reste à
           // encaisser, qui se déduit des ventes du jour.
-          const [salesResult, statsResult, sessionResult] = await Promise.all([
+          const [salesResult, statsResult, sessionResult, currenciesResult] = await Promise.all([
             getSales(session.accessToken, org.id, {
               date_from: new Date().toISOString().split('T')[0],
               date_to: new Date().toISOString().split('T')[0]
             }),
             getSalesStats(session.accessToken, org.id, "today"),
             getCurrentSession(session.accessToken, org.id),
+            getOrganizationCurrencies(session.accessToken, org.id),
           ]);
 
           if (salesResult.success && salesResult.data) {
@@ -133,6 +145,9 @@ export default function SalesPage() {
           }
           if (sessionResult.success && sessionResult.data) {
             setCurrentSession(sessionResult.data);
+          }
+          if (currenciesResult.success && currenciesResult.data) {
+            setOrgCurrencies(currenciesResult.data);
           }
         }
       } catch (error) {
@@ -187,17 +202,14 @@ export default function SalesPage() {
    * rentré, et le carreau mène droit aux paiements en attente.
    */
   const outstanding = useMemo(() => {
-    return safeSales.reduce(
-      (acc, sale) => {
-        const due = parseFloat(sale.amount_due || "0");
-        if (due > 0) {
-          acc.total += due;
-          acc.count += 1;
-        }
-        return acc;
-      },
-      { total: 0, count: 0 }
-    );
+    // Ventilé par devise : additionner des `amount_due` en ignorant
+    // `sale.currency` produisait un nombre sans signification, affiché avec le
+    // symbole de la devise principale.
+    const rows = safeSales
+      .filter(sale => parseFloat(sale.amount_due || "0") > 0)
+      .map(sale => ({ amount: sale.amount_due, currency: sale.currency }));
+
+    return { rows, count: rows.length };
   }, [safeSales]);
 
   // Filter sales
@@ -365,7 +377,7 @@ export default function SalesPage() {
         <Link
           href="/dashboard/sales/pending-payments"
           className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
-          aria-label={`À encaisser : ${formatPrice(outstanding.total)} sur ${outstanding.count} vente(s)`}
+          aria-label={`À encaisser : ${outstanding.count} vente(s)`}
         >
           <Card className="h-full gap-0 py-0 transition-shadow hover:shadow-md">
             <CardContent className="flex items-center gap-3 p-4">
@@ -373,9 +385,10 @@ export default function SalesPage() {
                 <Clock className="h-5 w-5 text-amber-600" />
               </div>
               <div className="min-w-0 flex-1">
-                <StatValue
-                  value={formatPrice(outstanding.total)}
-                  color={outstanding.total > 0 ? "text-amber-700" : undefined}
+                <MultiCurrencyTotal
+                  rows={outstanding.rows}
+                  money={money}
+                  color={outstanding.count > 0 ? "text-amber-700" : undefined}
                 />
                 <p className="text-xs text-gray-500">
                   À encaisser
@@ -523,7 +536,7 @@ export default function SalesPage() {
                     <div className="flex shrink-0 items-center gap-3">
                       {parseFloat(sale.amount_due || "0") > 0 && (
                         <span className="hidden text-xs tabular-nums text-amber-700 sm:inline">
-                          Reste {formatPrice(sale.amount_due)}
+                          Reste {money.money(sale.amount_due, sale.currency)}
                         </span>
                       )}
                       {getStatusBadge(sale.status)}

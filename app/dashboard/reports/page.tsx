@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -106,6 +107,7 @@ import {
   formatNumberForPDF,
   formatCurrencyForPDF,
 } from "@/lib/pdf-utils";
+import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import {
   Table,
   TableBody,
@@ -134,6 +136,10 @@ export default function ReportsPage() {
   // State
   const [isLoading, setIsLoading] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
+  // Même identité que les tickets thermiques : un rapport et un reçu émis par
+  // la même boutique doivent porter le même en-tête.
+  const { chrome } = useReceiptChrome(session?.accessToken, organization);
+  const reportIdentity = chrome?.org;
   const [period, setPeriod] = useState<string>("month");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -411,6 +417,7 @@ export default function ReportsPage() {
       title: "RAPPORT JOURNALIER DE CAISSE",
       subtitle: reportDate,
       organizationName: organization?.name || "",
+      identity: reportIdentity,
     });
 
     let currentY = y;
@@ -496,6 +503,7 @@ export default function ReportsPage() {
       title: "RAPPORT DES VENTES",
       subtitle: `Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`,
       organizationName: organization?.name || "",
+      identity: reportIdentity,
     });
 
     let currentY = y;
@@ -594,6 +602,7 @@ export default function ReportsPage() {
       title: "RAPPORT DES PRODUITS VENDUS",
       subtitle: `Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`,
       organizationName: organization?.name || "",
+      identity: reportIdentity,
     });
 
     // Préparer les données avec stock de départ, approvisionnement et restant
@@ -636,6 +645,7 @@ export default function ReportsPage() {
       title: "RAPPORT DES BÉNÉFICES PAR PRODUIT",
       subtitle: `Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`,
       organizationName: organization?.name || "",
+      identity: reportIdentity,
     });
 
     let currentY = y;
@@ -693,6 +703,7 @@ export default function ReportsPage() {
       title: "RAPPORT DE STOCK",
       subtitle: new Date().toLocaleDateString("fr-CD"),
       organizationName: organization?.name || "",
+      identity: reportIdentity,
     });
 
     // Résumé du stock
@@ -959,23 +970,31 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          {/* Créances clients */}
-          <Card className="py-1">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-500">Créances clients</p>
-                  <StatValue value={formatPrice(parseFloat(summary.customers.total_receivables))} />
-                  <p className="text-sm text-gray-500 mt-1">
-                    {summary.customers.customers_with_debt} clients avec dette
-                  </p>
+          {/* Créances clients. Le carreau mène à la balance âgée : ce total
+              unique, converti en devise principale, ne dit ni depuis quand la
+              créance court, ni dans quelle devise elle est due. */}
+          <Link
+            href="/dashboard/reports/receivables"
+            className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
+          >
+            <Card className="h-full py-1 transition-shadow hover:shadow-md">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-gray-500">Créances clients</p>
+                    <StatValue value={formatPrice(parseFloat(summary.customers.total_receivables))} />
+                    <p className="text-sm text-gray-500 mt-1">
+                      {summary.customers.customers_with_debt} client
+                      {summary.customers.customers_with_debt > 1 ? "s" : ""} avec une dette
+                    </p>
+                  </div>
+                  <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center">
+                    <CreditCard className="h-6 w-6 text-red-600" />
+                  </div>
                 </div>
-                <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center">
-                  <CreditCard className="h-6 w-6 text-red-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
       )}
 

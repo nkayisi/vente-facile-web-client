@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -56,6 +57,7 @@ import {
   deleteCustomer,
   Customer,
   CreateCustomerData,
+  CustomerFilters,
   PaginatedResponse,
 } from "@/actions/contacts.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
@@ -94,6 +96,10 @@ export default function CustomersPage() {
     phone: "",
     address: "",
     tax_id: "",
+    // Le crédit est autorisé par défaut : c'est l'usage courant chez les
+    // marchands, et le refuser d'office bloquerait la vente à crédit sans que
+    // personne ne comprenne pourquoi.
+    allow_credit: true,
     is_active: true,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -119,10 +125,14 @@ export default function CustomersPage() {
     if (!session?.accessToken || !organization) return;
     setIsLoading(true);
     try {
-      const filters: any = { page: currentPage, page_size: pageSize };
+      const filters: CustomerFilters = { page: currentPage, page_size: pageSize };
       if (typeFilter !== "all") filters.customer_type = typeFilter;
       if (statusFilter === "active") filters.is_active = true;
       if (statusFilter === "inactive") filters.is_active = false;
+      // L'option « Avec dette » existait dans le sélecteur sans être traitée
+      // ici : la choisir ne changeait rien à la liste. Elle passe désormais par
+      // l'endpoint dédié, qui filtre côté serveur sur un solde non nul.
+      if (statusFilter === "with_balance") filters.with_balance = true;
       if (searchQuery) filters.search = searchQuery;
 
       const result = await getCustomers(session.accessToken, organization.id, filters);
@@ -154,6 +164,7 @@ export default function CustomersPage() {
       phone: "",
       address: "",
       tax_id: "",
+      allow_credit: true,
       is_active: true,
     });
     setFormErrors({});
@@ -175,6 +186,7 @@ export default function CustomersPage() {
       phone: customer.phone || "",
       address: customer.address || "",
       tax_id: customer.tax_id || "",
+      allow_credit: customer.allow_credit,
       credit_limit: parseFloat(customer.credit_limit) || undefined,
       is_active: customer.is_active,
     });
@@ -347,7 +359,7 @@ export default function CustomersPage() {
             <SelectItem value="all">Tous</SelectItem>
             <SelectItem value="active">Actifs</SelectItem>
             <SelectItem value="inactive">Inactifs</SelectItem>
-            <SelectItem value="with_balance">Avec dette</SelectItem>
+            <SelectItem value="with_balance">Avec un solde</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -418,17 +430,23 @@ export default function CustomersPage() {
                       {customer.customer_type === "business" && customer.tax_id && (
                         <span className="text-xs text-gray-400">NIF: {customer.tax_id}</span>
                       )}
+                      {!customer.allow_credit && (
+                        <Badge variant="outline" className="border-red-200 text-xs text-red-600">
+                          Crédit refusé
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
-                  {/* Balance */}
+                  {/* Solde. `current_balance` est l'agrégat converti en devise
+                      principale ; le détail par devise vit sur la fiche. */}
                   <div className="text-right hidden sm:block">
                     {parseFloat(customer.current_balance) > 0 ? (
                       <div>
                         <p className="text-sm font-semibold text-red-600">
                           {formatPrice(customer.current_balance)}
                         </p>
-                        <p className="text-xs text-gray-500">Doit</p>
+                        <p className="text-xs text-gray-500">Dette</p>
                       </div>
                     ) : parseFloat(customer.current_balance) < 0 ? (
                       <div>
@@ -439,7 +457,7 @@ export default function CustomersPage() {
                       </div>
                     ) : (
                       <Badge variant="secondary" className="text-xs bg-green-100 text-green-700">
-                        OK
+                        À jour
                       </Badge>
                     )}
                   </div>
@@ -608,7 +626,25 @@ export default function CustomersPage() {
               </div>
             )}
 
-            {/* Limite de crédit */}
+            {/* Conditions de crédit : deux réglages distincts. L'autorisation
+                d'acheter à crédit, et le plafond. Une limite à 0 signifie
+                « sans plafond », jamais « crédit refusé ». */}
+            <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+              <div>
+                <Label htmlFor="allow_credit" className="text-sm font-medium">
+                  Autoriser les achats à crédit
+                </Label>
+                <p className="mt-1 text-xs text-gray-500">
+                  Désactivé, ce client doit régler chaque vente intégralement.
+                </p>
+              </div>
+              <Switch
+                id="allow_credit"
+                checked={formData.allow_credit ?? true}
+                onCheckedChange={checked => setFormData({ ...formData, allow_credit: checked })}
+              />
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="credit_limit">Limite de crédit autorisée</Label>
               <Input
@@ -618,10 +654,11 @@ export default function CustomersPage() {
                 min="0"
                 value={formData.credit_limit || ""}
                 onChange={e => setFormData({ ...formData, credit_limit: e.target.value ? parseFloat(e.target.value) : undefined })}
-                placeholder="0 = pas de limite"
+                placeholder="0 = pas de plafond"
+                disabled={!(formData.allow_credit ?? true)}
               />
               <p className="text-xs text-gray-400">
-                Montant maximum que ce client peut prendre à crédit. Laissez vide ou 0 pour ne pas limiter.
+                Montant maximum que ce client peut devoir au total. Laissez vide ou 0 pour ne pas plafonner.
               </p>
             </div>
 

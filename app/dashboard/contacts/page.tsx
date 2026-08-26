@@ -24,10 +24,13 @@ import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { useCurrency } from "@/components/providers/currency-provider";
 import {
   getCustomers,
   getSuppliers,
   getCustomerStats,
+  getDebtSummary,
+  DebtSummary,
   Customer,
   Supplier,
   CustomerStats,
@@ -41,7 +44,12 @@ export default function ContactsPage() {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const { currency: defaultCurrency } = useCurrency();
   const [stats, setStats] = useState<CustomerStats | null>(null);
+  // Synthèse des créances : l'endpoint et l'action existaient sans qu'aucun
+  // écran ne les appelle, si bien que le marchand n'avait nulle part la liste
+  // de ses plus gros débiteurs.
+  const [debtSummary, setDebtSummary] = useState<DebtSummary | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -53,10 +61,11 @@ export default function ContactsPage() {
           const org = orgResult.data[0];
           setOrganization(org);
 
-          const [customersResult, suppliersResult, statsResult] = await Promise.all([
+          const [customersResult, suppliersResult, statsResult, debtResult] = await Promise.all([
             getCustomers(session.accessToken, org.id, { is_active: true }),
             getSuppliers(session.accessToken, org.id, { is_active: true }),
             getCustomerStats(session.accessToken, org.id),
+            getDebtSummary(session.accessToken, org.id),
           ]);
 
           if (customersResult.success && customersResult.data) {
@@ -67,6 +76,9 @@ export default function ContactsPage() {
           }
           if (statsResult.success && statsResult.data) {
             setStats(statsResult.data);
+          }
+          if (debtResult.success && debtResult.data) {
+            setDebtSummary(debtResult.data);
           }
         }
       } catch (error) {
@@ -157,7 +169,7 @@ export default function ContactsPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <StatValue value={String(stats?.with_balance || 0)} color="text-orange-600" />
-                <p className="text-xs text-gray-500">Avec solde</p>
+                <p className="text-xs text-gray-500">Clients avec un solde</p>
               </div>
             </div>
           </CardContent>
@@ -171,7 +183,9 @@ export default function ContactsPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <StatValue value={formatPrice(stats?.total_balance || "0")} />
-                <p className="text-xs text-gray-500">Solde total</p>
+                <p className="text-xs text-gray-500">
+                  Créances totales ({defaultCurrency.code})
+                </p>
               </div>
             </div>
           </CardContent>
@@ -280,6 +294,62 @@ export default function ContactsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Principaux débiteurs. `debt-summary` existait côté API depuis la
+            refonte de la dette sans qu'aucun écran ne l'affiche : le marchand
+            n'avait nulle part la liste de qui lui doit le plus. */}
+        {debtSummary && debtSummary.top_debtors.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-red-500" />
+                  Principaux débiteurs
+                </CardTitle>
+                <Link
+                  href="/dashboard/reports/receivables"
+                  className="text-xs font-medium text-orange-600 hover:underline"
+                >
+                  Voir les créances
+                </Link>
+              </div>
+              <p className="text-xs text-gray-500">
+                {debtSummary.debtors_count} client{debtSummary.debtors_count > 1 ? "s" : ""} doivent{" "}
+                {formatPrice(debtSummary.total_receivable)}
+                {parseFloat(debtSummary.total_advances) > 0 && (
+                  <> · {formatPrice(debtSummary.total_advances)} d&apos;avances reçues</>
+                )}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {debtSummary.top_debtors.slice(0, 5).map(debtor => (
+                  <Link
+                    key={debtor.id}
+                    href={`/dashboard/contacts/customers/${debtor.id}`}
+                    className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-gray-50"
+                  >
+                    <div className="rounded-lg bg-red-100 p-2">
+                      <User className="h-4 w-4 text-red-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{debtor.name}</p>
+                      {debtor.phone && (
+                        <span className="flex items-center gap-1 text-xs text-gray-500">
+                          <Phone className="h-3 w-3" />
+                          {debtor.phone}
+                        </span>
+                      )}
+                    </div>
+                    <Badge variant="secondary" className="bg-red-100 text-xs text-red-700">
+                      {formatPrice(debtor.current_balance)}
+                    </Badge>
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Recent Suppliers */}
         <Card>

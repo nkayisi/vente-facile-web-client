@@ -48,6 +48,7 @@ import {
   formatDateForPDF,
   formatMonthForPDF,
 } from "@/lib/pdf-utils";
+import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,6 +94,10 @@ export default function CashbookReportsPage() {
   const { data: session } = useSession();
   const { currency: defaultCurrency } = useCurrency();
   const [organization, setOrganization] = useState<Organization | null>(null);
+  // Même identité que les tickets thermiques : un rapport et un reçu émis par
+  // la même boutique doivent porter le même en-tête.
+  const { chrome } = useReceiptChrome(session?.accessToken, organization);
+  const reportIdentity = chrome?.org;
   const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -377,6 +382,7 @@ export default function CashbookReportsPage() {
       title: "RAPPORT JOURNALIER DE CAISSE",
       subtitle: `Date: ${formatDateForPDF(selectedDate)}`,
       organizationName: organization.name,
+      identity: reportIdentity,
     });
 
     const y = renderCurrencySections(
@@ -415,6 +421,7 @@ export default function CashbookReportsPage() {
       title: "RAPPORT MENSUEL DE CAISSE",
       subtitle: `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`,
       organizationName: organization.name,
+      identity: reportIdentity,
     });
 
     const y = renderCurrencySections(
@@ -451,6 +458,7 @@ export default function CashbookReportsPage() {
       title: "RAPPORT ANNUEL DE CAISSE",
       subtitle: `Année ${annualYear}`,
       organizationName: organization.name,
+      identity: reportIdentity,
     });
 
     const y = renderCurrencySections(
@@ -487,6 +495,7 @@ export default function CashbookReportsPage() {
       title: "RAPPORT DE CAISSE PERSONNALISÉ",
       subtitle: `Du ${formatDateForPDF(customDateFrom)} au ${formatDateForPDF(customDateTo)}`,
       organizationName: organization.name,
+      identity: reportIdentity,
     });
 
     const y = renderCurrencySections(

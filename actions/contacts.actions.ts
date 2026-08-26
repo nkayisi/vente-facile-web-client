@@ -31,6 +31,12 @@ export interface Customer {
   phone: string;
   address: string;
   tax_id: string;
+  /**
+   * Autorisation d'acheter à crédit, indépendante du plafond. `credit_limit` à
+   * 0 signifie « pas de plafond », jamais « pas de crédit » : les deux règles
+   * sont distinctes et se cumulent côté backend.
+   */
+  allow_credit: boolean;
   credit_limit: string;
   current_balance: string;
   balances: CustomerBalance[];
@@ -49,6 +55,8 @@ export interface RecentSale {
   id: string;
   reference: string;
   total: string;
+  /** Devise de la facture : ces totaux ne sont pas convertis en principale. */
+  currency: string;
   date: string;
 }
 
@@ -62,6 +70,8 @@ export interface CustomerTransaction {
   balance_before: string;
   balance_after: string;
   reference: string;
+  /** Numéro de la pièce remise au client, alloué par le serveur (RGL-/AVC-/AJU-). */
+  receipt_number: string;
   sale: string | null;
   sale_reference: string;
   payment_method: string;
@@ -134,6 +144,7 @@ export interface CreateCustomerData {
   phone?: string;
   address?: string;
   tax_id?: string;
+  allow_credit?: boolean;
   credit_limit?: number;
   notes?: string;
   is_active?: boolean;
@@ -198,6 +209,12 @@ export interface CustomerFilters {
   search?: string;
   page?: number;
   page_size?: number;
+  /**
+   * Ne remonter que les clients dont le solde n'est pas nul (dette ou avance).
+   * L'option existait dans le sélecteur de la liste sans être transmise : le
+   * filtre « Avec dette » ne changeait rien à l'affichage.
+   */
+  with_balance?: boolean;
 }
 
 export async function getCustomers(
@@ -213,8 +230,12 @@ export async function getCustomers(
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
+    // Endpoint dédié : le filtrage sur un solde non nul se fait côté serveur,
+    // sur `CustomerBalance`, pas en triant une page déjà tronquée.
+    const path = filters?.with_balance ? "customers/with-balance" : "customers";
+
     const response = await axios.get(
-      `${API_BASE_URL}/customers/?${params.toString()}`,
+      `${API_BASE_URL}/${path}/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 
@@ -328,11 +349,15 @@ export async function getCustomerTransactions(
   accessToken: string,
   organizationId: string,
   customerId: string,
-  type?: string
+  type?: string,
+  pageSize = 100
 ): Promise<ApiResponse<CustomerTransaction[]>> {
   try {
     const params = new URLSearchParams();
     if (type) params.append("type", type);
+    // Sans taille de page explicite, DRF en renvoyait 20 et l'écran n'offrait
+    // aucun moyen d'aller plus loin : l'historique semblait s'arrêter là.
+    params.append("page_size", String(pageSize));
 
     const response = await axios.get(
       `${API_BASE_URL}/customers/${customerId}/transactions/?${params.toString()}`,
@@ -356,12 +381,28 @@ export async function getCustomerTransactions(
  * sans qu'aucune facture n'avance.
  */
 export interface DebtOperationResult {
+  /**
+   * Nul quand le versement a soldé des factures sans laisser de reliquat, donc
+   * dans le cas nominal : ne jamais en dépendre pour construire un reçu.
+   */
   transaction: CustomerTransaction | null;
+  /**
+   * Numéro du reçu de l'opération, porté par l'enveloppe précisément parce que
+   * `transaction` peut être nul. Un seul numéro même si plusieurs factures ont
+   * été soldées : le client ne repart qu'avec un papier.
+   */
+  receipt_number: string;
+  /** Solde du client avant et après, dans la devise remise. */
+  balance_before: string;
+  balance_after: string;
   new_balance: string;
   balances: Record<string, string>;
   settled_invoices?: string[];
   advance_amount?: string;
+  /** Devise du montant remis, et donc de l'éventuelle avance. */
   currency?: string;
+  /** Devise des factures visées par l'imputation. */
+  settle_currency?: string;
 }
 
 export async function recordCustomerPayment(
@@ -370,7 +411,14 @@ export async function recordCustomerPayment(
   customerId: string,
   data: {
     amount: number;
+    /** Devise réellement remise par le client : celle qui entre au tiroir. */
     currency?: string;
+    /**
+     * Devise des factures que ce règlement vient solder. Par défaut `currency`.
+     * Les deux étaient confondues : un client devant en USD et payant en CDF ne
+     * voyait jamais sa dette bouger, le montant partant en avance CDF.
+     */
+    settle_currency?: string;
     exchange_rate?: number;
     payment_method?: string;
     reference?: string;

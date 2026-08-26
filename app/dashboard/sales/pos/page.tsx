@@ -1,7 +1,7 @@
 "use client";
 
 import { flattenDrfErrors } from "@/lib/api/drf-error";
-import { Customer, getCustomers, createCustomer, CreateCustomerData } from "@/actions/contacts.actions";
+import { Customer, getCustomer, getCustomers, createCustomer, CreateCustomerData } from "@/actions/contacts.actions";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProducts, Product } from "@/actions/products.actions";
 import { getLockedProducts, LockedProductsResponse } from "@/actions/inventory.actions";
@@ -83,12 +83,12 @@ import { usePermissions } from "@/components/auth/permissions-provider";
 import { pluralizeUnit } from "@/lib/units";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
-  assignPdfToPrintWindow,
-  closePrintTabIfBlank,
-  generateReceiptPdfUrl,
-  openPrintTab,
-  ReceiptData,
-} from "@/lib/receipt-printer";
+  buildSaleReceipt,
+  type SaleReceiptData,
+  type SaleReceiptItem,
+} from "@/lib/receipt";
+import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
+import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 
 /** Aligné sur le défaut backend (`max_sale_discount_percent` dans les paramètres org). */
 const MAX_SALE_DISCOUNT_PERCENT = 50;
@@ -360,6 +360,8 @@ export default function POSPage() {
   const submittingRef = useRef(false);
   const [isGeneratingProforma, setIsGeneratingProforma] = useState(false);
   const [isCreditSale, setIsCreditSale] = useState(false);
+  // Échéance de la vente à crédit, envoyée telle quelle en `due_date`.
+  const [creditDueDate, setCreditDueDate] = useState("");
 
   // Multi-currency state
   const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
@@ -393,6 +395,8 @@ export default function POSPage() {
   const [customerLoyalty, setCustomerLoyalty] = useState<CustomerLoyalty | null>(null);
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
   const [orgSettings, setOrgSettings] = useState<OrganizationSettings | null>(null);
+  const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
+  const printer = useReceiptPrinter();
   const [usePoints, setUsePoints] = useState(false);
   const [pointsToUse, setPointsToUse] = useState(0);
   const [showPointsPicker, setShowPointsPicker] = useState(false);
@@ -437,7 +441,9 @@ export default function POSPage() {
               in_stock: true,
               ...(posWarehouseId ? { warehouse: posWarehouseId } : {}),
             }),
-            getCustomers(session.accessToken, org.id),
+            // `page_size` explicite : sans lui, seule la première page DRF
+            // remontait et les clients suivants étaient introuvables au POS.
+            getCustomers(session.accessToken, org.id, { page_size: 500 }),
             getPaymentMethods(session.accessToken, org.id, { is_active: true }),
             getOrganizationCurrencies(session.accessToken, org.id),
             getLockedProducts(session.accessToken, org.id),
@@ -1075,6 +1081,71 @@ export default function POSPage() {
       tenders.reduce((s, t) => s + convertAmount(parseFloat(t.amount) || 0, t.currency, primaryCode()), 0),
       primaryCode(),
     );
+  /**
+   * Sélectionne un client et relit son solde à jour.
+   *
+   * La liste chargée à l'ouverture du POS vieillit : après une première vente à
+   * crédit, `current_balance` en mémoire était périmé et le contrôle de limite
+   * de la vente suivante s'appuyait dessus. On affiche d'abord le client connu
+   * pour ne pas faire attendre le caissier, puis on remplace par la version
+   * fraîche. Un échec réseau laisse simplement la version en cache : le backend
+   * reste l'autorité et refusera la vente si la limite est franchie.
+   */
+  const selectCustomer = async (customer: Customer) => {
+    setSelectedCustomer(customer);
+    if (!session?.accessToken || !organization) return;
+    const fresh = await getCustomer(session.accessToken, organization.id, customer.id);
+    if (fresh.success && fresh.data) {
+      setSelectedCustomer((current) =>
+        current?.id === customer.id ? fresh.data! : current
+      );
+    }
+  };
+
+  /**
+   * Contrôle de crédit du client sélectionné : autorisation et plafond.
+   *
+   * La règle était réécrite à trois endroits - validation au submit,
+   * pré-avertissement dans la modale, `disabled` du bouton Confirmer - avec des
+   * variables différentes, et recalculait `credit_limit - current_balance` à la
+   * main alors que l'API expose `available_credit`. Une seule fonction ici, que
+   * les trois appellent.
+   *
+   * La comparaison se fait en devise PRINCIPALE : c'est dans cette devise que
+   * `current_balance` et `credit_limit` sont tenus côté backend, la facture
+   * pouvant être libellée dans une autre.
+   */
+  const evaluateCredit = () => {
+    if (!selectedCustomer) return null;
+
+    const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
+    const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
+    const creditInPrimary = Math.max(0, calculateNetTotal() - getAmountInPrimary());
+    const projectedBalance = currentBalance + creditInPrimary;
+
+    // `allow_credit` et `credit_limit` sont deux règles distinctes : une limite
+    // à 0 signifie « sans plafond », jamais « crédit refusé ».
+    const notAllowed = selectedCustomer.allow_credit === false;
+    const overLimit = creditLimit > 0 && projectedBalance > creditLimit;
+
+    return {
+      creditLimit,
+      currentBalance,
+      creditInPrimary,
+      projectedBalance,
+      notAllowed,
+      overLimit,
+      blocked: notAllowed || overLimit,
+      reason: notAllowed
+        ? `${selectedCustomer.name} n'est pas autorisé à acheter à crédit.`
+        : overLimit
+          ? `Limite de crédit dépassée. Limite : ${formatPrice(creditLimit)}, ` +
+            `dette actuelle : ${formatPrice(currentBalance)}, ` +
+            `total projeté : ${formatPrice(projectedBalance)}.`
+          : null,
+    };
+  };
+
   // Monnaie à rendre, dans la devise choisie par le caissier.
   const changeInChangeCurrency = () => {
     const over = paidInSale() - totalInSale();
@@ -1126,6 +1197,9 @@ export default function POSPage() {
     setInvoiceCurrency(primaryC);
     setChangeCurrency(primaryC);
     setIsCreditSale(false);
+    // Même raison que les points ci-dessous : une échéance saisie puis annulée
+    // ne doit pas s'appliquer silencieusement à l'ouverture suivante.
+    setCreditDueDate("");
     // Les points ne sont pas repris d'une modale précédemment annulée : ils
     // appliqueraient une remise fidélité silencieuse à la vente suivante.
     setUsePoints(false);
@@ -1212,18 +1286,14 @@ export default function POSPage() {
         );
         return;
       }
-      const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
-      const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
-      // La dette client est tenue en devise principale.
-      const creditInPrimary = total - getAmountInPrimary();
-      const newBalance = currentBalance + creditInPrimary;
-      if (creditLimit > 0 && newBalance > creditLimit) {
-        toast.error(`Limite de crédit dépassée. Limite: ${formatPrice(creditLimit)}, Dette actuelle: ${formatPrice(currentBalance)}, Nouveau total: ${formatPrice(newBalance)}`);
+      const credit = evaluateCredit();
+      if (credit?.blocked) {
+        toast.error(credit.reason ?? "Crédit refusé pour ce client.");
         return;
       }
     }
 
-    const printTab = openPrintTab();
+    const job = printer.begin();
     // Verrou synchrone AVANT setState pour bloquer le second clic immédiat.
     submittingRef.current = true;
     setIsProcessing(true);
@@ -1283,6 +1353,9 @@ export default function POSPage() {
         warehouse: currentSession.warehouse || undefined,
         customer: selectedCustomer?.id,
         sale_type: saleType,
+        // Échéance : seulement sur une vente à crédit, et seulement si le
+        // caissier en a fixé une.
+        ...(isCreditSale && creditDueDate ? { due_date: creditDueDate } : {}),
         // Remise globale convertie dans la devise de la facture.
         global_discount_amount: convMoney(calculateGlobalDiscountAmount(), primaryCode(), invCur),
         discount_percentage: 0,
@@ -1308,16 +1381,14 @@ export default function POSPage() {
         const backendChange = parseFloat(saleAuthoritative.change_amount) || 0;
         const backendAmountDue = parseFloat(saleAuthoritative.amount_due) || 0;
 
-        const pdfOutcome = (() => {
-          const paperWidth = (orgSettings?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
-          const receiptData: ReceiptData = {
-            orgName: organization.name || "Vente Facile",
-            orgAddress: organization.address || undefined,
-            orgPhone: organization.phone || undefined,
+        {
+          const receiptData: SaleReceiptData = {
+            kind: backendAmountDue > 0 ? "credit_sale" : "sale",
+            chrome: chrome ?? { org: { name: organization.name || "Vente Facile" } },
+            number: saleAuthoritative.reference,
+            date: new Date().toLocaleString("fr-CD"),
             registerName: currentSession.register_name,
             cashierName: currentSession.opened_by_name,
-            reference: saleAuthoritative.reference,
-            date: new Date().toLocaleString("fr-CD"),
             customerName: selectedCustomer?.name,
             customerPhone: selectedCustomer?.phone || undefined,
             // Lignes reprises de la réponse du serveur, qui fait autorité sur
@@ -1336,19 +1407,19 @@ export default function POSPage() {
                   line.package_unit_name || "paquet",
                   packages
                 );
-                const rows = [{
+                const rows: SaleReceiptItem[] = [{
                   name: `${line.product_name} (${packWord})`,
                   quantity: packages,
-                  unit_price: packagePrice,
-                  discount_percentage: discount,
+                  unitPrice: packagePrice,
+                  discountPercentage: discount,
                   total: net(packages * packagePrice),
                 }];
                 if (loose > 0) {
                   rows.push({
                     name: `${line.product_name} (${pluralizeUnit(line.unit_name || "unité", loose)})`,
                     quantity: loose,
-                    unit_price: unitPrice,
-                    discount_percentage: discount,
+                    unitPrice: unitPrice,
+                    discountPercentage: discount,
                     total: net(loose * unitPrice),
                   });
                 }
@@ -1358,8 +1429,8 @@ export default function POSPage() {
               return [{
                 name: line.product_name,
                 quantity: parseFloat(line.quantity) || 0,
-                unit_price: unitPrice,
-                discount_percentage: discount,
+                unitPrice: unitPrice,
+                discountPercentage: discount,
                 total: parseFloat(line.total) || 0,
               }];
             }),
@@ -1386,39 +1457,33 @@ export default function POSPage() {
               }
               return receiptPayments;
             })(),
-            amountPaid: paidSale,
-            change: !isCreditSale ? backendChange : 0,
+            changeAmount: !isCreditSale ? backendChange : 0,
             currency: invCur,
-            receiptHeader: orgSettings?.receipt_header || undefined,
-            receiptFooter: orgSettings?.receipt_footer || undefined,
-            isCreditSale: backendAmountDue > 0,
             amountDue: backendAmountDue,
-            showLoyaltyPoints: !!(
-              orgSettings?.show_loyalty_points_on_receipt &&
-              selectedCustomer &&
-              saleAuthoritative.loyalty_program_active
-            ),
-            // Valeurs telles qu'écrites au registre par le serveur. Le POS
-            // rejouait auparavant le barème avec la seule formule « pourcentage »
-            // en dur : sur un programme `fixed_per_amount`, qui est le défaut,
-            // le reçu annonçait dix fois les points réellement crédités.
-            loyaltyPointsEarned: saleAuthoritative.loyalty_points_earned ?? 0,
-            loyaltyPointsUsed: saleAuthoritative.loyalty_points_used ?? 0,
-            loyaltyPointsBalance: saleAuthoritative.loyalty_points_balance ?? 0,
+            loyalty: {
+              show: !!(
+                orgSettings?.show_loyalty_points_on_receipt &&
+                selectedCustomer &&
+                saleAuthoritative.loyalty_program_active
+              ),
+              // Valeurs telles qu'écrites au registre par le serveur. Le POS
+              // rejouait auparavant le barème avec la seule formule
+              // « pourcentage » en dur : sur un programme `fixed_per_amount`,
+              // qui est le défaut, le reçu annonçait dix fois les points
+              // réellement crédités.
+              earned: saleAuthoritative.loyalty_points_earned ?? 0,
+              used: saleAuthoritative.loyalty_points_used ?? 0,
+              balance: saleAuthoritative.loyalty_points_balance ?? 0,
+            },
             loyaltyRedemptionAmount: backendLoyaltyRedemption,
           };
-          const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
-          return assignPdfToPrintWindow(printTab, pdfUrl, {
-            filename: `recu-${result.data.reference}.pdf`,
-          });
-        })();
 
-        toast.success(`Vente ${result.data.reference} créée avec succès`, {
-          description:
-            pdfOutcome === "opened"
-              ? "PDF ouvert et enregistré - utilisez Thermer ou Partager pour imprimer."
-              : "Reçu téléchargé - l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
-        });
+          job.present(buildSaleReceipt(receiptData), {
+            filename: `recu-${result.data.reference}.pdf`,
+            paperWidth,
+            successMessage: `Vente ${result.data.reference} enregistrée`,
+          });
+        }
 
         // Emballages ouverts automatiquement : le caissier est informé après
         // coup, sans modale ni clic supplémentaire. L'opération a déjà eu lieu.
@@ -1446,6 +1511,7 @@ export default function POSPage() {
         setSelectedCustomer(null);
         setGlobalDiscountAmount(0);
         setIsCreditSale(false);
+        setCreditDueDate("");
         setShowPaymentDialog(false);
         setUsePoints(false);
         setPointsToUse(0);
@@ -1492,10 +1558,10 @@ export default function POSPage() {
         if (errorMsg.includes("Stock") || errorMsg.includes("stock")) {
           setShowPaymentDialog(false);
         }
-        closePrintTabIfBlank(printTab);
+        job.abort();
       }
     } catch (error) {
-      closePrintTabIfBlank(printTab);
+      job.abort();
       toast.error("Une erreur est survenue lors du paiement");
     } finally {
       setIsProcessing(false);
@@ -1519,77 +1585,65 @@ export default function POSPage() {
       return;
     }
 
-    const printTab = openPrintTab();
+    const job = printer.begin();
     setIsGeneratingProforma(true);
 
     try {
       const dateCompact = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      const ref = `PROF-${dateCompact}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-      const paperWidth = (orgSettings?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
+      // Préfixe aligné sur la taxinomie des documents : une proforma se
+      // distingue d'une vente par son numéro autant que par son bandeau.
+      const ref = `PRO-${dateCompact}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
       const primaryCode = getPrimaryCurrency()?.currency_code || "CDF";
 
-      const receiptData: ReceiptData = {
-        orgName: organization.name || "Vente Facile",
-        orgAddress: organization.address || undefined,
-        orgPhone: organization.phone || undefined,
+      const receiptData: SaleReceiptData = {
+        kind: "proforma",
+        chrome: chrome ?? { org: { name: organization.name || "Vente Facile" } },
+        number: ref,
+        date: new Date().toLocaleString("fr-CD"),
         registerName: currentSession.register_name,
         cashierName: currentSession.opened_by_name,
-        reference: ref,
-        date: new Date().toLocaleString("fr-CD"),
         customerName: selectedCustomer?.name,
         customerPhone: selectedCustomer?.phone || undefined,
-        items: cart.map(item => ({
+        items: cart.map((item) => ({
           name: item.product.name,
           quantity: item.quantity,
-          quantity_label: packagingFactorOf(item.product)
+          quantityLabel: packagingFactorOf(item.product)
             ? describeCartLine(item)
             : undefined,
-          unit_price: item.unit_price,
-          discount_percentage: item.discount_percentage,
+          unitPrice: item.unit_price,
+          discountPercentage: item.discount_percentage,
           total: r2(item.quantity * item.unit_price * (1 - item.discount_percentage / 100)),
         })),
         subtotal: calculateSubtotal(),
         taxAmount: calculateTax(),
         discountAmount: r2(calculateItemDiscount() + calculateGlobalDiscountAmount()),
         globalDiscountAmount: calculateGlobalDiscountAmount(),
-        // Total BRUT, pas le net : une proforma ne réserve aucun point et le
-        // générateur supprime son bloc fidélité (`isProforma`). Prendre le net
-        // annoncerait une remise absente des lignes, un devis qui ne s'additionne
-        // pas.
+        // Total BRUT, pas le net : une proforma ne réserve aucun point, et le
+        // document supprime son bloc fidélité. Prendre le net annoncerait une
+        // remise absente des lignes, un devis qui ne s'additionne pas.
         total: calculateTotal(),
         payments: [],
-        amountPaid: 0,
-        change: 0,
         currency: primaryCode,
-        receiptHeader: orgSettings?.receipt_header || undefined,
-        isProforma: true,
-        isCreditSale: false,
-        showLoyaltyPoints: false,
       };
 
-      const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
-      const pdfOutcome = assignPdfToPrintWindow(printTab, pdfUrl, {
+      job.present(buildSaleReceipt(receiptData), {
         filename: `proforma-${ref}.pdf`,
-      });
-
-      toast.success(`Proforma ${ref}`, {
-        description:
-          pdfOutcome === "opened"
-            ? "PDF ouvert et enregistré - utilisez Thermer ou Partager pour imprimer."
-            : "PDF téléchargé - l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
+        paperWidth,
+        successMessage: `Proforma ${ref}`,
       });
 
       setCart([]);
       setSelectedCustomer(null);
       setGlobalDiscountAmount(0);
       setIsCreditSale(false);
+      setCreditDueDate("");
       setShowPaymentDialog(false);
       setUsePoints(false);
       setPointsToUse(0);
       setCustomerLoyalty(null);
       setShowMobileCart(false);
     } catch {
-      closePrintTabIfBlank(printTab);
+      job.abort();
       toast.error("Erreur lors de la génération du PDF");
     } finally {
       setIsGeneratingProforma(false);
@@ -2605,32 +2659,41 @@ export default function POSPage() {
                   )}
                 </div>
 
-                {/* Pre-warning : limite de crédit dépassée AVANT submit */}
-                {selectedCustomer && (() => {
-                  const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
-                  const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
-                  // creditAmount = total - paiement (en devise primaire). On le
-                  // recalcule ici car la variable du handler n'est pas en scope JSX.
-                  const paidInPrimary = getAmountInPrimary();
-                  const creditAmountLocal = Math.max(0, total - paidInPrimary);
-                  const projectedBalance = currentBalance + creditAmountLocal;
-                  if (creditLimit > 0 && projectedBalance > creditLimit) {
+                {/* Pré-avertissement AVANT submit, avec la même règle que la
+                    validation et que le bouton Confirmer. */}
+                {(() => {
+                  const credit = evaluateCredit();
+                  if (!credit?.blocked) return null;
+
+                  if (credit.notAllowed) {
                     return (
                       <div className="p-3 bg-red-50 rounded-lg border border-red-200">
                         <p className="text-sm font-semibold text-red-700 flex items-center gap-2">
                           <AlertTriangle className="h-4 w-4 shrink-0" />
-                          Limite de crédit dépassée
+                          Crédit non autorisé pour ce client
                         </p>
-                        <ul className="mt-1.5 text-xs text-red-700 space-y-0.5">
-                          <li>Dette actuelle : {formatPrice(currentBalance)}</li>
-                          <li>+ crédit de cette vente : {formatPrice(creditAmountLocal)}</li>
-                          <li>= total projeté : <strong>{formatPrice(projectedBalance)}</strong></li>
-                          <li>Limite autorisée : {formatPrice(creditLimit)}</li>
-                        </ul>
+                        <p className="mt-1.5 text-xs text-red-700">
+                          Cette vente doit être réglée intégralement. L&apos;autorisation
+                          se modifie sur la fiche du client.
+                        </p>
                       </div>
                     );
                   }
-                  return null;
+
+                  return (
+                    <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                      <p className="text-sm font-semibold text-red-700 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        Limite de crédit dépassée
+                      </p>
+                      <ul className="mt-1.5 text-xs text-red-700 space-y-0.5">
+                        <li>Dette actuelle : {formatPrice(credit.currentBalance)}</li>
+                        <li>+ crédit de cette vente : {formatPrice(credit.creditInPrimary)}</li>
+                        <li>= total projeté : <strong>{formatPrice(credit.projectedBalance)}</strong></li>
+                        <li>Limite autorisée : {formatPrice(credit.creditLimit)}</li>
+                      </ul>
+                    </div>
+                  );
                 })()}
               </div>
             )}
@@ -2718,11 +2781,28 @@ export default function POSPage() {
                       toast.error("Sélectionnez un client avant de passer en vente à crédit");
                       return;
                     }
+                    if (selectedCustomer.allow_credit === false) {
+                      toast.error(
+                        `${selectedCustomer.name} n'est pas autorisé à acheter à crédit.`,
+                        { description: "L'autorisation se modifie sur la fiche du client." }
+                      );
+                      return;
+                    }
                     setIsCreditSale(true);
+                    // Acompte remis à zéro. La modale pré-remplit le règlement
+                    // au total ; en basculant en crédit ce montant restait, si
+                    // bien que la « vente à crédit » était en fait soldée
+                    // (`amount_due = 0`) et n'inscrivait aucune dette. Le
+                    // vendeur saisit lui-même l'acompte s'il y en a un.
+                    patchPayment({ amount: "" });
                     return;
                   }
                   setIsCreditSale(false);
                   patchPayment({ method: value });
+                  // Retour au comptant : le montant reçu redevient le total dû.
+                  // `syncTenderToTotal` lit `isCreditSale`, dont la mise à jour
+                  // n'est pas encore visible ici : on lui passe `false`.
+                  syncTenderToTotal(pointsToUse, usePoints, false);
                 }}
               >
                 <SelectTrigger
@@ -2742,18 +2822,28 @@ export default function POSPage() {
                       </span>
                     </SelectItem>
                   ))}
-                  <SelectItem
-                    value={CREDIT_OPTION}
-                    disabled={!selectedCustomer}
-                    // Le motif du grisage doit être lisible : sans client
-                    // rattaché, l'option n'est pas « cassée », elle attend.
-                    title={!selectedCustomer ? "Sélectionnez d'abord un client" : undefined}
-                  >
-                    <span className="flex items-center gap-2">
-                      <HandCoins className="h-5 w-5" />
-                      Crédit{!selectedCustomer && " (client requis)"}
-                    </span>
-                  </SelectItem>
+                  {(() => {
+                    // Deux motifs distincts de grisage, et le caissier doit
+                    // pouvoir lire lequel s'applique : pas de client rattaché,
+                    // ou client à qui le crédit est refusé sur sa fiche.
+                    const creditDenied = selectedCustomer?.allow_credit === false;
+                    const disabled = !selectedCustomer || creditDenied;
+                    const reason = !selectedCustomer
+                      ? "Sélectionnez d'abord un client"
+                      : creditDenied
+                        ? `${selectedCustomer.name} n'est pas autorisé à acheter à crédit`
+                        : undefined;
+                    return (
+                      <SelectItem value={CREDIT_OPTION} disabled={disabled} title={reason}>
+                        <span className="flex items-center gap-2">
+                          <HandCoins className="h-5 w-5" />
+                          Crédit
+                          {!selectedCustomer && " (client requis)"}
+                          {creditDenied && " (non autorisé)"}
+                        </span>
+                      </SelectItem>
+                    );
+                  })()}
                 </SelectContent>
               </Select>
 
@@ -2833,6 +2923,27 @@ export default function POSPage() {
                   </div>
                 )}
 
+                {/* Échéance de la vente à crédit. `due_date` existait dans le
+                    modèle et dans l'API depuis l'origine sans qu'aucune surface
+                    ne le renseigne : il n'y avait aucune notion de retard dans
+                    l'application. Facultatif : tous les marchands ne fixent pas
+                    de terme. */}
+                {isCreditSale && totalInSale() - paidInSale() > MONEY_EPS && (
+                  <div className="flex items-center justify-between gap-3 pt-2">
+                    <Label htmlFor="credit-due-date" className="text-sm text-gray-600">
+                      Échéance (facultative)
+                    </Label>
+                    <Input
+                      id="credit-due-date"
+                      type="date"
+                      value={creditDueDate}
+                      min={new Date().toISOString().split("T")[0]}
+                      onChange={(e) => setCreditDueDate(e.target.value)}
+                      className="h-9 w-44"
+                    />
+                  </div>
+                )}
+
                 {/* Insuffisant (comptant) */}
                 {!isCreditSale && paidInSale() + MONEY_EPS < totalInSale() && (
                   <div className="flex justify-between text-red-600 font-medium">
@@ -2898,14 +3009,7 @@ export default function POSPage() {
                 // l'UI indique « payé en totalité »).
                 if (!isCreditSale && paidInSale() + MONEY_EPS < totalInSale()) return true;
                 if (isCreditSale && !selectedCustomer) return true;
-                if (isCreditSale && selectedCustomer) {
-                  const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
-                  const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
-                  const paidInPrimary = getAmountInPrimary();
-                  const creditAmount = total - paidInPrimary;
-                  const newBalance = currentBalance + creditAmount;
-                  if (creditLimit > 0 && newBalance > creditLimit) return true;
-                }
+                if (isCreditSale && evaluateCredit()?.blocked) return true;
                 return false;
               })()}
             >
@@ -3080,7 +3184,7 @@ export default function POSPage() {
                       variant="ghost"
                       className="w-full justify-start h-auto py-3"
                       onClick={() => {
-                        setSelectedCustomer(customer);
+                        selectCustomer(customer);
                         setShowCustomerDialog(false);
                         setCustomerSearch("");
                       }}

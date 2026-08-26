@@ -448,6 +448,71 @@ export async function getCustomerStats(
 }
 
 // =============================================================================
+// CRÉANCES CLIENTS (BALANCE ÂGÉE)
+// =============================================================================
+
+/** Tranches d'ancienneté du rapport de créances, dans l'ordre d'affichage. */
+export type AgingBucket = "current" | "d1_30" | "d31_60" | "d61_90" | "d90_plus";
+
+export const AGING_BUCKET_LABELS: Record<AgingBucket, string> = {
+  current: "Pas encore échu",
+  d1_30: "1 à 30 j",
+  d31_60: "31 à 60 j",
+  d61_90: "61 à 90 j",
+  d90_plus: "Plus de 90 j",
+};
+
+/**
+ * Une ligne par devise. Les montants ne s'additionnent JAMAIS entre devises :
+ * seul `total_primary` du rapport porte une conversion, et il est nommé
+ * explicitement comme tel.
+ */
+export interface ReceivablesByCurrency extends Record<AgingBucket, string> {
+  currency: string;
+  total: string;
+}
+
+export interface ReceivablesDebtor {
+  customer_id: string;
+  customer_name: string;
+  currency: string;
+  amount_due: string;
+  invoice_count: number;
+  /** Ancienneté de la plus vieille facture, en jours (négatif = pas échue). */
+  oldest_days: number;
+  overdue_amount: string;
+}
+
+export interface ReceivablesReport {
+  as_of: string;
+  buckets: AgingBucket[];
+  by_currency: ReceivablesByCurrency[];
+  by_customer: ReceivablesDebtor[];
+  invoice_count: number;
+  debtor_count: number;
+  total_primary: string;
+  overdue_primary: string;
+  primary_currency: string;
+}
+
+export async function getReceivablesReport(
+  accessToken: string,
+  organizationId: string
+): Promise<ApiResponse<ReceivablesReport>> {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/reports/statistics/receivables/`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error("[Reports] Get receivables error:", getErrorBody(error) || (error as Error)?.message);
+    return { success: false, message: "Erreur lors de la récupération des créances" };
+  }
+}
+
+// =============================================================================
 // RAPPORT JOURNALIER DE CAISSE
 // =============================================================================
 

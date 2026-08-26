@@ -64,10 +64,15 @@ import {
   BarChart3,
   CircleDollarSign,
 } from "lucide-react";
-import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
-import { formatCurrencyForPDF, formatNumberForPDF, addSignatureSection } from "@/lib/pdf-utils";
+import {
+  addSignatureSection,
+  createPDFDocument,
+  formatCurrencyForPDF,
+  formatNumberForPDF,
+} from "@/lib/pdf-utils";
+import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { formatDate, formatDateTime, formatPrice, formatDecimal } from "@/lib/format";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
@@ -104,6 +109,8 @@ export default function InventoryDetailPage() {
   const sessionId = params.id as string;
 
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const { chrome } = useReceiptChrome(session?.accessToken, organization);
+  const reportIdentity = chrome?.org;
   const [inventorySession, setInventorySession] = useState<InventorySession | null>(null);
   const [counts, setCounts] = useState<InventoryCount[]>([]);
   const [countsTotal, setCountsTotal] = useState(0);
@@ -480,19 +487,15 @@ export default function InventoryDetailPage() {
     }
 
     const data = result.data;
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    let y = 15;
-
-    // Title
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text("FICHE D'INVENTAIRE", pageWidth / 2, y, { align: "center" });
-    y += 7;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${data.session.reference} - ${data.session.name}`, pageWidth / 2, y, { align: "center" });
-    y += 8;
+    // En-tête commun à tous les documents de la plateforme : ces deux fonctions
+    // le réimplémentaient à la main, sans logo ni mentions légales.
+    const { doc, y: headerY, pageWidth } = createPDFDocument({
+      title: "FICHE D'INVENTAIRE",
+      subtitle: `${data.session.reference} - ${data.session.name}`,
+      organizationName: organization.name,
+      identity: reportIdentity,
+    });
+    let y = headerY;
 
     // Info section
     doc.setFontSize(9);
@@ -608,19 +611,15 @@ export default function InventoryDetailPage() {
     }
 
     const data = result.data;
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    let y = 15;
-
-    // Title
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text("RAPPORT D'INVENTAIRE", pageWidth / 2, y, { align: "center" });
-    y += 7;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${data.session.reference} - ${data.session.name}`, pageWidth / 2, y, { align: "center" });
-    y += 8;
+    // En-tête commun à tous les documents de la plateforme : ces deux fonctions
+    // le réimplémentaient à la main, sans logo ni mentions légales.
+    const { doc, y: headerY, pageWidth } = createPDFDocument({
+      title: "RAPPORT D'INVENTAIRE",
+      subtitle: `${data.session.reference} - ${data.session.name}`,
+      organizationName: organization.name,
+      identity: reportIdentity,
+    });
+    let y = headerY;
 
     // Info section
     doc.setFontSize(9);

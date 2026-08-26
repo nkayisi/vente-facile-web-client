@@ -49,12 +49,13 @@ import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/setti
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  assignPdfToPrintWindow,
-  closePrintTabIfBlank,
-  generateReceiptPdfUrl,
-  openPrintTab,
-  ReceiptData,
-} from "@/lib/receipt-printer";
+  buildPaymentReceipt,
+  buildSaleReceipt,
+  saleReceiptFromSale,
+  type PaymentReceiptData,
+} from "@/lib/receipt";
+import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
+import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 
 const STATUS_CONFIG: Record<SaleStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -75,6 +76,11 @@ export default function SaleDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [sale, setSale] = useState<Sale | null>(null);
+  const { chrome, paperWidth, settings } = useReceiptChrome(
+    session?.accessToken,
+    organization
+  );
+  const printer = useReceiptPrinter();
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -121,86 +127,36 @@ export default function SaleDetailPage() {
 
   // Handle print receipt
   const handlePrintReceipt = async () => {
-    if (!session?.accessToken || !organization?.id || !sale) return;
+    if (!session?.accessToken || !organization?.id || !sale || !chrome) return;
 
-    const printTab = openPrintTab();
+    const job = printer.begin();
     setIsPrinting(true);
 
     try {
-      // Charger les paramètres de l'organisation pour l'en-tête/pied de page
-      const { getOrganizationSettings } = await import("@/actions/settings.actions");
-      const settingsResult = await getOrganizationSettings(session.accessToken, organization.id);
+      const blocks = buildSaleReceipt(
+        saleReceiptFromSale(sale, {
+          chrome,
+          settings,
+          // Une réimpression sort marquée DUPLICATA : un original et sa copie
+          // doivent rester distinguables.
+          isDuplicate: sale.receipt_printed,
+        })
+      );
 
-      // Generate receipt data
-      const receiptData: ReceiptData = {
-        orgName: organization.name || "Vente Facile",
-        orgAddress: organization.address || undefined,
-        orgPhone: organization.phone || undefined,
-        registerName: sale.register_name || undefined,
-        cashierName: sale.sold_by_name,
-        reference: sale.reference,
-        date: new Date(sale.sale_date).toLocaleString("fr-CD"),
-        customerName: sale.customer_name || undefined,
-        customerPhone: sale.customer_phone || undefined,
-        items: sale.items?.map(item => ({
-          name: item.product_name,
-          quantity: parseFloat(item.quantity),
-          quantity_label: item.packaging_factor ? item.quantity_display : undefined,
-          unit_price: parseFloat(item.unit_price),
-          discount_percentage: parseFloat(item.discount_percentage),
-          total: parseFloat(item.total),
-        })) || [],
-        subtotal: parseFloat(sale.subtotal),
-        taxAmount: parseFloat(sale.tax_amount),
-        discountAmount: parseFloat(sale.discount_amount),
-        globalDiscountPercent: parseFloat(sale.discount_percentage),
-        total: parseFloat(sale.total),
-        payments: sale.payments?.map(p => ({
-          method: p.payment_method_name,
-          amount: parseFloat(p.amount),
-          currency: p.currency,
-        })) || [],
-        amountPaid: parseFloat(sale.amount_paid),
-        change: parseFloat(sale.change_amount),
-        currency: sale.currency,
-        receiptHeader: settingsResult.success && settingsResult.data?.receipt_header ? settingsResult.data.receipt_header : undefined,
-        receiptFooter: settingsResult.success && settingsResult.data?.receipt_footer ? settingsResult.data.receipt_footer : undefined,
-        isCreditSale: sale.sale_type === "credit",
-        amountDue: parseFloat(sale.amount_due),
-        // Une réimpression doit être identique au reçu d'origine : sans ces
-        // champs, le bloc fidélité disparaissait silencieusement. Les valeurs
-        // viennent du serveur, jamais d'un recalcul de barème.
-        showLoyaltyPoints: !!(
-          settingsResult.success &&
-          settingsResult.data?.show_loyalty_points_on_receipt &&
-          sale.customer &&
-          sale.loyalty_program_active
-        ),
-        loyaltyPointsEarned: sale.loyalty_points_earned ?? 0,
-        loyaltyPointsUsed: sale.loyalty_points_used ?? 0,
-        loyaltyPointsBalance: sale.loyalty_points_balance ?? 0,
-        loyaltyRedemptionAmount: parseFloat(sale.loyalty_redemption_amount || "0") || 0,
-      };
-
-      const paperWidth = (settingsResult.success && settingsResult.data?.receipt_paper_width === 80 ? 80 : 58) as 58 | 80;
-      const pdfUrl = generateReceiptPdfUrl(receiptData, paperWidth);
-      const pdfOutcome = assignPdfToPrintWindow(printTab, pdfUrl, {
+      job.present(blocks, {
         filename: `recu-${sale.reference}.pdf`,
+        paperWidth,
+        successMessage: sale.receipt_printed ? "Duplicata prêt" : "Reçu prêt",
       });
 
-      // Mark as printed
-      const result = await markReceiptPrinted(session.accessToken, organization.id, sale.id);
-      if (result.success && result.data) {
-        setSale(result.data);
-        toast.success("Reçu prêt", {
-          description:
-            pdfOutcome === "opened"
-              ? "PDF ouvert et enregistré - utilisez Thermer ou Partager pour imprimer."
-              : "Reçu téléchargé - l’onglet n’a pas pu s’ouvrir ; ouvrez le fichier dans Thermer.",
-        });
-      }
+      const result = await markReceiptPrinted(
+        session.accessToken,
+        organization.id,
+        sale.id
+      );
+      if (result.success && result.data) setSale(result.data);
     } catch (error) {
-      closePrintTabIfBlank(printTab);
+      job.abort();
       console.error("Error printing receipt:", error);
       toast.error("Erreur lors de l'impression du reçu");
     } finally {
@@ -274,6 +230,9 @@ export default function SaleDetailPage() {
 
     addPaymentSubmittingRef.current = true;
     setIsAddingPayment(true);
+    // Ouvert avant l'appel réseau : le navigateur bloque toute fenêtre ouverte
+    // en dehors du geste de l'utilisateur.
+    const job = printer.begin();
     try {
       const res = await addPaymentToSale(session.accessToken, organization.id, sale.id, {
         payment_method: addPaymentMethod,
@@ -286,15 +245,62 @@ export default function SaleDetailPage() {
         notes: addPaymentNotes || undefined,
       });
       if (!res.success) {
+        job.abort();
         toast.error(res.message || "Erreur lors de l'ajout du paiement.");
         return;
       }
-      toast.success("Paiement enregistré.");
+
+      // Ce parcours n'imprimait aucun reçu, alors que le même règlement fait
+      // depuis la fiche client ou depuis les factures en attente en produisait
+      // un : le client repartait les mains vides selon l'écran utilisé.
+      const updated = res.data;
+      if (chrome && updated) {
+        const settled = updated.payments?.[updated.payments.length - 1];
+        const method = paymentMethods.find((m) => m.id === addPaymentMethod);
+        const receipt: PaymentReceiptData = {
+          kind: "debt_payment",
+          chrome,
+          number: settled?.receipt_number || sale.reference,
+          date: new Date().toLocaleString("fr-CD"),
+          cashierName: sale.sold_by_name || undefined,
+          customerName: sale.customer_name || undefined,
+          customerPhone: sale.customer_phone || undefined,
+          paymentMethod: method?.name || undefined,
+          paymentReference: addPaymentReference || undefined,
+          amountPaid: amtInSale,
+          currency: sale.currency,
+          tenderedAmount: amt,
+          tenderedCurrency: addPaymentCurrency || sale.currency,
+          invoice: {
+            reference: sale.reference,
+            total: parseFloat(sale.total) || 0,
+            previouslyPaid: parseFloat(sale.amount_paid) || 0,
+            remaining: parseFloat(updated.amount_due) || 0,
+            currency: sale.currency,
+          },
+          debt: {
+            before: due,
+            after: parseFloat(updated.amount_due) || 0,
+            currency: sale.currency,
+          },
+          notes: addPaymentNotes || undefined,
+        };
+        job.present(buildPaymentReceipt(receipt), {
+          filename: `reglement-${sale.reference}.pdf`,
+          paperWidth,
+          successMessage: "Paiement enregistré",
+        });
+      } else {
+        job.abort();
+        toast.success("Paiement enregistré.");
+      }
+
       // Refresh sale data
       const refreshed = await getSale(session.accessToken, organization.id, sale.id);
       if (refreshed.success && refreshed.data) setSale(refreshed.data);
       setShowAddPaymentDialog(false);
     } catch (err) {
+      job.abort();
       console.error(err);
       toast.error("Erreur réseau lors de l'ajout du paiement.");
     } finally {
@@ -402,21 +408,25 @@ export default function SaleDetailPage() {
               </Button>
             </PermissionGate>
           )}
-          {!sale.receipt_printed && (
-            <Button
-              variant="outline"
-              onClick={handlePrintReceipt}
-              disabled={isPrinting}
-              className="hover:bg-orange-50"
-            >
-              {isPrinting ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Receipt className="h-4 w-4 mr-2" />
-              )}
-              {isPrinting ? "Impression..." : "Imprimer le reçu"}
-            </Button>
-          )}
+          {/* Toujours proposable : une imprimante à court de papier ne doit pas
+              faire perdre le reçu. Une réimpression sort marquée DUPLICATA. */}
+          <Button
+            variant="outline"
+            onClick={handlePrintReceipt}
+            disabled={isPrinting}
+            className="hover:bg-orange-50 active:scale-[0.96] transition-transform"
+          >
+            {isPrinting ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Receipt className="h-4 w-4 mr-2" />
+            )}
+            {isPrinting
+              ? "Impression..."
+              : sale.receipt_printed
+                ? "Réimprimer le reçu"
+                : "Imprimer le reçu"}
+          </Button>
           {canCancel && (
             <PermissionGate permission="sales.cancel">
               <Button

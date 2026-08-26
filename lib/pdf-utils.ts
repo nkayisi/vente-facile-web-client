@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getDefaultCurrency } from "@/lib/format";
+import type { OrgIdentity } from "@/lib/receipt/identity";
 
 // Couleur principale orange (brand color)
 const BRAND_COLOR: [number, number, number] = [249, 115, 22];
@@ -25,6 +26,13 @@ export interface PDFDocumentOptions {
   subtitle?: string;
   organizationName: string;
   orientation?: "portrait" | "landscape";
+  /**
+   * Identité imprimée de l'organisation, la même que celle des tickets
+   * thermiques. Un rapport et un reçu émis par la même boutique doivent porter
+   * le même en-tête : jusqu'ici le rapport n'affichait que le nom, sans logo,
+   * sans adresse et sans mentions légales.
+   */
+  identity?: OrgIdentity;
 }
 
 export interface PDFSummaryItem {
@@ -44,7 +52,19 @@ export function createPDFDocument(options: PDFDocumentOptions): { doc: jsPDF; y:
     format: "a4",
   });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const identity = options.identity;
   let y = 15;
+
+  // Logo à gauche, quand l'organisation en a un.
+  if (identity?.logo) {
+    const height = 14;
+    const ratio = identity.logo.aspectRatio > 0 ? identity.logo.aspectRatio : 1;
+    try {
+      doc.addImage(identity.logo.dataUrl, identity.logo.format, 14, y - 4, height * ratio, height);
+    } catch {
+      // Un logo illisible ne doit jamais empêcher de sortir un rapport.
+    }
+  }
 
   // Titre principal (centré)
   doc.setFontSize(16);
@@ -55,8 +75,25 @@ export function createPDFDocument(options: PDFDocumentOptions): { doc: jsPDF; y:
   // Nom de l'organisation (aligné à gauche)
   doc.setFontSize(11);
   doc.setFont("helvetica", "normal");
-  doc.text(options.organizationName, 14, y);
+  doc.text(identity?.name || options.organizationName, 14, y);
   y += 5;
+
+  // Coordonnées et mentions légales, comme sur les tickets.
+  const contact = [identity?.address, identity?.city].filter(Boolean).join(", ");
+  const legal = [
+    identity?.rccm ? `RCCM ${identity.rccm}` : "",
+    identity?.idNat ? `ID Nat ${identity.idNat}` : "",
+    identity?.taxId ? `NIF ${identity.taxId}` : "",
+  ].filter(Boolean).join(" · ");
+
+  doc.setFontSize(9);
+  doc.setTextColor(90, 90, 90);
+  for (const line of [contact, identity?.phone ? `Tél. ${identity.phone}` : "", legal]) {
+    if (!line) continue;
+    doc.text(line, 14, y);
+    y += 4;
+  }
+  doc.setTextColor(0, 0, 0);
 
   // Sous-titre (période, date, etc.) - aligné à gauche
   if (options.subtitle) {

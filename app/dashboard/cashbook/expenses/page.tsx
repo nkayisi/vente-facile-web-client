@@ -45,6 +45,9 @@ import {
   ExpenseStats,
   CreateExpenseData,
 } from "@/actions/cashbook.actions";
+import { buildExpenseReceipt, type ExpenseReceiptData } from "@/lib/receipt";
+import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
+import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import { usePermissions } from "@/components/auth/permissions-provider";
 import { PermissionGate } from "@/components/auth/permission-gate";
 import { CurrencyAmountInput } from "@/components/shared/CurrencyAmountInput";
@@ -101,6 +104,8 @@ export default function ExpensesPage() {
   const { hasPermission } = usePermissions();
   const { currency: defaultCurrency } = useCurrency();
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
+  const printer = useReceiptPrinter();
   const [isLoading, setIsLoading] = useState(true);
 
   // Data
@@ -274,6 +279,9 @@ export default function ExpensesPage() {
     }
 
     setIsSubmitting(true);
+    // Ouvert sur le geste, avant l'appel réseau : sinon le navigateur bloque
+    // la fenêtre.
+    const job = printer.begin();
     try {
       const res = await createExpense(
         session.accessToken,
@@ -281,7 +289,32 @@ export default function ExpensesPage() {
         createForm
       );
       if (res.success) {
-        toast.success("Dépense créée avec succès");
+        // Une sortie de caisse sans pièce justificative n'était opposable à
+        // personne : le bénéficiaire repart désormais avec un reçu signable.
+        const created = res.data;
+        if (chrome && created) {
+          const receipt: ExpenseReceiptData = {
+            kind: "expense",
+            chrome,
+            number: created.reference,
+            date: new Date(created.expense_date).toLocaleDateString("fr-CD"),
+            cashierName: session.user?.name || undefined,
+            category: created.category_name || undefined,
+            payee: created.beneficiary || undefined,
+            paymentMethod: created.payment_method_name || undefined,
+            amount: parseFloat(created.amount) || 0,
+            currency: created.currency,
+            description: created.description || undefined,
+          };
+          job.present(buildExpenseReceipt(receipt), {
+            filename: `depense-${created.reference}.pdf`,
+            paperWidth,
+            successMessage: "Dépense enregistrée",
+          });
+        } else {
+          job.abort();
+          toast.success("Dépense créée avec succès");
+        }
         setShowCreateDialog(false);
         setCreateForm({
           category: "",
@@ -294,9 +327,11 @@ export default function ExpensesPage() {
         });
         fetchData();
       } else {
+        job.abort();
         toast.error(res.error || "Erreur lors de la création");
       }
     } catch {
+      job.abort();
       toast.error("Erreur lors de la création");
     } finally {
       setIsSubmitting(false);
