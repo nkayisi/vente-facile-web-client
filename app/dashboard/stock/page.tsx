@@ -23,14 +23,13 @@ import {
   Pencil,
   Trash2,
   Loader2,
-  Calendar,
-  ArrowRight,
   ArrowDownToLine,
   ArrowUpFromLine,
   Activity,
   PackageCheck,
   PackageX,
   BarChart3,
+  Boxes,
   SlidersHorizontal,
 } from "lucide-react";
 import {
@@ -53,7 +52,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { PermissionGate } from "@/components/auth/permission-gate";
 import { formatPrice, formatNumber, formatDateTime } from "@/lib/format";
-import { StatValue } from "@/components/shared/StatValue";
+import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
+import { ActionTile } from "@/components/shared/ActionTile";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getWarehouses,
@@ -337,128 +337,80 @@ export default function StockPage() {
         </p>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card className="p-0">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <WarehouseIcon className="h-5 w-5 text-blue-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <StatValue value={String(safeWarehouses.length)} />
-                <p className="text-xs text-gray-500">Entrepôts</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Relevés. Un seul panneau, sans ombre ni coin détaché : ce bloc se
+          lit, il ne se clique pas. La séparation d'avec les raccourcis
+          ci-dessous passe par la forme, pas par un liseré de couleur. */}
+      <StatStrip>
+        <StatStripItem
+          label="Entrepôts"
+          value={String(safeWarehouses.length)}
+          icon={WarehouseIcon}
+        />
+        <StatStripItem
+          label="Produits en stock"
+          value={String(totalProducts)}
+          icon={Package}
+        />
+        <StatStripItem
+          label="Unités au total"
+          value={formatNumber(totalQuantity)}
+          icon={Boxes}
+          hint="Somme en unités de détail, tous produits confondus. Les contenants scellés y comptent pour leur contenu."
+        />
+        <StatStripItem
+          label="Stock bas"
+          value={String(safeLowStock.length)}
+          icon={TrendingDown}
+          tone="warn"
+        />
+        <StatStripItem
+          label="En rupture"
+          value={String(outOfStock)}
+          icon={PackageX}
+          tone="alert"
+        />
+        <StatStripItem
+          label="Valeur totale"
+          value={formatPrice(totalValue)}
+          icon={BarChart3}
+          tone="accent"
+        />
+      </StatStrip>
 
-        <Card className="p-0">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Package className="h-5 w-5 text-purple-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <StatValue value={String(totalProducts)} />
-                <p className="text-xs text-gray-500">Produits en stock</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="p-0">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-orange-100 rounded-lg">
-                <TrendingDown className="h-5 w-5 text-orange-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <StatValue value={String(safeLowStock.length)} color="text-orange-600" />
-                <p className="text-xs text-gray-500">Stock bas</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="p-0">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <PackageX className="h-5 w-5 text-red-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <StatValue value={String(outOfStock)} color="text-red-600" />
-                <p className="text-xs text-gray-500">En rupture</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="p-0 col-span-2 lg:col-span-1">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <BarChart3 className="h-5 w-5 text-green-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <StatValue value={formatPrice(totalValue)} />
-                <p className="text-xs text-gray-500">Valeur totale</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Link href="/dashboard/stock/stock-levels">
-          <Card className="p-0 hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-purple-500">
-            <CardContent className="p-4 flex items-center gap-3">
-              <Package className="h-5 w-5 text-purple-600" />
-              <div>
-                <p className="font-medium text-sm">Niveaux de stock</p>
-                <p className="text-xs text-gray-500">{totalQuantity.toFixed(0)} unités</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/dashboard/stock/movements">
-          <Card className="p-0 hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-indigo-500">
-            <CardContent className="p-4 flex items-center gap-3">
-              <ClipboardList className="h-5 w-5 text-indigo-600" />
-              <div>
-                <p className="font-medium text-sm">Mouvements</p>
-                <p className="text-xs text-gray-500">Historique complet</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/dashboard/stock/transfers">
-          <Card className="p-0 hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-cyan-500">
-            <CardContent className="p-4 flex items-center gap-3">
-              <ArrowLeftRight className="h-5 w-5 text-cyan-600" />
-              <div>
-                <p className="font-medium text-sm">Transferts</p>
-                <p className="text-xs text-gray-500">Entre entrepôts</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/dashboard/stock/adjustments">
-          <Card className="p-0 hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-amber-500">
-            <CardContent className="p-4 flex items-center gap-3">
-              <SlidersHorizontal className="h-5 w-5 text-amber-600" />
-              <div>
-                <p className="font-medium text-sm">Ajustements</p>
-                <p className="text-xs text-gray-500">Corrections</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+      {/* Raccourcis. Même largeur de colonne que le bandeau, mais tout leur
+          comportement dit qu'on peut appuyer dessus. */}
+      <div>
+        <h2 className="mb-3 text-base font-semibold text-gray-900">Opérations</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <ActionTile
+            href="/dashboard/stock/stock-levels"
+            title="Niveaux de stock"
+            description="Ce qui reste en rayon"
+            icon={Package}
+            accent="purple"
+          />
+          <ActionTile
+            href="/dashboard/stock/movements"
+            title="Mouvements"
+            description="Entrées et sorties"
+            icon={ClipboardList}
+            accent="indigo"
+          />
+          <ActionTile
+            href="/dashboard/stock/transfers"
+            title="Transferts"
+            description="D'un entrepôt à l'autre"
+            icon={ArrowLeftRight}
+            accent="cyan"
+          />
+          <ActionTile
+            href="/dashboard/stock/adjustments"
+            title="Ajustements"
+            description="Corriger un écart"
+            icon={SlidersHorizontal}
+            accent="amber"
+          />
+        </div>
       </div>
 
       {/* Main Content Grid */}
@@ -468,7 +420,7 @@ export default function StockPage() {
           {/* Warehouses */}
           <div>
             <div className="flex items-center justify-between gap-4 mb-4">
-              <h2 className="text-lg font-semibold">Entrepôts</h2>
+              <h2 className="text-base font-semibold text-gray-900">Entrepôts</h2>
               <div className="relative w-full max-w-md">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
@@ -684,6 +636,15 @@ export default function StockPage() {
                             <p className="font-semibold text-red-600 text-sm">
                               {batch.days_until_expiry}j
                             </p>
+                            {/* Un lot suit une date, pas un emballage : rien n'y
+                                dit combien de ses unités sont encore scellées.
+                                Le serveur nomme donc l'unité de détail sans
+                                annoncer de contenants. */}
+                            {batch.quantity_display?.trim() && (
+                              <p className="text-xs text-gray-500">
+                                {batch.quantity_display}
+                              </p>
+                            )}
                           </div>
                         </div>
                       ))}

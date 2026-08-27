@@ -56,7 +56,7 @@ import { formatDate } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
-import { getPackaging, formatPackaged } from "@/lib/packaging";
+import { getPackaging, formatPackagedSplit } from "@/lib/packaging";
 import { PackagedQuantityInput } from "@/components/stock/packaged-quantity-input";
 import {
   getStockTransfers,
@@ -664,12 +664,14 @@ export default function TransfersPage() {
                           {(() => {
                             const packaging = getPackaging(product);
                             if (!packaging) return item.quantity_requested;
-                            const packages = item.package_quantity ?? 0;
-                            const loose = item.loose_quantity ?? 0;
-                            return formatPackaged(
+                            // La saisie porte DÉJÀ les deux compteurs : la
+                            // recomposer en total pour la redécouper ferait
+                            // d'une demande de « 1 casier + 30 bouteilles »
+                            // un « 2 casiers + 6 bouteilles ».
+                            return formatPackagedSplit(
                               packaging,
-                              packages * packaging.factor + loose,
-                              loose
+                              item.package_quantity ?? 0,
+                              item.loose_quantity ?? 0
                             );
                           })()}
                         </span>

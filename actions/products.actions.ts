@@ -155,9 +155,16 @@ export interface Product {
     quantity: string;
     available: string;
     reserved: string;
+    /** DISPONIBLE prêt à afficher : c'est le sens historique de ce champ */
     display?: string;
     packages?: number;
     loose?: string;
+    /** Total en rayon, dans les mêmes termes : « 3 casiers + 7 bouteilles » */
+    quantity_display?: string;
+    quantity_packages?: number;
+    quantity_loose?: string;
+    /** Réservé en unité de détail nommée, jamais traduit en contenants */
+    reserved_display?: string;
   }>;
   created_at?: string;
   updated_at?: string;

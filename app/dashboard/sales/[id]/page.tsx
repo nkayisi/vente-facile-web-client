@@ -705,7 +705,18 @@ export default function SaleDetailPage() {
                         <span className="text-sm">{formatPrice(item.unit_price)}</span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className="font-medium">{parseFloat(item.quantity).toFixed(0)}</span>
+                        {/* `quantity_display` porte les termes de la facturation
+                            (« 2 casiers + 3 bouteilles ») ; le total en unités
+                            reste dessous pour le rapprochement de stock. */}
+                        <span className="block font-medium">
+                          {item.quantity_display?.trim() ||
+                            parseFloat(item.quantity).toFixed(0)}
+                        </span>
+                        {item.packaging_factor ? (
+                          <span className="text-xs text-gray-500">
+                            {parseFloat(item.quantity).toFixed(0)} au total
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-right">
                         {parseFloat(item.discount_percentage) > 0 ? (

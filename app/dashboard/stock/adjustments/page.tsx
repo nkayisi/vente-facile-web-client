@@ -55,7 +55,13 @@ import { formatPrice, formatDate } from "@/lib/format";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
-import { getPackaging, formatPackaged } from "@/lib/packaging";
+import {
+  getPackaging,
+  formatPackaged,
+  formatPackagedSplit,
+  formatPackagedDifference,
+  splitPackaged,
+} from "@/lib/packaging";
 import { PackagedQuantityInput } from "@/components/stock/packaged-quantity-input";
 import {
   getStockAdjustments,
@@ -89,6 +95,22 @@ const ADJUSTMENT_TYPES: { value: AdjustmentType; label: string }[] = [
   { value: "other", label: "Autre" },
 ];
 
+/**
+ * Ligne du formulaire d'ajustement.
+ *
+ * `expected_loose_quantity` est un champ CLIENT : il porte la part vrac lue sur
+ * la ligne de stock, ce qui permet d'afficher un écart ventilé par canal avant
+ * l'envoi. Le serveur relève la même valeur de son côté à la création, il ne
+ * l'accepte donc pas en entrée et elle est retirée du corps de la requête.
+ */
+type AdjustmentFormItem = CreateStockAdjustmentData["items"][number] & {
+  expected_loose_quantity?: number;
+};
+
+type AdjustmentFormData = Omit<CreateStockAdjustmentData, "items"> & {
+  items: AdjustmentFormItem[];
+};
+
 export default function AdjustmentsPage() {
   const { data: session } = useSession();
   const router = useRouter();
@@ -115,7 +137,7 @@ export default function AdjustmentsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form state
-  const [formData, setFormData] = useState<CreateStockAdjustmentData>({
+  const [formData, setFormData] = useState<AdjustmentFormData>({
     warehouse: "",
     adjustment_type: "count",
     reason: "",
@@ -127,6 +149,8 @@ export default function AdjustmentsPage() {
     product: string;
     quantity_counted: number;
     quantity_expected: number;
+    /** Part vrac du stock théorique, LUE sur la ligne de stock */
+    expected_loose_quantity?: number;
     unit_cost: number;
     counted_package_quantity?: number;
     counted_loose_quantity?: number;
@@ -232,7 +256,9 @@ export default function AdjustmentsPage() {
       return createProductSearchHandler(session.accessToken, organization.id, {
         formatLabel: p => {
           const stock = warehouseStocks.find(s => s.product === p.id);
-          const q = stock ? parseFloat(stock.quantity).toFixed(0) : "0";
+          const q =
+            stock?.stock_display?.trim() ||
+            (stock ? parseFloat(stock.quantity).toFixed(0) : "0");
           return `${p.name} (Stock: ${q})`;
         },
         onResults: results => {
@@ -270,6 +296,11 @@ export default function AdjustmentsPage() {
     // Get expected quantity from warehouse stock
     const stock = warehouseStocks.find(s => s.product === newItem.product);
     const expectedQty = stock ? parseFloat(stock.quantity) : 0;
+    // Part vrac LUE sur la ligne de stock : redécouper `expectedQty` au facteur
+    // annoncerait « 4 casiers + 3 bouteilles » pour un rayon qui porte
+    // « 3 casiers + 27 bouteilles », et l'écart s'appuierait sur un attendu
+    // qui n'a jamais existé.
+    const expectedLoose = stock ? parseFloat(stock.loose_quantity || "0") : 0;
 
     const packaging = getPackaging(product);
     const packages = newItem.counted_package_quantity ?? 0;
@@ -295,6 +326,7 @@ export default function AdjustmentsPage() {
               }
             : { quantity_counted: newItem.quantity_counted }),
           quantity_expected: expectedQty,
+          expected_loose_quantity: expectedLoose,
           unit_cost: parseFloat(product.cost_price) || 0,
         },
       ],
@@ -329,7 +361,13 @@ export default function AdjustmentsPage() {
     setIsSubmitting(true);
 
     try {
-      const result = await createStockAdjustment(session.accessToken, organization.id, formData);
+      // `expected_loose_quantity` ne sert qu'à l'aperçu de l'écart : le serveur
+      // relève lui-même la part vrac du stock, il n'accepte pas ce champ.
+      const payload: CreateStockAdjustmentData = {
+        ...formData,
+        items: formData.items.map(({ expected_loose_quantity: _ignored, ...item }) => item),
+      };
+      const result = await createStockAdjustment(session.accessToken, organization.id, payload);
       if (result.success) {
         toast.success("Ajustement créé avec succès");
         setShowCreateDialog(false);
@@ -650,6 +688,9 @@ export default function AdjustmentsPage() {
                         ...newItem,
                         product: value,
                         quantity_expected: stock ? parseFloat(stock.quantity) : 0,
+                        expected_loose_quantity: stock
+                          ? parseFloat(stock.loose_quantity || "0")
+                          : 0,
                         counted_package_quantity: undefined,
                         counted_loose_quantity: undefined,
                       });
@@ -680,13 +721,18 @@ export default function AdjustmentsPage() {
                   <div className="rounded-lg border p-3">
                     {(() => {
                       const stock = warehouseStocks.find(s => s.product === newItem.product);
-                      const expected = stock ? parseFloat(stock.quantity) : 0;
-                      const expectedLoose = stock ? parseFloat(stock.loose_quantity || "0") : 0;
+                      // Le serveur envoie le partage LU sur ses deux compteurs :
+                      // on le rend tel quel plutôt que de rediviser le total.
                       return (
                         <p className="mb-3 text-xs text-gray-500">
                           En stock d&apos;après le système :{" "}
                           <span className="font-medium text-gray-700">
-                            {formatPackaged(newItemPackaging, expected, expectedLoose)}
+                            {stock?.stock_display?.trim() ||
+                              formatPackaged(
+                                newItemPackaging,
+                                stock ? parseFloat(stock.quantity) : 0,
+                                stock ? parseFloat(stock.loose_quantity || "0") : 0
+                              )}
                           </span>
                         </p>
                       );
@@ -723,6 +769,15 @@ export default function AdjustmentsPage() {
                       (item.counted_loose_quantity ?? 0)
                     : (item.quantity_counted ?? 0);
                   const diff = counted - item.quantity_expected;
+                  // Partage attendu LU sur le stock, jamais redivisé depuis son
+                  // total : c'est lui qui rend l'écart par canal exact.
+                  const expectedSplit = packaging
+                    ? splitPackaged(
+                        item.quantity_expected,
+                        item.expected_loose_quantity ?? 0,
+                        packaging.factor
+                      )
+                    : null;
                   return (
                     <div key={index} className="flex items-center justify-between p-3">
                       <div className="flex-1">
@@ -730,16 +785,20 @@ export default function AdjustmentsPage() {
                         <div className="flex items-center gap-4 text-xs text-gray-500 mt-1">
                           <span>
                             Attendu:{" "}
-                            {packaging
-                              ? formatPackaged(packaging, item.quantity_expected)
+                            {packaging && expectedSplit
+                              ? formatPackagedSplit(
+                                  packaging,
+                                  expectedSplit.packages,
+                                  expectedSplit.loose
+                                )
                               : item.quantity_expected}
                           </span>
                           <span>
                             Compté:{" "}
                             {packaging
-                              ? formatPackaged(
+                              ? formatPackagedSplit(
                                   packaging,
-                                  counted,
+                                  item.counted_package_quantity ?? 0,
                                   item.counted_loose_quantity ?? 0
                                 )
                               : counted}
@@ -753,8 +812,16 @@ export default function AdjustmentsPage() {
                                   : ""
                             }
                           >
-                            Diff: {diff > 0 ? "+" : ""}
-                            {diff}
+                            Diff:{" "}
+                            {packaging && expectedSplit
+                              ? formatPackagedDifference(
+                                  packaging,
+                                  (item.counted_package_quantity ?? 0) -
+                                    expectedSplit.packages,
+                                  (item.counted_loose_quantity ?? 0) -
+                                    expectedSplit.loose
+                                )
+                              : `${diff > 0 ? "+" : ""}${diff}`}
                           </span>
                         </div>
                       </div>

@@ -529,12 +529,13 @@ export default function ReportsPage() {
         (i + 1).toString(),
         p.product_name,
         p.product_sku,
+        p.quantity_display?.trim() || formatNumberForPDF(p.quantity_sold, 0),
         formatNumberForPDF(p.quantity_sold, 0),
         formatCurrencyForPDF(p.total_revenue),
       ]);
 
       currentY = addTable(doc, currentY,
-        [['#', 'Article', 'SKU', 'Quantité', 'Revenus']],
+        [['#', 'Article', 'SKU', 'Quantité', 'Total unités', 'Revenus']],
         articlesData,
         {
           columnStyles: {
@@ -606,18 +607,26 @@ export default function ReportsPage() {
     });
 
     // Préparer les données avec stock de départ, approvisionnement et restant
+    // Les quantités sortent dans les termes du marchand (« 10 casiers +
+    // 5 bouteilles ») avec le total en unités juste à côté : le premier sert au
+    // rayon, le second au réassort. Le stock de départ, lui, se déduit et son
+    // partage d'alors n'est enregistré nulle part : il reste en unités.
     const productsData = topProducts.map(p => {
       const stockInfo = stockDetails.find(s => s.product_id === p.product_id);
       const currentStock = stockInfo ? parseFloat(stockInfo.current_stock) : 0;
       const startingStock = currentStock + p.quantity_sold;
       const stockValue = stockInfo ? parseFloat(stockInfo.stock_value) : 0;
-      const supply = productSupplies[p.product_id] || 0;
+      const supply = productSupplies[p.product_id];
       return [
         p.product_name,
         formatNumberForPDF(startingStock, 0),
-        supply > 0 ? formatNumberForPDF(supply, 0) : '-',
+        supply && supply.quantity > 0
+          ? supply.display?.trim() || formatNumberForPDF(supply.quantity, 0)
+          : '-',
+        p.quantity_display?.trim() || formatNumberForPDF(p.quantity_sold, 0),
         formatNumberForPDF(p.quantity_sold, 0),
         formatCurrencyForPDF(p.total_revenue),
+        stockInfo?.stock_display?.trim() || formatNumberForPDF(currentStock, 0),
         formatNumberForPDF(currentStock, 0),
         formatCurrencyForPDF(stockValue),
       ];
@@ -625,7 +634,8 @@ export default function ReportsPage() {
 
     // Tableau des produits (pleine largeur)
     addTable(doc, y,
-      [['Produit', 'Stock départ', 'Approv.', 'Qté vendue', 'Valeur vendue', 'Qté restante', 'Valeur restante']],
+      [['Produit', 'Stock départ', 'Approv.', 'Qté vendue', 'Total vendu',
+        'Valeur vendue', 'Qté restante', 'Total restant', 'Valeur restante']],
       productsData,
       {
         useAlternateRowColors: true,
@@ -665,6 +675,7 @@ export default function ReportsPage() {
       const productsData = productProfits.map(p => [
         p.product_name,
         p.product_sku,
+        p.quantity_display?.trim() || formatNumberForPDF(Number(p.quantity_sold), 0),
         formatNumberForPDF(Number(p.quantity_sold), 0),
         formatCurrencyForPDF(p.total_revenue),
         formatCurrencyForPDF(p.total_cost),
@@ -673,7 +684,7 @@ export default function ReportsPage() {
       ]);
 
       currentY = addTable(doc, currentY,
-        [["Produit", "SKU", "Qté", "CA (HT)", "Coût", "Bénéfice", "Marge"]],
+        [["Produit", "SKU", "Qté", "Total unités", "CA (HT)", "Coût", "Bénéfice", "Marge"]],
         productsData,
         {
           columnStyles: {
@@ -727,24 +738,24 @@ export default function ReportsPage() {
       s.product_sku,
       s.category_name || "-",
       s.stock_display?.trim() || formatNumberForPDF(s.current_stock, 0),
+      s.available_display?.trim() || formatNumberForPDF(s.available_stock, 0),
       formatNumberForPDF(s.current_stock, 0),
-      formatNumberForPDF(s.available_stock, 0),
       formatCurrencyForPDF(s.stock_value),
       s.status === "out_of_stock" ? "Rupture" : s.status === "low_stock" ? "Bas" : "OK",
     ]);
 
     addTable(doc, currentY,
-      [["Produit", "SKU", "Catégorie", "Stock", "Total", "Dispo", "Valeur", "Statut"]],
+      [["Produit", "SKU", "Catégorie", "Stock", "Disponible", "Total", "Valeur", "Statut"]],
       stockData,
       {
         columnStyles: {
-          0: { cellWidth: 34 },
-          1: { cellWidth: 22 },
-          2: { cellWidth: 24 },
-          3: { cellWidth: 34 },
-          4: { halign: 'right', cellWidth: 16 },
+          0: { cellWidth: 30 },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 22 },
+          3: { cellWidth: 32 },
+          4: { cellWidth: 32 },
           5: { halign: 'right', cellWidth: 16 },
-          6: { halign: 'right', cellWidth: 26 },
+          6: { halign: 'right', cellWidth: 24 },
           7: { halign: 'center', cellWidth: 16 },
         },
         useAlternateRowColors: true,
@@ -779,11 +790,14 @@ export default function ReportsPage() {
     const data = topProducts.map(p => ({
       Produit: p.product_name,
       SKU: p.product_sku,
-      "Quantité vendue": p.quantity_sold,
+      // Ce qui est sorti du rayon, puis le total en unités : 10 casiers et
+      // 245 bouteilles ne se réapprovisionnent pas de la même façon.
+      "Quantité vendue": p.quantity_display?.trim() || String(p.quantity_sold),
+      "Total en unités": p.quantity_sold,
       "Chiffre d'affaires": parseFloat(p.total_revenue),
     }));
     exportToCSV(data, `ventes-produits-${new Date().toISOString().split("T")[0]}`,
-      ["Produit", "SKU", "Quantité vendue", "Chiffre d'affaires"]);
+      ["Produit", "SKU", "Quantité vendue", "Total en unités", "Chiffre d'affaires"]);
   };
 
   const exportStockCSV = () => {
@@ -792,27 +806,31 @@ export default function ReportsPage() {
       SKU: s.product_sku,
       Catégorie: s.category_name || "",
       "Stock détaillé": s.stock_display || "",
+      "Disponible détaillé": s.available_display || "",
+      "Réservé": s.reserved_display || parseFloat(s.reserved_stock).toFixed(0),
       "Stock actuel": parseFloat(s.current_stock),
       "Stock disponible": parseFloat(s.available_stock),
       "Valeur stock": parseFloat(s.stock_value),
       Statut: s.status === "out_of_stock" ? "Rupture" : s.status === "low_stock" ? "Bas" : "OK",
     }));
     exportToCSV(data, `stock-${new Date().toISOString().split("T")[0]}`,
-      ["Produit", "SKU", "Catégorie", "Stock détaillé", "Stock actuel", "Stock disponible", "Valeur stock", "Statut"]);
+      ["Produit", "SKU", "Catégorie", "Stock détaillé", "Disponible détaillé", "Réservé",
+       "Stock actuel", "Stock disponible", "Valeur stock", "Statut"]);
   };
 
   const exportProfitsCSV = () => {
     const data = productProfits.map(p => ({
       Produit: p.product_name,
       SKU: p.product_sku,
-      "Quantité vendue": p.quantity_sold,
+      "Quantité vendue": p.quantity_display?.trim() || String(p.quantity_sold),
+      "Total en unités": p.quantity_sold,
       "CA (HT net)": parseFloat(p.total_revenue),
       "Coût": parseFloat(p.total_cost),
       "Bénéfice": parseFloat(p.profit),
       "Marge %": parseFloat(p.margin_percentage),
     }));
     exportToCSV(data, `benefices-${new Date().toISOString().split("T")[0]}`,
-      ["Produit", "SKU", "Quantité vendue", "CA (HT net)", "Coût", "Bénéfice", "Marge %"]);
+      ["Produit", "SKU", "Quantité vendue", "Total en unités", "CA (HT net)", "Coût", "Bénéfice", "Marge %"]);
   };
 
   if (isLoading && !summary) {
@@ -910,7 +928,7 @@ export default function ReportsPage() {
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-500">Chiffre d'affaires</p>
-                  <StatValue value={formatPrice(parseFloat(summary.sales.total_sales))} />
+                  <StatValue value={formatPrice(summary.sales.total_sales)} />
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-sm text-gray-500">
                       {summary.sales.total_orders} ventes
@@ -931,7 +949,7 @@ export default function ReportsPage() {
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-500">Panier moyen</p>
-                  <StatValue value={formatPrice(parseFloat(summary.sales.average_order_value))} />
+                  <StatValue value={formatPrice(summary.sales.average_order_value)} />
                   <p className="text-sm text-gray-500 mt-1">
                     {summary.sales.total_items_sold} articles vendus
                   </p>
@@ -951,7 +969,7 @@ export default function ReportsPage() {
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-500">Solde caisse</p>
-                  <StatValue value={formatPrice(parseFloat(summary.cashbook.current_balance))} />
+                  <StatValue value={formatPrice(summary.cashbook.current_balance)} />
                   {(summary.cashbook.balance_by_currency?.length ?? 0) > 1 && (
                     <p className="text-xs text-gray-500 mt-1">
                       {summary.cashbook.balance_by_currency!
@@ -982,7 +1000,7 @@ export default function ReportsPage() {
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-gray-500">Créances clients</p>
-                    <StatValue value={formatPrice(parseFloat(summary.customers.total_receivables))} />
+                    <StatValue value={formatPrice(summary.customers.total_receivables)} />
                     <p className="text-sm text-gray-500 mt-1">
                       {summary.customers.customers_with_debt} client
                       {summary.customers.customers_with_debt > 1 ? "s" : ""} avec une dette
@@ -1104,7 +1122,17 @@ export default function ReportsPage() {
                         </TableCell>
                         <TableCell className="font-medium">{product.product_name}</TableCell>
                         <TableCell className="text-gray-500">{product.product_sku}</TableCell>
-                        <TableCell className="text-right font-semibold">{product.quantity_sold} unités</TableCell>
+                        <TableCell className="text-right font-semibold">
+                          <span className="block">
+                            {product.quantity_display?.trim() ||
+                              `${product.quantity_sold} unités`}
+                          </span>
+                          {product.packaging_factor != null && (
+                            <span className="text-xs font-normal text-gray-500">
+                              {product.quantity_sold} au total
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right font-semibold text-orange-600">
                           {formatPrice(parseFloat(product.total_revenue))}
                         </TableCell>
@@ -1301,20 +1329,25 @@ export default function ReportsPage() {
                 const currentStock = stockInfo ? parseFloat(stockInfo.current_stock) : 0;
                 const startingStock = currentStock + p.quantity_sold;
                 const stockValue = stockInfo ? parseFloat(stockInfo.stock_value) : 0;
-                const supply = productSupplies[p.product_id] || 0;
+                const supply = productSupplies[p.product_id];
                 return {
                   'Produit': p.product_name,
                   'SKU': p.product_sku,
                   'Stock départ': startingStock.toFixed(0),
-                  'Approv.': supply > 0 ? supply.toFixed(0) : '',
-                  'Qté vendue': p.quantity_sold.toString(),
+                  'Approv.': supply && supply.quantity > 0
+                    ? supply.display?.trim() || supply.quantity.toFixed(0)
+                    : '',
+                  'Qté vendue': p.quantity_display?.trim() || p.quantity_sold.toString(),
+                  'Total vendu': p.quantity_sold.toString(),
                   'Valeur vendue': formatPriceValue(p.total_revenue),
-                  'Qté restante': currentStock.toFixed(0),
+                  'Qté restante': stockInfo?.stock_display?.trim() || currentStock.toFixed(0),
+                  'Total restant': currentStock.toFixed(0),
                   'Valeur restante': formatPriceValue(stockValue),
                 };
               });
               exportToCSV(productsWithStock, `produits-vendus-${new Date().toISOString().split('T')[0]}`,
-                ['Produit', 'SKU', 'Stock départ', 'Approv.', 'Qté vendue', 'Valeur vendue', 'Qté restante', 'Valeur restante']);
+                ['Produit', 'SKU', 'Stock départ', 'Approv.', 'Qté vendue', 'Total vendu',
+                 'Valeur vendue', 'Qté restante', 'Total restant', 'Valeur restante']);
             }}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Export Excel
@@ -1348,7 +1381,15 @@ export default function ReportsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Produit</TableHead>
-                      <TableHead className="text-right">Stock départ</TableHead>
+                      {/* Le stock de départ se déduit (restant + vendu) : son
+                          partage scellé/vrac d'alors n'est enregistré nulle
+                          part, il se compte donc en unités de détail. */}
+                      <TableHead
+                        className="text-right"
+                        title="Reconstitué (restant + vendu), en unités de détail"
+                      >
+                        Stock départ
+                      </TableHead>
                       <TableHead className="text-right">Approv.</TableHead>
                       <TableHead className="text-right">Qté vendue</TableHead>
                       <TableHead className="text-right">Valeur vendue</TableHead>
@@ -1362,7 +1403,8 @@ export default function ReportsPage() {
                       const currentStock = stockInfo ? parseFloat(stockInfo.current_stock) : 0;
                       const startingStock = currentStock + product.quantity_sold;
                       const stockValue = stockInfo ? parseFloat(stockInfo.stock_value) : 0;
-                      const supply = productSupplies[product.product_id] || 0;
+                      const supply = productSupplies[product.product_id];
+                      const isPackaged = stockInfo?.packaging_factor != null;
                       return (
                         <TableRow key={product.product_id}>
                           <TableCell>
@@ -1373,13 +1415,33 @@ export default function ReportsPage() {
                           </TableCell>
                           <TableCell className="text-right">{startingStock.toFixed(0)}</TableCell>
                           <TableCell className="text-right text-purple-600">
-                            {supply > 0 ? supply.toFixed(0) : '-'}
+                            {supply && supply.quantity > 0
+                              ? supply.display?.trim() || supply.quantity.toFixed(0)
+                              : '-'}
                           </TableCell>
-                          <TableCell className="text-right font-semibold text-orange-600">{product.quantity_sold}</TableCell>
+                          <TableCell className="text-right font-semibold text-orange-600">
+                            <span className="block">
+                              {product.quantity_display?.trim() || product.quantity_sold}
+                            </span>
+                            {product.packaging_factor != null && (
+                              <span className="text-xs font-normal text-gray-500">
+                                {product.quantity_sold} au total
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right font-semibold text-green-600">
                             {formatPrice(parseFloat(product.total_revenue))}
                           </TableCell>
-                          <TableCell className="text-right">{currentStock.toFixed(0)}</TableCell>
+                          <TableCell className="text-right">
+                            <span className="block">
+                              {stockInfo?.stock_display?.trim() || currentStock.toFixed(0)}
+                            </span>
+                            {isPackaged && (
+                              <span className="text-xs font-normal text-gray-500">
+                                {currentStock.toFixed(0)} au total
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right text-blue-600">
                             {formatPrice(stockValue)}
                           </TableCell>
@@ -1802,7 +1864,11 @@ export default function ReportsPage() {
                         <span className="block">
                           {s.stock_display?.trim() || parseFloat(s.current_stock).toFixed(0)}
                         </span>
-                        {s.stock_display?.includes("+") && (
+                        {/* Le total en unités n'a de sens à rappeler que pour un
+                            produit vendu par contenant. Il se lisait auparavant
+                            à la présence d'un « + » dans le libellé, donc jamais
+                            pour « 3 casiers » tout ronds. */}
+                        {s.packaging_factor != null && (
                           <span className="text-xs font-normal text-gray-500">
                             {parseFloat(s.current_stock).toFixed(0)} au total
                           </span>
@@ -1934,7 +2000,16 @@ export default function ReportsPage() {
                             <p className="text-xs text-gray-500">{p.product_sku}</p>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">{p.quantity_sold}</TableCell>
+                        <TableCell className="text-right">
+                          <span className="block">
+                            {p.quantity_display?.trim() || p.quantity_sold}
+                          </span>
+                          {p.packaging_factor != null && (
+                            <span className="text-xs text-gray-500">
+                              {p.quantity_sold} au total
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">{formatPrice(parseFloat(p.total_revenue))}</TableCell>
                         <TableCell className="text-right text-gray-500">{formatPrice(parseFloat(p.total_cost))}</TableCell>
                         <TableCell className="text-right font-medium text-green-600">{formatPrice(parseFloat(p.profit))}</TableCell>

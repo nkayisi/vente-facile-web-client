@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import type { UserOptions } from "jspdf-autotable";
 import { getDefaultCurrency } from "@/lib/format";
 import type { OrgIdentity } from "@/lib/receipt/identity";
 
@@ -154,6 +155,75 @@ export function addSummarySection(
  * Ajoute un tableau avec style standardisé
  * Les tableaux prennent toute la largeur du document
  */
+/** Une date : elle commence par un chiffre mais se range à gauche, comme un mot. */
+const DATE_CELL = /^\d{1,2}\/\d{1,2}\/\d{2,4}/;
+
+/**
+ * Une cellule qui se lit comme une grandeur.
+ *
+ * Un nombre nu (« 1 562 », « -12 847,80 »), ou un nombre suivi de son unité
+ * (« 3 PLAQUETTES », « 13 BOITES + 14 AMPOULES »). Dans les deux cas le lecteur
+ * y compare des tailles : la colonne se range à droite avec les autres chiffres.
+ */
+const MEASURE_CELL = /^[-+]?\d[\d\s\u202f.,]*(\s|$)/;
+
+/**
+ * Déduit l'alignement de chaque colonne à partir de son contenu réel.
+ *
+ * Sans cela, chaque appelant devait déclarer ses `columnStyles` colonne par
+ * colonne, et l'oubli était la règle : des tableaux entiers sortaient avec les
+ * montants collés à gauche. Une colonne bascule à droite seulement si TOUTES
+ * ses cellules non vides sont des grandeurs, donc une seule mention « - » ou un
+ * libellé suffit à la garder à gauche.
+ */
+function inferAlignments(
+  head: string[][],
+  body: (string | number)[][],
+  explicit?: Record<number, { halign?: "left" | "center" | "right"; cellWidth?: number }>
+): ("left" | "center" | "right")[] {
+  const columnCount = head[0]?.length ?? body[0]?.length ?? 0;
+
+  return Array.from({ length: columnCount }, (_, index) => {
+    const declared = explicit?.[index]?.halign;
+    if (declared) return declared;
+
+    let sawValue = false;
+    for (const row of body) {
+      const raw = row[index];
+      if (raw === null || raw === undefined) continue;
+      const text = String(raw).trim();
+      if (!text || text === "-") continue;
+      if (typeof raw !== "number" && (DATE_CELL.test(text) || !MEASURE_CELL.test(text))) {
+        return "left";
+      }
+      sawValue = true;
+    }
+    return sawValue ? "right" : "left";
+  });
+}
+
+/**
+ * Enveloppe un `didParseCell` pour que chaque en-tête se range comme sa colonne.
+ *
+ * Réservé aux tableaux qui appellent `autoTable` directement, sans passer par
+ * `addTable`. Un en-tête centré au-dessus d'une colonne de chiffres alignés à
+ * droite ne coiffe plus visuellement rien : l'œil doit relire la ligne d'en-tête
+ * pour savoir quel libellé va avec quelle colonne.
+ */
+export function alignHead(
+  columnStyles: Record<number, { halign?: "left" | "center" | "right" }>,
+  next?: (hookData: Parameters<NonNullable<UserOptions["didParseCell"]>>[0]) => void
+): NonNullable<UserOptions["didParseCell"]> {
+  return (hookData) => {
+    if (hookData.section === "head") {
+      hookData.cell.styles.halign =
+        columnStyles[hookData.column.index]?.halign ?? "left";
+      return;
+    }
+    next?.(hookData);
+  };
+}
+
 export function addTable(
   doc: jsPDF,
   startY: number,
@@ -167,6 +237,15 @@ export function addTable(
 ): number {
   const pageWidth = doc.internal.pageSize.getWidth();
   const tableWidth = pageWidth - 28; // 14mm de marge de chaque côté
+  const alignments = inferAlignments(head, body, options?.columnStyles);
+
+  // L'alignement déduit est fusionné dans `columnStyles` : l'en-tête, le corps
+  // et une éventuelle largeur imposée sortent alors d'une seule description.
+  const columnStyles: Record<number, { halign: "left" | "center" | "right"; cellWidth?: number }> = {};
+  alignments.forEach((halign, index) => {
+    const width = options?.columnStyles?.[index]?.cellWidth;
+    columnStyles[index] = width !== undefined ? { halign, cellWidth: width } : { halign };
+  });
 
   autoTable(doc, {
     startY,
@@ -183,12 +262,17 @@ export function addTable(
       fillColor: BRAND_COLOR,
       textColor: [255, 255, 255],
       fontStyle: "bold",
-      halign: "center",
     },
     alternateRowStyles: options?.useAlternateRowColors ? { fillColor: [250, 250, 250] } : undefined,
-    columnStyles: options?.columnStyles,
+    columnStyles,
     margin: { left: 14, right: 14 },
     didParseCell: (hookData) => {
+      // Un en-tête se range comme sa colonne. Centré au-dessus de montants
+      // alignés à droite, il ne coiffe visuellement plus rien.
+      if (hookData.section === "head") {
+        hookData.cell.styles.halign = alignments[hookData.column.index] ?? "left";
+        return;
+      }
       // Colorer les valeurs positives/négatives
       if (hookData.section === "body") {
         const val = String(hookData.cell.raw);

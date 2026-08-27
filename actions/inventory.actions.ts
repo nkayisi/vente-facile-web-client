@@ -34,6 +34,11 @@ export interface InventoryCount {
   /** Attendu en clair : « 3 paquets + 1 bouteille » */
   expected_display?: string;
   counted_display?: string | null;
+  /**
+   * Écart ventilé par canal : « -2 casiers, +5 bouteilles ».
+   * `null` tant que la ligne n'est pas comptée.
+   */
+  difference_display?: string | null;
   package_unit_name?: string | null;
   unit_cost: string;
   difference_value: string;

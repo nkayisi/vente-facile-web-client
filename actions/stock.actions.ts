@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { formatAxiosErrorMessage, getErrorBody } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
+import {
+  fetchExportFile,
+  type ExportFile,
+  type ExportFormat,
+} from "@/lib/export/fetch-export";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -62,6 +67,20 @@ export interface Stock {
   /** Conditionnements scellés, `null` pour un produit vendu à l'unité */
   stock_packages?: number | null;
   stock_loose?: string | null;
+  /** Contenants scellés encore en rayon (compteur stocké) */
+  package_quantity?: string;
+  /** Disponible dans les mêmes termes : « 2 paquets + 3 bouteilles » */
+  available_display?: string;
+  available_packages?: number | null;
+  available_loose?: string | null;
+  /**
+   * Réservé, en unité de détail nommée. Une réservation ne porte pas sur des
+   * contenants précis : le serveur ne la traduit donc jamais en paquets.
+   */
+  reserved_display?: string;
+  /** Unités de détail par contenant, `null` pour un produit vendu à l'unité */
+  packaging_factor?: number | null;
+  package_unit_symbol?: string | null;
   unit_symbol?: string | null;
   avg_cost: string;
   stock_value?: string;
@@ -78,6 +97,8 @@ export interface StockBatch {
   warehouse_name: string;
   batch_number: string;
   quantity: string;
+  /** Restant du lot en unité de détail nommée : « 240 bouteilles » */
+  quantity_display?: string;
   cost_price: string;
   manufacturing_date?: string;
   expiry_date?: string;
@@ -115,6 +136,18 @@ export interface StockMovement {
   unit_cost: string;
   quantity_before: string;
   quantity_after: string;
+  /**
+   * Niveau de stock avant et après, en unité de détail nommée.
+   * Le mouvement n'enregistre que des totaux à ces deux bornes : le serveur
+   * n'y invente donc aucun partage scellé/vrac.
+   */
+  quantity_before_display?: string;
+  quantity_after_display?: string;
+  /** Saisie d'origine, figée sur le mouvement */
+  input_package_quantity?: string;
+  input_loose_quantity?: string;
+  unit_symbol?: string | null;
+  package_unit_symbol?: string | null;
   reference_type?: string;
   reference_id?: string;
   notes?: string;
@@ -189,6 +222,12 @@ export interface StockAdjustmentItem {
   /** Comptage prêt à afficher : « 3 cartons + 2 bouteilles » */
   counted_display?: string;
   expected_display?: string;
+  /** Écart ventilé par canal : « -2 casiers, +5 bouteilles » */
+  difference_display?: string;
+  /** Part vrac du stock théorique, relevée à la création de l'ajustement */
+  expected_loose_quantity?: number | null;
+  unit_name?: string | null;
+  package_unit_name?: string | null;
   unit_cost: number;
   notes?: string;
 }
@@ -339,7 +378,14 @@ export interface StockFilters {
   product?: string;
   search?: string;
   ordering?: string;
+  /** Catégorie du produit ; le backend y inclut les sous-catégories */
+  category?: string;
+  brand?: string;
+  /** État de réassort, évalué côté serveur sur le point de réapprovisionnement */
+  status?: StockStatusFilter;
 }
+
+export type StockStatusFilter = "out" | "low" | "available" | "reserved";
 
 export interface StockMovementFilters {
   warehouse?: string;
@@ -348,6 +394,15 @@ export interface StockMovementFilters {
   search?: string;
   page?: number;
   page_size?: number;
+  /** Catégorie du produit ; le backend y inclut les sous-catégories */
+  category?: string;
+  /** Bornes INCLUSIVES, au format AAAA-MM-JJ */
+  date_from?: string;
+  date_to?: string;
+  /** Raccourci « AAAA-MM » pour un mois entier */
+  month?: string;
+  /** Sens du mouvement, pour ne garder que les entrées ou que les sorties */
+  direction?: "in" | "out";
 }
 
 export interface StockTransferFilters {
@@ -624,6 +679,9 @@ export async function getStocks(
     if (filters?.product) params.append("product", filters.product);
     if (filters?.search) params.append("search", filters.search);
     if (filters?.ordering) params.append("ordering", filters.ordering);
+    if (filters?.category) params.append("category", filters.category);
+    if (filters?.brand) params.append("brand", filters.brand);
+    if (filters?.status) params.append("status", filters.status);
 
     const response = await axios.get(
       `${API_BASE_URL}/stocks/?${params.toString()}`,
@@ -818,6 +876,11 @@ export async function getStockMovements(
     if (filters?.search) params.append("search", filters.search);
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.page_size) params.append("page_size", String(filters.page_size));
+    if (filters?.category) params.append("category", filters.category);
+    if (filters?.date_from) params.append("date_from", filters.date_from);
+    if (filters?.date_to) params.append("date_to", filters.date_to);
+    if (filters?.month) params.append("month", filters.month);
+    if (filters?.direction) params.append("direction", filters.direction);
 
     const response = await axios.get(
       `${API_BASE_URL}/stock-movements/?${params.toString()}`,
@@ -1153,4 +1216,98 @@ export async function rejectStockAdjustment(
       message: getErrorBody(error)?.error || "Erreur lors du rejet de l'ajustement",
     };
   }
+}
+
+
+// =============================================================================
+// EXPORTS DE RAPPORTS
+// =============================================================================
+
+/**
+ * Exporte la situation de stock filtrée.
+ *
+ * Le fichier est bâti par le serveur, donc il porte TOUTES les lignes du
+ * périmètre et non la seule page affichée : c'est précisément ce qu'un
+ * inventaire valorisé doit contenir.
+ */
+export async function exportStockLevels(
+  accessToken: string,
+  organizationId: string,
+  format: ExportFormat,
+  filters: StockFilters & { group_by?: "category" | "none" } = {}
+): Promise<ExportFile> {
+  return fetchExportFile("/stocks/export/", accessToken, organizationId, format, {
+    warehouse: filters.warehouse,
+    category: filters.category,
+    brand: filters.brand,
+    status: filters.status,
+    search: filters.search,
+    group_by: filters.group_by ?? "category",
+  });
+}
+
+/** Exporte le journal des mouvements, avec les filtres de la liste. */
+export async function exportStockMovements(
+  accessToken: string,
+  organizationId: string,
+  format: ExportFormat,
+  filters: StockMovementFilters = {}
+): Promise<ExportFile> {
+  return fetchExportFile(
+    "/stock-movements/export/",
+    accessToken,
+    organizationId,
+    format,
+    {
+      warehouse: filters.warehouse,
+      category: filters.category,
+      movement_type: filters.movement_type,
+      direction: filters.direction,
+      date_from: filters.date_from,
+      date_to: filters.date_to,
+      month: filters.month,
+      search: filters.search,
+    }
+  );
+}
+
+export interface SupplyExportFilters {
+  warehouse?: string;
+  category?: string;
+  date_from?: string;
+  date_to?: string;
+  month?: string;
+  /** `all` : toutes les entrées. `receipts` : seulement les réceptions fournisseur. */
+  source?: "all" | "receipts";
+  /** `product` : valeur d'achat par produit. `movement` : détail chronologique. */
+  group_by?: "product" | "movement";
+}
+
+/**
+ * Exporte le rapport d'approvisionnement valorisé.
+ *
+ * Porte sur les mouvements qui font entrer de la marchandise, avec le coût
+ * d'achat et le fournisseur lorsque l'entrée provient d'une réception.
+ */
+export async function exportStockSupplies(
+  accessToken: string,
+  organizationId: string,
+  format: ExportFormat,
+  filters: SupplyExportFilters = {}
+): Promise<ExportFile> {
+  return fetchExportFile(
+    "/stock-movements/supplies-export/",
+    accessToken,
+    organizationId,
+    format,
+    {
+      warehouse: filters.warehouse,
+      category: filters.category,
+      date_from: filters.date_from,
+      date_to: filters.date_to,
+      month: filters.month,
+      source: filters.source ?? "all",
+      group_by: filters.group_by ?? "product",
+    }
+  );
 }

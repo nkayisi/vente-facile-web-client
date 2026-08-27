@@ -25,7 +25,17 @@ import {
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
-import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
+import {
+  createWarehouseSearchHandler,
+  createCategorySearchHandler,
+} from "@/lib/select-search-handlers";
+import { ExportMenu } from "@/components/shared/ExportMenu";
+import {
+  PeriodFilter,
+  periodToParams,
+  type PeriodValue,
+} from "@/components/shared/PeriodFilter";
+import { SupplyExportDialog } from "@/components/stock/SupplyExportDialog";
 import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
@@ -47,6 +57,7 @@ import {
   Filter,
   Warehouse as WarehouseIcon,
   Package,
+  Truck as TruckIcon,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -66,6 +77,8 @@ import {
   StockLocation,
   MovementType,
   CreateStockMovementData,
+  StockMovementFilters,
+  exportStockMovements,
 } from "@/actions/stock.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 
@@ -136,6 +149,9 @@ export default function MovementsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [period, setPeriod] = useState<PeriodValue>({ mode: "all" });
+  const [isSupplyDialogOpen, setIsSupplyDialogOpen] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -304,9 +320,14 @@ export default function MovementsPage() {
     const id = orgId || organization?.id;
     if (!id) return;
 
-    const filters: any = { page: currentPage, page_size: pageSize };
+    const filters: StockMovementFilters = {
+      page: currentPage,
+      page_size: pageSize,
+      ...periodToParams(period),
+    };
     if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
-    if (selectedType !== "all") filters.movement_type = selectedType;
+    if (selectedType !== "all") filters.movement_type = selectedType as MovementType;
+    if (selectedCategory !== "all") filters.category = selectedCategory;
     if (debouncedSearch) filters.search = debouncedSearch;
 
     setIsFetching(true);
@@ -323,7 +344,7 @@ export default function MovementsPage() {
     } finally {
       setIsFetching(false);
     }
-  }, [session?.accessToken, organization, currentPage, pageSize, selectedWarehouse, selectedType, debouncedSearch]);
+  }, [session?.accessToken, organization, currentPage, pageSize, selectedWarehouse, selectedType, selectedCategory, period, debouncedSearch]);
 
   // Refetch when filters or page change
   useEffect(() => {
@@ -342,17 +363,52 @@ export default function MovementsPage() {
   // résultat qui n'en compte plus que 2 afficherait un tableau vide.
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, selectedWarehouse, selectedType, pageSize]);
+  }, [debouncedSearch, selectedWarehouse, selectedType, selectedCategory, period, pageSize]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
   const hasActiveFilters =
-    selectedWarehouse !== "all" || selectedType !== "all" || searchQuery.trim() !== "";
+    selectedWarehouse !== "all" ||
+    selectedType !== "all" ||
+    selectedCategory !== "all" ||
+    period.mode !== "all" ||
+    searchQuery.trim() !== "";
 
   const resetFilters = () => {
     setSearchQuery("");
     setSelectedWarehouse("all");
     setSelectedType("all");
+    setSelectedCategory("all");
+    setPeriod({ mode: "all" });
   };
+
+  /** Période en toutes lettres, pour que le dialogue dise sur quoi il porte. */
+  const periodDescription = useMemo(() => {
+    const params = periodToParams(period);
+    if (params.month) {
+      const [year, month] = params.month.split("-");
+      const names = [
+        "janvier", "février", "mars", "avril", "mai", "juin",
+        "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+      ];
+      return `${names[Number(month) - 1] ?? month} ${year}`;
+    }
+    if (params.date_from && params.date_to) {
+      return `du ${params.date_from} au ${params.date_to}`;
+    }
+    if (params.date_from) return `à partir du ${params.date_from}`;
+    if (params.date_to) return `jusqu'au ${params.date_to}`;
+    return "Tout l'historique";
+  }, [period]);
+
+  /** Filtres d'export, alignés sur ceux de la liste affichée. */
+  const exportFilters = useMemo<StockMovementFilters>(() => {
+    const filters: StockMovementFilters = { ...periodToParams(period) };
+    if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
+    if (selectedType !== "all") filters.movement_type = selectedType as MovementType;
+    if (selectedCategory !== "all") filters.category = selectedCategory;
+    if (debouncedSearch) filters.search = debouncedSearch;
+    return filters;
+  }, [period, selectedWarehouse, selectedType, selectedCategory, debouncedSearch]);
 
   /** Bornes affichées dans le pied du tableau : « 21 à 40 sur 137 » */
   const rangeStart = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
@@ -599,13 +655,43 @@ export default function MovementsPage() {
             </p>
           </div>
         </div>
-        <Button
-          onClick={() => setShowCreateDialog(true)}
-          className="bg-orange-500 hover:bg-orange-600"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Nouveau mouvement
-        </Button>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            disabled={!session?.accessToken || !organization?.id || totalCount === 0}
+            disabledReason="Aucun mouvement à exporter"
+            targets={[
+              {
+                key: "movements",
+                label: "Journal des mouvements",
+                description: "Entrées et sorties, telles que filtrées",
+                run: (format) =>
+                  exportStockMovements(
+                    session!.accessToken as string,
+                    organization!.id,
+                    format,
+                    exportFilters
+                  ),
+              },
+            ]}
+          />
+
+          <Button
+            variant="outline"
+            disabled={!session?.accessToken || !organization?.id}
+            onClick={() => setIsSupplyDialogOpen(true)}
+          >
+            <TruckIcon className="h-4 w-4 mr-2" />
+            Rapport d&apos;approvisionnement
+          </Button>
+
+          <Button
+            onClick={() => setShowCreateDialog(true)}
+            className="bg-orange-500 hover:bg-orange-600"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Nouveau mouvement
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -631,6 +717,21 @@ export default function MovementsPage() {
             emptyLabel="Tous les entrepôts"
             placeholder="Entrepôt"
             searchPlaceholder="Rechercher un entrepôt..."
+            className="max-w-max"
+            disabled={!session?.accessToken || !organization?.id}
+          />
+
+          <SearchableSelectAsyncWithEmpty
+            value={selectedCategory === "all" ? null : selectedCategory}
+            onValueChange={value => setSelectedCategory(value ?? "all")}
+            onSearch={
+              session?.accessToken && organization?.id
+                ? createCategorySearchHandler(session.accessToken, organization.id)
+                : async () => []
+            }
+            emptyLabel="Toutes les catégories"
+            placeholder="Catégorie"
+            searchPlaceholder="Rechercher une catégorie..."
             className="max-w-max"
             disabled={!session?.accessToken || !organization?.id}
           />
@@ -663,6 +764,8 @@ export default function MovementsPage() {
           )}
         </div>
       </div>
+
+      <PeriodFilter value={period} onChange={setPeriod} />
 
       {/* Historique */}
       {!isFetching && movements.length === 0 && !hasActiveFilters ? (
@@ -823,9 +926,17 @@ export default function MovementsPage() {
                               formatDecimal(Math.abs(qty))}
                           </TableCell>
 
+                          {/* Le mouvement n'enregistre que des TOTAUX à ces deux
+                              bornes : le partage scellé/vrac du rayon à cet
+                              instant n'est nulle part. Le serveur nomme donc
+                              l'unité de détail (« 99 bouteilles ») au lieu
+                              d'inventer un nombre de casiers. */}
                           <TableCell className="hidden lg:table-cell text-right text-sm text-gray-500 tabular-nums whitespace-nowrap">
-                            {formatDecimal(movement.quantity_before)} →{" "}
-                            {formatDecimal(movement.quantity_after)}
+                            {movement.quantity_before_display?.trim() ||
+                              formatDecimal(movement.quantity_before)}{" "}
+                            →{" "}
+                            {movement.quantity_after_display?.trim() ||
+                              formatDecimal(movement.quantity_after)}
                           </TableCell>
 
                           <TableCell className="hidden xl:table-cell text-right text-sm text-gray-600 tabular-nums">
@@ -1157,6 +1268,23 @@ export default function MovementsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {session?.accessToken && organization?.id && (
+        <SupplyExportDialog
+          open={isSupplyDialogOpen}
+          onOpenChange={setIsSupplyDialogOpen}
+          accessToken={session.accessToken as string}
+          organizationId={organization.id}
+          baseFilters={{
+            warehouse: exportFilters.warehouse,
+            category: exportFilters.category,
+            date_from: exportFilters.date_from,
+            date_to: exportFilters.date_to,
+            month: exportFilters.month,
+          }}
+          periodLabel={periodDescription}
+        />
+      )}
     </div>
   );
 }

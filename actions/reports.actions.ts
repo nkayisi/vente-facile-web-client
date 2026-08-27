@@ -92,6 +92,15 @@ export interface TopProduct {
   product_name: string;
   product_sku: string;
   quantity_sold: number;
+  /**
+   * Quantité vendue dans les termes de la vente : « 10 casiers + 5 bouteilles ».
+   * Somme des contenants réellement facturés, jamais une division du total.
+   */
+  quantity_display?: string;
+  packages_sold?: string | null;
+  loose_sold?: string | null;
+  /** Unités de détail par contenant, `null` pour un produit vendu à l'unité */
+  packaging_factor?: number | null;
   total_revenue: string;
 }
 
@@ -593,6 +602,10 @@ export interface ProductProfit {
   product_sku: string;
   /** Quantité vendue (décimale possible, API en string) */
   quantity_sold: number | string;
+  /** La même, ventilée gros/détail : « 10 casiers + 5 bouteilles » */
+  quantity_display?: string;
+  /** Unités de détail par contenant, `null` pour un produit vendu à l'unité */
+  packaging_factor?: number | null;
   total_revenue: string;
   total_cost: string;
   profit: string;
@@ -659,10 +672,17 @@ export interface StockDetail {
   current_stock: string;
   /** Stock dans les termes du marchand : « 12 cartons + 3 bouteilles » */
   stock_display?: string;
+  /** Contenants scellés et unités isolées, lus sur les compteurs du stock */
+  stock_packages?: string | null;
+  stock_loose?: string | null;
   reserved_stock: string;
+  /** Réservé en unité de détail nommée, jamais traduit en contenants */
+  reserved_display?: string;
   available_stock: string;
   /** Disponible dans les mêmes termes que `stock_display` */
   available_display?: string;
+  /** Unités de détail par contenant, `null` pour un produit vendu à l'unité */
+  packaging_factor?: number | null;
   min_stock_level: string | null;
   cost_price: string | null;
   stock_value: string;
@@ -727,7 +747,21 @@ export async function getStockMovementsSummary(
 }
 
 // Approvisionnements par produit (dictionnaire product_id -> quantity)
-export type ProductSupplies = Record<string, number>;
+/**
+ * Approvisionnement d'un produit sur la période.
+ *
+ * `quantity` reste le total en unité de détail ; `display` le rend dans les
+ * termes de la réception (« 10 cartons + 5 bouteilles »), reconstitué depuis la
+ * saisie figée sur chaque mouvement et non depuis une division du total.
+ */
+export interface ProductSupply {
+  quantity: number;
+  display: string;
+  packages: number | null;
+  loose: number | null;
+}
+
+export type ProductSupplies = Record<string, ProductSupply>;
 
 export async function getProductSupplies(
   accessToken: string,

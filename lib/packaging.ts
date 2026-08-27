@@ -89,6 +89,57 @@ export function formatPackaged(
   return parts.join(" + ");
 }
 
+/**
+ * Rend un partage DÉJÀ connu, sans le recalculer : « 3 casiers + 7 bouteilles ».
+ *
+ * Miroir de `PackagingService.format_split`. À préférer à `formatPackaged` dès
+ * que les deux compteurs sont disponibles : repasser par une division du total
+ * réécrirait « 3 casiers + 27 bouteilles » en « 4 casiers + 3 bouteilles ».
+ */
+export function formatPackagedSplit(
+  packaging: Packaging | null,
+  packages: number,
+  loose: number
+): string {
+  if (!packaging) return String(loose);
+
+  const parts: string[] = [];
+  if (packages) {
+    parts.push(`${packages} ${pluralizeUnit(packaging.packageWord, packages)}`);
+  }
+  if (loose || parts.length === 0) {
+    parts.push(`${loose} ${pluralizeUnit(packaging.retailWord, loose)}`);
+  }
+  return parts.join(" + ");
+}
+
+/**
+ * Rend un ÉCART par canal : « -2 casiers, +5 bouteilles ».
+ *
+ * Miroir de `PackagingService.format_signed_split`. Un manquant de contenants
+ * scellés et un surplus d'unités isolées se compensent dans le total et
+ * disparaissent : ventilés, ils désignent chacun leur cause. La virgule
+ * remplace le « + » de `formatPackagedSplit` pour qu'on ne lise pas un signe
+ * comme une addition.
+ */
+export function formatPackagedDifference(
+  packaging: Packaging | null,
+  packageDelta: number,
+  looseDelta: number
+): string {
+  const signed = (value: number, word: string) =>
+    `${value > 0 ? "+" : ""}${value} ${pluralizeUnit(word, value)}`;
+
+  if (!packaging) return `${looseDelta > 0 ? "+" : ""}${looseDelta}`;
+
+  const parts: string[] = [];
+  if (packageDelta) parts.push(signed(packageDelta, packaging.packageWord));
+  if (looseDelta || parts.length === 0) {
+    parts.push(signed(looseDelta, packaging.retailWord));
+  }
+  return parts.join(", ");
+}
+
 /** Somme d'une saisie « X contenants + Y unités » en unité de détail. */
 export function toBaseQuantity(
   packaging: Packaging | null,

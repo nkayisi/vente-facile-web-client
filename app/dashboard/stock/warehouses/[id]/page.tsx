@@ -262,7 +262,16 @@ export default function WarehouseDetailPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <StatValue value={String(stockSummary?.total_quantity || 0)} />
-                <p className="text-xs text-gray-500">Quantité totale</p>
+                {/* Cumul inter-produits : il additionne des unités différentes
+                    d'un produit à l'autre, il se compte donc en unités de
+                    détail. « Quantité totale » aurait laissé croire à un
+                    nombre de contenants. */}
+                <p
+                  className="text-xs text-gray-500"
+                  title="Somme en unités de détail, tous produits confondus. Les contenants scellés y comptent pour leur contenu."
+                >
+                  Unités au total
+                </p>
               </div>
             </div>
           </CardContent>
@@ -417,12 +426,14 @@ export default function WarehouseDetailPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className="font-medium">
-                            {parseFloat(stock.quantity).toFixed(0)}
+                            {stock.stock_display?.trim() ||
+                              parseFloat(stock.quantity).toFixed(0)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className="font-medium text-green-600">
-                            {parseFloat(stock.available_quantity).toFixed(0)}
+                            {stock.available_display?.trim() ||
+                              parseFloat(stock.available_quantity).toFixed(0)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">

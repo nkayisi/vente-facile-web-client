@@ -9,13 +9,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
-import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
+import {
+  createWarehouseSearchHandler,
+  createCategorySearchHandler,
+} from "@/lib/select-search-handlers";
+import { ExportMenu } from "@/components/shared/ExportMenu";
 import {
   Package,
   Search,
   ArrowLeft,
   Loader2,
   AlertTriangle,
+  BarChart3,
+  Boxes,
   TrendingDown,
   Filter,
   Warehouse as WarehouseIcon,
@@ -25,12 +31,13 @@ import {
 import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
+import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
 import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { ProductThumb } from "@/components/products/product-thumb";
 import {
   getStocks,
-  getLowStock,
+  exportStockLevels,
   Stock,
   StockFilters,
 } from "@/actions/stock.actions";
@@ -47,6 +54,7 @@ export default function StocksPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
   const [selectedWarehouseLabel, setSelectedWarehouseLabel] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [showLowStock, setShowLowStock] = useState(searchParams.get("filter") === "low");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -84,7 +92,18 @@ export default function StocksPage() {
     fetchData();
   }, [session?.accessToken]);
 
-  // Liste des stocks (API : recherche + entrepôt en mode normal ; stock bas = sous-ensemble puis filtre local)
+  // Filtres envoyés au serveur. Mémoïsés pour que l'effet de chargement ne se
+  // redéclenche pas à chaque rendu sur un objet pourtant identique.
+  const currentFilters = useMemo<StockFilters>(() => {
+    const filters: StockFilters = {};
+    if (debouncedSearch) filters.search = debouncedSearch;
+    if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
+    if (selectedCategory !== "all") filters.category = selectedCategory;
+    if (showLowStock) filters.status = "low";
+    return filters;
+  }, [debouncedSearch, selectedWarehouse, selectedCategory, showLowStock]);
+
+  // Liste des stocks : tous les filtres sont appliqués côté serveur.
   useEffect(() => {
     const token = session?.accessToken;
     const org = organization;
@@ -93,17 +112,7 @@ export default function StocksPage() {
     let cancelled = false;
     const load = async () => {
       try {
-        if (showLowStock) {
-          const lowStockResult = await getLowStock(token, org.id);
-          if (!cancelled && lowStockResult.success && lowStockResult.data) {
-            setStocks(lowStockResult.data);
-          }
-          return;
-        }
-        const filters: StockFilters = {};
-        if (debouncedSearch) filters.search = debouncedSearch;
-        if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
-        const stocksResult = await getStocks(token, org.id, filters);
+        const stocksResult = await getStocks(token, org.id, currentFilters);
         if (!cancelled && stocksResult.success && stocksResult.data) {
           setStocks(stocksResult.data);
         }
@@ -119,21 +128,12 @@ export default function StocksPage() {
     return () => {
       cancelled = true;
     };
-  }, [session?.accessToken, organization, showLowStock, debouncedSearch, selectedWarehouse]);
+  }, [session?.accessToken, organization, currentFilters]);
 
-  const filteredStocks = useMemo(() => {
-    if (!showLowStock) return stocks;
-    const q = searchQuery.trim().toLowerCase();
-    return stocks.filter(stock => {
-      const matchesSearch =
-        !q ||
-        stock.product_name.toLowerCase().includes(q) ||
-        stock.product_sku.toLowerCase().includes(q);
-      const matchesWarehouse =
-        selectedWarehouse === "all" || stock.warehouse === selectedWarehouse;
-      return matchesSearch && matchesWarehouse;
-    });
-  }, [stocks, showLowStock, searchQuery, selectedWarehouse]);
+  // Plus de tri en mémoire : recherche, entrepôt, catégorie et « stock bas »
+  // sont tous appliqués par le serveur. C'est ce qui garantit que le fichier
+  // exporté couvre exactement le même périmètre que la liste affichée.
+  const filteredStocks = stocks;
 
   // Pagination
   const totalPages = Math.ceil(filteredStocks.length / pageSize);
@@ -142,7 +142,7 @@ export default function StocksPage() {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedWarehouse, showLowStock]);
+  }, [debouncedSearch, selectedWarehouse, selectedCategory, showLowStock]);
 
 
   // Get stock status
@@ -169,22 +169,59 @@ export default function StocksPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+      {/* En-tête. Le bouton d'export descend sous le titre dès que la largeur
+          manque : à le garder sur la même ligne, c'est le titre qui cédait et
+          « Niveaux de stock » se cassait en deux, la flèche de retour perdant
+          au passage le repère de la ligne de base. */}
+      <div className="flex items-start gap-2 sm:gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => router.back()}
+          className="-ml-2 shrink-0"
+          aria-label="Revenir à la page précédente"
+        >
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Niveaux de stock</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {showLowStock ? "Produits en stock bas" : "Vue d'ensemble de tout le stock"}
-          </p>
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
+          {/* `items-start` empêche le bouton d'export de s'étirer sur toute la
+              largeur une fois empilé : un bouton pleine largeur se lit comme
+              l'action principale de la page, ce qu'un export n'est pas. */}
+          <div className="min-w-0 max-w-full">
+            <h1 className="text-balance text-2xl font-bold text-gray-900">
+              Niveaux de stock
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              {showLowStock ? "Produits en stock bas" : "Vue d'ensemble de tout le stock"}
+            </p>
+          </div>
+
+          <ExportMenu
+            disabled={!session?.accessToken || !organization?.id || stocks.length === 0}
+            disabledReason="Aucun stock à exporter"
+            targets={[
+              {
+                key: "stock-levels",
+                label: "Situation de stock",
+                run: (format) =>
+                  exportStockLevels(
+                    session!.accessToken as string,
+                    organization!.id,
+                    format,
+                    { ...currentFilters, group_by: "category" }
+                  ),
+              },
+            ]}
+          />
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between">
-        <div className="relative flex-1 max-w-lg">
+      {/* Filtres. Le groupe de droite portait un `flex` sans retour à la ligne :
+          aux largeurs intermédiaires, le troisième contrôle sortait de l'écran
+          et rien ne le rattrapait, la page n'ayant pas de défilement horizontal
+          à ce niveau. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+        <div className="relative w-full lg:max-w-lg lg:flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
             placeholder="Rechercher un produit..."
@@ -194,7 +231,7 @@ export default function StocksPage() {
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <SearchableSelectAsyncWithEmpty
             value={selectedWarehouse === "all" ? null : selectedWarehouse}
             onValueChange={(value, label) => {
@@ -213,99 +250,92 @@ export default function StocksPage() {
             disabled={!session?.accessToken || !organization?.id}
           />
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant={showLowStock ? "default" : "outline"}
-              size="sm"
-              onClick={() => setShowLowStock(!showLowStock)}
-              className={showLowStock ? "bg-orange-500 hover:bg-orange-600" : ""}
-            >
-              <TrendingDown className="h-4 w-4 mr-2" />
-              Stock bas
-            </Button>
+          <SearchableSelectAsyncWithEmpty
+            value={selectedCategory === "all" ? null : selectedCategory}
+            onValueChange={(value) => setSelectedCategory(value ?? "all")}
+            onSearch={
+              session?.accessToken && organization?.id
+                ? createCategorySearchHandler(session.accessToken, organization.id)
+                : async () => []
+            }
+            emptyLabel="Toutes les catégories"
+            placeholder="Catégorie"
+            searchPlaceholder="Rechercher une catégorie..."
+            className="max-w-max"
+            disabled={!session?.accessToken || !organization?.id}
+          />
 
-            <div className="hidden sm:flex items-center border rounded-lg">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={viewMode === "list" ? "bg-gray-100" : ""}
-                onClick={() => setViewMode("list")}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={viewMode === "grid" ? "bg-gray-100" : ""}
-                onClick={() => setViewMode("grid")}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </div>
+          <Button
+            variant={showLowStock ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowLowStock(!showLowStock)}
+            aria-pressed={showLowStock}
+            className={`shrink-0 ${showLowStock ? "bg-orange-500 hover:bg-orange-600" : ""}`}
+          >
+            <TrendingDown className="h-4 w-4 mr-2" />
+            Stock bas
+          </Button>
+
+          {/* Contrôle segmenté : il se replie d'un bloc, jamais en deux. */}
+          <div className="hidden shrink-0 items-center rounded-lg border sm:flex">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Affichage en liste"
+              aria-pressed={viewMode === "list"}
+              className={viewMode === "list" ? "bg-gray-100" : ""}
+              onClick={() => setViewMode("list")}
+            >
+              <List className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Affichage en grille"
+              aria-pressed={viewMode === "grid"}
+              className={viewMode === "grid" ? "bg-gray-100" : ""}
+              onClick={() => setViewMode("grid")}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-0">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Package className="h-5 w-5 text-blue-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <StatValue value={String(filteredStocks.length)} />
-                <p className="text-xs text-gray-500">Produits</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="p-0">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <Package className="h-5 w-5 text-green-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <StatValue value={filteredStocks.reduce((sum, s) => sum + parseFloat(s.quantity), 0).toFixed(0)} />
-                <p className="text-xs text-gray-500">Quantité totale</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="p-0">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Package className="h-5 w-5 text-purple-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <StatValue value={formatPrice(
-                  filteredStocks.reduce((sum, s) => sum + parseFloat(s.stock_value || "0"), 0)
-                )} />
-                <p className="text-xs text-gray-500">Valeur totale</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="p-0">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <AlertTriangle className="h-5 w-5 text-red-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <StatValue value={String(filteredStocks.filter(s => parseFloat(s.quantity) <= 0).length)} />
-                <p className="text-xs text-gray-500">En rupture</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Relevés de la sélection courante : ils suivent les filtres, ils ne
+          se cliquent pas. Même bandeau que la page « Gestion de stock », pour
+          qu'un chiffre se lise pareil d'un écran à l'autre. */}
+      <StatStrip className="lg:grid-cols-4">
+        <StatStripItem
+          label="Produits"
+          value={String(filteredStocks.length)}
+          icon={Package}
+        />
+        <StatStripItem
+          label="Unités au total"
+          value={formatNumber(
+            filteredStocks.reduce((sum, s) => sum + parseFloat(s.quantity), 0)
+          )}
+          icon={Boxes}
+          hint="Somme en unités de détail, tous produits confondus. Les contenants scellés y comptent pour leur contenu."
+        />
+        <StatStripItem
+          label="Valeur totale"
+          value={formatPrice(
+            filteredStocks.reduce((sum, s) => sum + parseFloat(s.stock_value || "0"), 0)
+          )}
+          icon={BarChart3}
+          tone="accent"
+        />
+        <StatStripItem
+          label="En rupture"
+          value={String(
+            filteredStocks.filter(s => parseFloat(s.quantity) <= 0).length
+          )}
+          icon={AlertTriangle}
+          tone="alert"
+        />
+      </StatStrip>
 
       {/* Stock List */}
       {filteredStocks.length === 0 ? (
@@ -382,12 +412,14 @@ export default function StocksPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="text-gray-500">
-                          {parseFloat(stock.reserved_quantity).toFixed(0)}
+                          {stock.reserved_display?.trim() ||
+                            parseFloat(stock.reserved_quantity).toFixed(0)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="font-medium text-green-600">
-                          {parseFloat(stock.available_quantity).toFixed(0)}
+                          {stock.available_display?.trim() ||
+                            parseFloat(stock.available_quantity).toFixed(0)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -456,11 +488,23 @@ export default function StocksPage() {
                         <p className="text-xs text-gray-500">Total</p>
                       </div>
                       <div>
-                        <StatValue value={parseFloat(stock.reserved_quantity).toFixed(0)} color="text-orange-600" />
+                        <StatValue
+                          value={
+                            stock.reserved_display?.trim() ||
+                            parseFloat(stock.reserved_quantity).toFixed(0)
+                          }
+                          color="text-orange-600"
+                        />
                         <p className="text-xs text-gray-500">Réservé</p>
                       </div>
                       <div>
-                        <StatValue value={parseFloat(stock.available_quantity).toFixed(0)} color="text-green-600" />
+                        <StatValue
+                          value={
+                            stock.available_display?.trim() ||
+                            parseFloat(stock.available_quantity).toFixed(0)
+                          }
+                          color="text-green-600"
+                        />
                         <p className="text-xs text-gray-500">Disponible</p>
                       </div>
                     </div>

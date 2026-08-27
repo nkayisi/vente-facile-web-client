@@ -415,6 +415,10 @@ export interface TopProductData {
   name: string;
   sku: string;
   quantity: number;
+  /** Quantité vendue ventilée : « 10 casiers + 5 bouteilles » */
+  quantity_display?: string;
+  /** Unités de détail par contenant, `null` pour un produit vendu à l'unité */
+  packaging_factor?: number | null;
   revenue: string;
 }
 

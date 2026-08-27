@@ -491,8 +491,20 @@ export default function ProductDetailPage() {
                             )} à l'unité`}
                         </p>
                       )}
+                      {/* `display` porte le DISPONIBLE : dès qu'une réservation
+                          l'écarte du rayon, on montre les deux, sinon le
+                          gérant croit avoir perdu du stock. */}
                       {parseFloat(stock.reserved) > 0 && (
-                        <p className="text-xs text-gray-500">{stock.reserved} réservé</p>
+                        <>
+                          {stock.quantity_display?.trim() && (
+                            <p className="text-xs text-gray-500">
+                              {stock.quantity_display} en rayon
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-500">
+                            {stock.reserved_display?.trim() || stock.reserved} réservé
+                          </p>
+                        </>
                       )}
                     </div>
                   </div>

@@ -1,6 +1,14 @@
 /**
  * Utilitaires de formatage pour l'affichage des nombres et prix.
- * Tous les chiffres sont affichés en entier (pas d'abréviation k/M).
+ *
+ * **Les montants s'écrivent TOUJOURS en entier.** Pas de « 2,33 M », pas de
+ * « 1,2 Md », pas de `notation: "compact"`. La plateforme s'adresse à des
+ * commerçants qui ne pratiquent pas forcément cette écriture : un montant
+ * abrégé est pour eux un montant qu'ils ne savent pas lire, et un chiffre
+ * qu'on ne sait pas lire ne renseigne pas, il inquiète.
+ *
+ * Quand un montant ne tient pas dans sa carte, c'est la TAILLE DU TEXTE qui
+ * cède, jamais le nombre de chiffres (voir `StatValue`).
  */
 
 // Module-level default currency (set by CurrencyProvider at mount)

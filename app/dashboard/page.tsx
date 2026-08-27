@@ -154,7 +154,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <StatValue value={stats ? formatPrice(stats.cards.total_sales.value) : formatPrice(0)} />
+            <StatValue value={formatPrice(stats ? stats.cards.total_sales.value : 0)} />
             <div className="flex items-center mt-2 text-sm">
               {stats && stats.cards.total_sales.variation >= 0 ? (
                 <ArrowUpRight className="h-4 w-4 text-green-600 mr-1" />
@@ -221,7 +221,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <StatValue value={stats ? formatPrice(stats.cards.gross_profit.value) : formatPrice(0)} />
+            <StatValue value={formatPrice(stats ? stats.cards.gross_profit.value : 0)} />
             <div className="flex items-center mt-2 text-sm">
               <Badge variant="secondary" className="bg-blue-100 text-blue-700">
                 Marge: {stats?.cards.gross_profit.margin || 0}%
@@ -356,7 +356,14 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-gray-900">{product.quantity} unités</p>
+                      <p className="font-semibold text-gray-900">
+                        {product.quantity_display?.trim() || `${product.quantity} unités`}
+                      </p>
+                      {product.packaging_factor != null && (
+                        <p className="text-xs text-gray-500">
+                          {product.quantity} au total
+                        </p>
+                      )}
                       <p className="text-xs text-gray-500">{formatPrice(product.revenue)}</p>
                     </div>
                   </div>

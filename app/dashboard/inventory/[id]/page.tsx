@@ -68,6 +68,7 @@ import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 import {
   addSignatureSection,
+  alignHead,
   createPDFDocument,
   formatCurrencyForPDF,
   formatNumberForPDF,
@@ -99,6 +100,32 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
   review: { label: "En révision", color: "bg-orange-100 text-orange-700", icon: Eye },
   validated: { label: "Validé", color: "bg-green-100 text-green-700", icon: CheckCircle },
   cancelled: { label: "Annulé", color: "bg-red-100 text-red-700", icon: XCircle },
+};
+
+/**
+ * Colonnes chiffrées des trois documents d'inventaire.
+ *
+ * Déclarées une fois et passées à la fois en `columnStyles` et à `alignHead` :
+ * le corps du tableau et sa ligne d'en-tête ne peuvent donc plus s'aligner
+ * différemment.
+ */
+const COUNT_SHEET_COLUMNS = {
+  2: { halign: "right" as const },
+  3: { halign: "right" as const, fontStyle: "bold" as const },
+  4: { halign: "right" as const },
+};
+
+const DIFFERENCE_COLUMNS = {
+  3: { halign: "right" as const },
+  4: { halign: "right" as const },
+  5: { halign: "right" as const },
+  6: { halign: "right" as const },
+};
+
+const RESULT_COLUMNS = {
+  2: { halign: "right" as const },
+  3: { halign: "right" as const },
+  4: { halign: "right" as const },
 };
 
 export default function InventoryDetailPage() {
@@ -554,26 +581,26 @@ export default function InventoryDetailPage() {
                 ? item.counted_display
                 : formatNumberForPDF(item.quantity_counted, 0))
             : "___________",
-          item.is_counted ? (parseFloat(item.quantity_difference) > 0 ? "+" : "") + formatNumberForPDF(item.quantity_difference, 0) : "-",
+          item.is_counted
+            ? item.difference_display?.trim() ||
+              (parseFloat(item.quantity_difference) > 0 ? "+" : "") +
+                formatNumberForPDF(item.quantity_difference, 0)
+            : "-",
           item.notes || "",
         ]),
         theme: "grid",
         tableWidth: 'auto',
         styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
-        headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
-        columnStyles: {
-          2: { halign: "right" },
-          3: { halign: "right", fontStyle: "bold" },
-          4: { halign: "right" },
-        },
+        headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold" },
+        columnStyles: COUNT_SHEET_COLUMNS,
         margin: { left: 14, right: 14 },
-        didParseCell: (hookData) => {
+        didParseCell: alignHead(COUNT_SHEET_COLUMNS, (hookData) => {
           if (hookData.section === "body" && hookData.column.index === 4) {
             const val = String(hookData.cell.raw);
             if (val.startsWith("+")) hookData.cell.styles.textColor = [22, 163, 74];
             else if (val.startsWith("-")) hookData.cell.styles.textColor = [220, 38, 38];
           }
-        },
+        }),
       });
 
       y = (doc as any).lastAutoTable.finalY + 6;
@@ -707,21 +734,18 @@ export default function InventoryDetailPage() {
           item.packaging_factor && item.counted_display
             ? item.counted_display
             : formatNumberForPDF(item.quantity_counted, 0),
-          (parseFloat(item.quantity_difference) > 0 ? "+" : "") + formatNumberForPDF(item.quantity_difference, 0),
+          item.difference_display?.trim() ||
+            (parseFloat(item.quantity_difference) > 0 ? "+" : "") +
+              formatNumberForPDF(item.quantity_difference, 0),
           formatCurrencyForPDF(item.difference_value),
         ]),
         theme: "grid",
         tableWidth: 'auto',
         styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
-        headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
-        columnStyles: {
-          3: { halign: "right" },
-          4: { halign: "right" },
-          5: { halign: "right" },
-          6: { halign: "right" },
-        },
+        headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold" },
+        columnStyles: DIFFERENCE_COLUMNS,
         margin: { left: 14, right: 14 },
-        didParseCell: (hookData) => {
+        didParseCell: alignHead(DIFFERENCE_COLUMNS, (hookData) => {
           if (hookData.section === "body" && hookData.column.index === 5) {
             const val = String(hookData.cell.raw);
             if (val.startsWith("+")) hookData.cell.styles.textColor = [22, 163, 74];
@@ -732,7 +756,7 @@ export default function InventoryDetailPage() {
             if (val > 0) hookData.cell.styles.textColor = [22, 163, 74];
             else if (val < 0) hookData.cell.styles.textColor = [220, 38, 38];
           }
-        },
+        }),
       });
 
       y = (doc as any).lastAutoTable.finalY + 8;
@@ -760,28 +784,34 @@ export default function InventoryDetailPage() {
       body: allItems.map((item) => [
         item.product_name,
         item.product_sku || "-",
-        formatNumberForPDF(item.quantity_expected, 0),
-        item.is_counted ? formatNumberForPDF(item.quantity_counted, 0) : "-",
-        item.is_counted ? (parseFloat(item.quantity_difference) > 0 ? "+" : "") + formatNumberForPDF(item.quantity_difference, 0) : "-",
+        item.packaging_factor && item.expected_display
+          ? item.expected_display
+          : formatNumberForPDF(item.quantity_expected, 0),
+        item.is_counted
+          ? (item.packaging_factor && item.counted_display
+              ? item.counted_display
+              : formatNumberForPDF(item.quantity_counted, 0))
+          : "-",
+        item.is_counted
+          ? item.difference_display?.trim() ||
+            (parseFloat(item.quantity_difference) > 0 ? "+" : "") +
+              formatNumberForPDF(item.quantity_difference, 0)
+          : "-",
         item.notes || "",
       ]),
       theme: "grid",
       tableWidth: 'auto',
       styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
-      headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
-      columnStyles: {
-        2: { halign: "right" },
-        3: { halign: "right" },
-        4: { halign: "right" },
-      },
+      headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold" },
+      columnStyles: RESULT_COLUMNS,
       margin: { left: 14, right: 14 },
-      didParseCell: (hookData) => {
+      didParseCell: alignHead(RESULT_COLUMNS, (hookData) => {
         if (hookData.section === "body" && hookData.column.index === 4) {
           const val = String(hookData.cell.raw);
           if (val.startsWith("+")) hookData.cell.styles.textColor = [22, 163, 74];
           else if (val.startsWith("-")) hookData.cell.styles.textColor = [220, 38, 38];
         }
-      },
+      }),
     });
 
     y = (doc as any).lastAutoTable.finalY + 10;
@@ -1193,9 +1223,22 @@ export default function InventoryDetailPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
+                          {/* Un manquant de casiers scellés et un surplus de
+                              bouteilles isolées se compensent dans le total et
+                              disparaissent : ventilés, ils désignent chacun leur
+                              cause. Le total reste dessous pour la valorisation. */}
                           {count.is_counted ? (
                             <span className={`font-mono text-sm font-semibold ${diff > 0 ? "text-green-600" : diff < 0 ? "text-red-600" : "text-gray-500"}`}>
-                              {diff > 0 ? "+" : ""}{formatDecimal(count.quantity_difference)}
+                              <span className="block">
+                                {count.difference_display?.trim() ||
+                                  `${diff > 0 ? "+" : ""}${formatDecimal(count.quantity_difference)}`}
+                              </span>
+                              {count.packaging_factor != null && (
+                                <span className="block text-xs font-normal text-gray-500">
+                                  {diff > 0 ? "+" : ""}
+                                  {formatDecimal(count.quantity_difference)} au total
+                                </span>
+                              )}
                             </span>
                           ) : (
                             <span className="text-gray-400">-</span>
