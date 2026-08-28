@@ -70,7 +70,7 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { formatPoints, formatPrice, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -78,6 +78,24 @@ import { StatValue } from "@/components/shared/StatValue";
 import { ProductThumb } from "@/components/products/product-thumb";
 import { PackagedSelection, QuantityPicker } from "@/components/sales/quantity-picker";
 import { ChannelAvailability, remainingChannels } from "@/lib/packaging";
+import {
+  MONEY_EPS,
+  r2,
+  createCurrencyTable,
+  basketTotals,
+  maxGlobalDiscount,
+  totalInSaleCurrency,
+  tendersIn,
+  lineGross as coreLineGross,
+  packagingFactorOf as corePackagingFactorOf,
+  looseQuantityOf as coreLooseQuantityOf,
+  pointValue as corePointValue,
+  maxLoyaltyAmount as coreMaxLoyaltyAmount,
+  maxUsablePoints as coreMaxUsablePoints,
+  loyaltyDiscount as coreLoyaltyDiscount,
+  evaluateCredit as coreEvaluateCredit,
+  type BasketLine,
+} from "@/lib/pos";
 import { unpackStock } from "@/actions/stock.actions";
 import { usePermissions } from "@/components/auth/permissions-provider";
 import { pluralizeUnit } from "@/lib/units";
@@ -114,15 +132,12 @@ interface CartItem {
 
 /** Contenu d'un conditionnement, ou `null` si le produit se vend à l'unité. */
 function packagingFactorOf(product: Product): number | null {
-  if (!product.selling_mode || product.selling_mode === "retail_only") return null;
-  return product.units_per_package || null;
+  return corePackagingFactorOf(product);
 }
 
 /** Part de la ligne vendue à l'unité - dérivée, jamais stockée. */
 function looseQuantityOf(item: CartItem): number {
-  const factor = packagingFactorOf(item.product);
-  if (!factor || !item.packageQuantity) return item.quantity;
-  return item.quantity - item.packageQuantity * factor;
+  return coreLooseQuantityOf(item as BasketLine);
 }
 
 
@@ -302,10 +317,6 @@ function describeCartLine(item: CartItem): string {
  * Les points sont fractionnaires : tronquer à l'entier interdisait au client
  * d'utiliser le solde qu'il vient de gagner (0,58 point devenait 0).
  */
-function roundPoints(value: number): number {
-  return Math.floor(value * 100) / 100;
-}
-
 /**
  * Valeur sentinelle du choix « Crédit » dans le sélecteur de moyen de paiement.
  *
@@ -847,50 +858,27 @@ export default function POSPage() {
   };
 
   // Arrondir à 2 décimales
-  const r2 = (n: number) => Math.round(n * 100) / 100;
-  // Tolérance de comparaison monétaire : absorbe l'erreur flottante résiduelle
-  // après arrondi par devise. Une seule constante partagée par l'affichage ET
-  // le bouton « Encaisser » pour qu'ils ne se contredisent jamais.
-  const MONEY_EPS = 1e-6;
+  // Toute l'arithmétique monétaire du POS vit dans `@vente-facile/core/pos` :
+  // le back-office et l'application mobile doivent facturer le même centime.
+  // Les fermetures ci-dessous n'existent plus que pour laisser inchangés les
+  // ~90 sites d'appel de cette page ; elles ne portent plus aucune règle.
 
-  // Calculate totals
-  /**
-   * Montant brut d'une ligne, miroir de `SaleItem.save()` côté serveur.
-   *
-   * Le prix d'un conditionnement n'est pas le prix unitaire multiplié par son
-   * contenu : c'est justement l'intérêt commercial du gros. Une ligne mixte
-   * additionne donc les deux tarifs. Le backend reste l'autorité : ce calcul
-   * ne sert qu'à l'affichage avant validation.
-   */
-  const lineGross = (item: CartItem) => {
-    const factor = packagingFactorOf(item.product);
-    if (!factor || item.packageQuantity <= 0) {
-      return r2(item.quantity * item.unit_price);
-    }
-    const packagePrice = parseFloat(item.product.wholesale_price || "0");
-    return r2(
-      item.packageQuantity * packagePrice + looseQuantityOf(item) * item.unit_price
-    );
-  };
+  /** Table de devises de l'organisation, refaite seulement quand elle change. */
+  const currencies = useMemo(
+    () => createCurrencyTable(orgCurrencies, defaultCurrency),
+    [orgCurrencies, defaultCurrency],
+  );
+  /** Le panier vu par le paquet : mêmes champs, aucun transport. */
+  const basket = { lines: cart as BasketLine[], globalDiscountAmount };
+  const totals = () => basketTotals(basket);
 
-  const calculateSubtotal = () => {
-    return cart.reduce((sum, item) => sum + lineGross(item), 0);
-  };
-
-  const calculateItemDiscount = () => {
-    return cart.reduce((sum, item) => {
-      return sum + r2(lineGross(item) * item.discount_percentage / 100);
-    }, 0);
-  };
-
-  const getMaxGlobalDiscountAmount = () => {
-    return r2(calculateSubtotal() - calculateItemDiscount());
-  };
-
-  const calculateGlobalDiscountAmount = () => {
-    const maxAllowed = getMaxGlobalDiscountAmount();
-    return r2(Math.min(globalDiscountAmount, maxAllowed));
-  };
+  const lineGross = (item: CartItem) => coreLineGross(item as BasketLine);
+  const calculateSubtotal = () => totals().subtotal;
+  const calculateItemDiscount = () => totals().itemDiscount;
+  const getMaxGlobalDiscountAmount = () => maxGlobalDiscount(cart as BasketLine[]);
+  const calculateGlobalDiscountAmount = () => totals().globalDiscount;
+  const calculateTax = () => totals().tax;
+  const calculateTotal = () => totals().total;
 
   const getProductLocationLabel = (product: Product) => {
     const parts: string[] = [];
@@ -899,115 +887,28 @@ export default function POSPage() {
     return parts.length > 0 ? parts.join(" · ") : "-";
   };
 
-  const calculateTax = () => {
-    return cart.reduce((sum, item) => {
-      if (!item.product.is_taxable) return sum;
-
-      const itemTotal = lineGross(item);
-      const itemDiscount = r2(itemTotal * item.discount_percentage / 100);
-      const itemAfterDiscount = r2(itemTotal - itemDiscount);
-
-      const taxRate = parseFloat(item.product.tax_rate?.toString() || '0');
-      return sum + r2(itemAfterDiscount * taxRate / 100);
-    }, 0);
-  };
-
-  const calculateTotal = () => {
-    const subtotal = calculateSubtotal();
-    const itemDiscount = calculateItemDiscount();
-    const globalDiscountAmount = calculateGlobalDiscountAmount();
-    const tax = calculateTax();
-    return r2(subtotal - itemDiscount - globalDiscountAmount + tax);
-  };
-
-  /** Valeur monétaire d'un point, en devise principale. */
-  const pointValue = () => {
-    const v = loyaltyProgram?.point_value ? parseFloat(loyaltyProgram.point_value) : 1;
-    return v > 0 ? v : 1;
-  };
-
-  /**
-   * Part de la facture réglable en points, en devise principale.
-   *
-   * Miroir de `LoyaltyProgram.max_redeemable_amount` côté serveur : les points
-   * ne soldent jamais tout, il reste toujours un montant à encaisser en
-   * monnaie. Un programme réglé à 100 % rend le plafond inopérant.
-   */
-  const maxLoyaltyAmount = () => {
-    // Borne dure servie par le serveur : le réglage de l'organisation ne peut
-    // que la durcir. Repli à 70 si le champ manque (réponse d'une API plus
-    // ancienne), jamais à 100 : ce serait desserrer la garantie.
-    const ceiling = Number(loyaltyProgram?.max_redemption_percent_ceiling);
-    const safeCeiling = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : 70;
-    const pct = parseFloat(loyaltyProgram?.max_redemption_percent ?? "");
-    // Valeur absente ou illisible : on retombe sur la borne plutôt que sur
-    // zéro. Le serveur reste l'autorité et tranchera ; bloquer toute
-    // utilisation ici sur une lecture ratée serait le pire des deux.
-    const safePct = Number.isFinite(pct) && pct > 0 ? Math.min(pct, safeCeiling) : safeCeiling;
-    return r2((calculateTotal() * safePct) / 100);
-  };
-
-  /**
-   * Plus grand nombre de points saisissable : borné par le solde du client et
-   * par la part de la facture que le programme autorise à régler en points.
-   */
+  const pointValue = () => corePointValue(loyaltyProgram);
+  const maxLoyaltyAmount = () => coreMaxLoyaltyAmount(calculateTotal(), loyaltyProgram);
   const maxUsablePoints = () =>
-    Math.min(pointsBalance, roundPoints(maxLoyaltyAmount() / pointValue()));
-
+    coreMaxUsablePoints(calculateTotal(), pointsBalance, loyaltyProgram);
   /**
-   * Remise obtenue en réglant une part de la vente en points, en devise
-   * principale (`point_value` y est libellé).
-   *
-   * `calculateTotal()` reste volontairement **brut** : c'est lui qui plafonne le
-   * nombre de points saisissables, un total déjà net rendrait le calcul
-   * circulaire.
-   *
-   * Le minimum du programme est appliqué ici comme côté serveur : une saisie en
-   * dessous ne donne AUCUNE remise. Sans ce miroir, la modale annonçait une
-   * réduction que `resolve_redemption` refusait, et le caissier encaissait trop
-   * peu avant que la réponse du serveur ne rectifie le total.
+   * `usePoints` est un état d'interface, pas une règle : décocher la case se
+   * dit au paquet en ne lui passant aucun point.
    */
-  const calculateLoyaltyDiscount = () => {
-    if (!usePoints || pointsToUse <= 0 || !loyaltyProgram?.is_active) return 0;
-    if (pointsToUse < minPointsToRedeem) return 0;
-    return r2(Math.min(pointsToUse * pointValue(), maxLoyaltyAmount()));
-  };
-
-  /** Ce que le client doit réellement, points déduits, en devise principale. */
+  const calculateLoyaltyDiscount = () =>
+    coreLoyaltyDiscount(calculateTotal(), usePoints ? pointsToUse : 0, loyaltyProgram);
   const calculateNetTotal = () => r2(calculateTotal() - calculateLoyaltyDiscount());
 
-  // ---------------------------------------------------------------------------
-  // Multi-devise : conversions basées sur OrganizationCurrency.exchange_rate
-  // (= unités de devise principale pour 1 unité de cette devise ; principale = 1).
-  // ---------------------------------------------------------------------------
   const getPrimaryCurrency = () => orgCurrencies.find(c => c.is_primary);
-  const primaryCode = () => getPrimaryCurrency()?.currency_code || defaultCurrency.code;
-  const rateOf = (code: string) => {
-    const c = orgCurrencies.find(x => x.currency_code === code);
-    const r = c ? parseFloat(c.exchange_rate) : 1;
-    return r > 0 ? r : 1;
-  };
-  const symbolOf = (code: string) =>
-    orgCurrencies.find(x => x.currency_code === code)?.currency_symbol || code;
-  // Convertit un montant de la devise `from` vers la devise `to` (via la principale).
-  const convertAmount = (amount: number, from: string, to: string) => {
-    if (!amount || from === to) return amount;
-    const inPrimary = amount * rateOf(from);
-    return inPrimary / rateOf(to);
-  };
-  // Décimales physiques d'une devise (CDF = 0, USD/EUR = 2). Défaut 2 si inconnue.
-  const decimalsOf = (code: string) => {
-    const c = orgCurrencies.find(x => x.currency_code === code);
-    return c ? c.currency_decimal_places : (defaultCurrency.decimal_places ?? 2);
-  };
-  // Arrondi d'un montant à la plus petite unité physique de sa devise.
-  const roundMoney = (amount: number, code: string) => {
-    const f = Math.pow(10, decimalsOf(code));
-    return Math.round((amount + Number.EPSILON) * f) / f;
-  };
-  // Convertit un prix (depuis la principale) vers `to` puis arrondit à ses décimales.
+  const primaryCode = () => currencies.primary;
+  const rateOf = (code: string) => currencies.rateOf(code);
+  const symbolOf = (code: string) => currencies.symbolOf(code);
+  const convertAmount = (amount: number, from: string, to: string) =>
+    currencies.convert(amount, from, to);
+  const decimalsOf = (code: string) => currencies.decimalsOf(code);
+  const roundMoney = (amount: number, code: string) => currencies.round(amount, code);
   const convMoney = (amount: number, from: string, to: string) =>
-    roundMoney(convertAmount(amount, from, to), to);
+    currencies.convertMoney(amount, from, to);
   // Formate un montant avec le bon nombre de décimales pour sa devise.
   const money = (amount: number, code?: string) => {
     const cur = code || saleCurrency();
@@ -1019,68 +920,24 @@ export default function POSPage() {
   };
   // Devise de la vente (facture).
   const saleCurrency = () => invoiceCurrency || primaryCode();
-  // Total de la facture exprimé dans la devise de la vente.
-  //
-  // Reproduit fidèlement le calcul backend (`Sale.calculate_totals` +
-  // `SaleItem.save`) : chaque prix unitaire est d'abord CONVERTI et ARRONDI dans
-  // la devise de facture (exactement ce qu'on envoie), puis les lignes sont
-  // sommées. Sinon, convertir le total agrégé donne un chiffre qui diverge de
-  // ce que le backend facture → `amount_due`/monnaie faux.
-  //
-  // `loyaltyDiscountOverride` (en devise principale) sert aux handlers qui
-  // viennent de changer les points : le state n'est pas encore répercuté, ils
-  // passent la remise qu'ils souhaitent voir appliquée.
-  const totalInSale = (loyaltyDiscountOverride?: number) => {
-    const cur = saleCurrency();
-    let subtotal = 0, itemDiscount = 0, tax = 0;
-    for (const item of cart) {
-      const unit = convMoney(item.unit_price, primaryCode(), cur);
-      // Vente en gros : le tarif du conditionnement s'applique à la part
-      // vendue en emballages entiers, converti dans la devise de facture.
-      const factor = packagingFactorOf(item.product);
-      const line =
-        factor && item.packageQuantity > 0
-          ? roundMoney(
-              item.packageQuantity *
-                convMoney(
-                  parseFloat(item.product.wholesale_price || "0"),
-                  primaryCode(),
-                  cur
-                ) +
-                looseQuantityOf(item) * unit,
-              cur
-            )
-          : roundMoney(item.quantity * unit, cur);
-      const disc = roundMoney(line * item.discount_percentage / 100, cur);
-      subtotal += line;
-      itemDiscount += disc;
-      if (item.product.is_taxable) {
-        const rate = parseFloat(item.product.tax_rate?.toString() || '0');
-        tax += roundMoney((line - disc) * rate / 100, cur);
-      }
-    }
-    const globalDisc = convMoney(calculateGlobalDiscountAmount(), primaryCode(), cur);
-    // La remise fidélité s'applique après coup, comme côté serveur : elle
-    // s'ajoute à `discount_amount` sur la vente déjà totalisée. Sans elle, la
-    // modale annonçait un montant à encaisser pré-remise, corrigé seulement
-    // après le retour du serveur.
-    const loyaltyDisc = convMoney(
-      loyaltyDiscountOverride ?? calculateLoyaltyDiscount(), primaryCode(), cur,
-    );
-    return roundMoney(subtotal - itemDiscount - globalDisc - loyaltyDisc + tax, cur);
-  };
-  // Somme des règlements convertie (et arrondie) dans la devise de la vente.
-  const paidInSale = () =>
-    roundMoney(
-      tenders.reduce((s, t) => s + convertAmount(parseFloat(t.amount) || 0, t.currency, saleCurrency()), 0),
-      saleCurrency(),
-    );
-  // Rétro-compat : plusieurs blocs comparent le payé au total EN PRINCIPALE.
-  const getAmountInPrimary = () =>
-    roundMoney(
-      tenders.reduce((s, t) => s + convertAmount(parseFloat(t.amount) || 0, t.currency, primaryCode()), 0),
-      primaryCode(),
-    );
+  /**
+   * Total de la facture exprimé dans la devise de la vente.
+   *
+   * `loyaltyDiscountOverride` (en devise principale) sert aux gestionnaires qui
+   * viennent de changer les points : le state n'est pas encore répercuté, ils
+   * passent la remise qu'ils veulent voir appliquée.
+   */
+  const totalInSale = (loyaltyDiscountOverride?: number) =>
+    totalInSaleCurrency({
+      ...basket,
+      currencies,
+      invoiceCurrency: saleCurrency(),
+      loyaltyDiscount: loyaltyDiscountOverride ?? calculateLoyaltyDiscount(),
+    });
+  /** Somme des règlements, dans la devise de la vente. */
+  const paidInSale = () => tendersIn(tenders, currencies, saleCurrency());
+  /** Rétro-compat : plusieurs blocs comparent le payé au total EN PRINCIPALE. */
+  const getAmountInPrimary = () => tendersIn(tenders, currencies, primaryCode());
   /**
    * Sélectionne un client et relit son solde à jour.
    *
@@ -1115,36 +972,13 @@ export default function POSPage() {
    * `current_balance` et `credit_limit` sont tenus côté backend, la facture
    * pouvant être libellée dans une autre.
    */
-  const evaluateCredit = () => {
-    if (!selectedCustomer) return null;
-
-    const creditLimit = parseFloat(selectedCustomer.credit_limit || "0");
-    const currentBalance = parseFloat(selectedCustomer.current_balance || "0");
-    const creditInPrimary = Math.max(0, calculateNetTotal() - getAmountInPrimary());
-    const projectedBalance = currentBalance + creditInPrimary;
-
-    // `allow_credit` et `credit_limit` sont deux règles distinctes : une limite
-    // à 0 signifie « sans plafond », jamais « crédit refusé ».
-    const notAllowed = selectedCustomer.allow_credit === false;
-    const overLimit = creditLimit > 0 && projectedBalance > creditLimit;
-
-    return {
-      creditLimit,
-      currentBalance,
-      creditInPrimary,
-      projectedBalance,
-      notAllowed,
-      overLimit,
-      blocked: notAllowed || overLimit,
-      reason: notAllowed
-        ? `${selectedCustomer.name} n'est pas autorisé à acheter à crédit.`
-        : overLimit
-          ? `Limite de crédit dépassée. Limite : ${formatPrice(creditLimit)}, ` +
-            `dette actuelle : ${formatPrice(currentBalance)}, ` +
-            `total projeté : ${formatPrice(projectedBalance)}.`
-          : null,
-    };
-  };
+  const evaluateCredit = () =>
+    coreEvaluateCredit(
+      selectedCustomer,
+      calculateNetTotal(),
+      getAmountInPrimary(),
+      (amount: number) => formatPrice(amount),
+    );
 
   // Monnaie à rendre, dans la devise choisie par le caissier.
   const changeInChangeCurrency = () => {
