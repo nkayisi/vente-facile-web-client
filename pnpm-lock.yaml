@@ -29,6 +29,9 @@ importers:
       '@tanstack/react-table':
         specifier: ^8.21.3
         version: 8.21.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      '@vente-facile/core':
+        specifier: github:nkayisi/vente-facile-core#v0.1.0
+        version: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/49b559785399747999f76a4024683c62d2c6cf6b
       axios:
         specifier: ^1.13.4
         version: 1.13.4
@@ -2156,6 +2159,10 @@ packages:
     resolution: {integrity: sha512-lrW200hZdbfRtztbygyaq/6jP6AKE8qQN2KvPcJ+x7wiD038YtnYtZ82IMNJ69GJibV7bwL3y9FgK+5w/pYt6g==}
     cpu: [x64]
     os: [win32]
+
+  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/49b559785399747999f76a4024683c62d2c6cf6b':
+    resolution: {tarball: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/49b559785399747999f76a4024683c62d2c6cf6b}
+    version: 0.1.0
 
   '@webassemblyjs/ast@1.14.1':
     resolution: {integrity: sha512-nuBEDgQfm1ccRp/8bCQrx1frohyufl4JlbMMZ4P1wpeOfDhF6FQkxZJ1b/e+PLwr6X1Nhw6OLme5usuBWYBvuQ==}
@@ -6967,6 +6974,8 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.11.1':
     optional: true
 
+  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/49b559785399747999f76a4024683c62d2c6cf6b': {}
+
   '@webassemblyjs/ast@1.14.1':
     dependencies:
       '@webassemblyjs/helper-numbers': 1.13.2
@@ -9900,7 +9909,7 @@ snapshots:
 
   webpack@5.109.2:
     dependencies:
-      '@types/estree': 1.0.8
+      '@types/estree': 1.0.9
       '@types/json-schema': 7.0.15
       '@webassemblyjs/ast': 1.14.1
       '@webassemblyjs/wasm-edit': 1.14.1
@@ -9917,7 +9926,7 @@ snapshots:
       minimizer-webpack-plugin: 5.6.1(webpack@5.109.2)
       neo-async: 2.6.2
       schema-utils: 4.3.3
-      tapable: 2.3.0
+      tapable: 2.3.3
       watchpack: 2.5.2
       webpack-sources: 3.5.1
     transitivePeerDependencies:

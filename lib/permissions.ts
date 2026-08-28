@@ -1,84 +1,27 @@
-// Types et constantes pour le système RBAC
+/**
+ * Réexport depuis `@vente-facile/core`.
+ *
+ * Ces règles vivaient ici ; elles vivent désormais dans le paquet partagé, pour
+ * que le back-office et l'application mobile ne puissent pas en tenir deux
+ * versions. Ce fichier n'existe plus que pour laisser inchangés les 4 sites
+ * d'import de `@/lib/permissions` : le déplacement n'a rien à changer aux écrans.
+ *
+ * Toute évolution de ces fonctions se fait dans le paquet, jamais ici.
+ */
 
-export type Role = 'owner' | 'manager' | 'stock_keeper' | 'cashier';
+export {
+  ROLE_LABELS,
+  ROLE_HIERARCHY,
+  hasPermission,
+  hasAnyPermission,
+  hasAllPermissions,
+  isRole,
+  isAtLeastRole,
+  canManageRole,
+} from "@vente-facile/core";
 
-export const ROLE_LABELS: Record<Role, string> = {
-  owner: 'Administrateur',
-  manager: 'Gérant',
-  stock_keeper: 'Magasinier',
-  cashier: 'Caissier',
-};
-
-export const ROLE_HIERARCHY: Record<Role, number> = {
-  owner: 4,
-  manager: 3,
-  stock_keeper: 2,
-  cashier: 1,
-};
-
-export interface ManageableRole {
-  value: string;
-  label: string;
-}
-
-export interface UserPermissions {
-  role: Role;
-  role_display: string;
-  /** Permissions héritées du rôle */
-  role_permissions?: string[];
-  /** Permissions additionnelles accordées individuellement */
-  extra_permissions?: string[];
-  /** Permissions effectives (role + extra) - utilisées pour les vérifications */
-  permissions: string[];
-  manageable_roles: ManageableRole[];
-  /** Toutes les permissions disponibles dans le système */
-  all_permissions?: string[];
-}
-
-export function hasPermission(
-  userPermissions: UserPermissions | null,
-  permission: string
-): boolean {
-  if (!userPermissions) return false;
-  return userPermissions.permissions.includes(permission);
-}
-
-export function hasAnyPermission(
-  userPermissions: UserPermissions | null,
-  permissions: string[]
-): boolean {
-  if (!userPermissions) return false;
-  return permissions.some((p) => userPermissions.permissions.includes(p));
-}
-
-export function hasAllPermissions(
-  userPermissions: UserPermissions | null,
-  permissions: string[]
-): boolean {
-  if (!userPermissions) return false;
-  return permissions.every((p) => userPermissions.permissions.includes(p));
-}
-
-export function isRole(
-  userPermissions: UserPermissions | null,
-  role: Role
-): boolean {
-  if (!userPermissions) return false;
-  return userPermissions.role === role;
-}
-
-export function isAtLeastRole(
-  userPermissions: UserPermissions | null,
-  role: Role
-): boolean {
-  if (!userPermissions) return false;
-  return (ROLE_HIERARCHY[userPermissions.role] || 0) >= (ROLE_HIERARCHY[role] || 0);
-}
-
-export function canManageRole(
-  userPermissions: UserPermissions | null,
-  targetRole: string
-): boolean {
-  if (!userPermissions) return false;
-  return userPermissions.manageable_roles.some((r) => r.value === targetRole);
-}
+export type {
+  Role,
+  ManageableRole,
+  UserPermissions,
+} from "@vente-facile/core";

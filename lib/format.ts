@@ -1,127 +1,29 @@
 /**
- * Utilitaires de formatage pour l'affichage des nombres et prix.
+ * Réexport depuis `@vente-facile/core`, plus ce qui ne peut pas en faire partie.
  *
- * **Les montants s'écrivent TOUJOURS en entier.** Pas de « 2,33 M », pas de
- * « 1,2 Md », pas de `notation: "compact"`. La plateforme s'adresse à des
- * commerçants qui ne pratiquent pas forcément cette écriture : un montant
- * abrégé est pour eux un montant qu'ils ne savent pas lire, et un chiffre
- * qu'on ne sait pas lire ne renseigne pas, il inquiète.
+ * Le formatage vit désormais dans le paquet partagé : c'est ce qui garantit
+ * qu'un montant s'écrit pareil à l'écran, sur un ticket et sur un rapport,
+ * quelle que soit la surface. `getMediaUrl` reste ici parce qu'elle lit une
+ * variable d'environnement Next : sur mobile, la même résolution part d'une
+ * autre base et se fait dans le client HTTP.
  *
- * Quand un montant ne tient pas dans sa carte, c'est la TAILLE DU TEXTE qui
- * cède, jamais le nombre de chiffres (voir `StatValue`).
+ * Rappel de doctrine, portée par le paquet : **les montants s'écrivent TOUJOURS
+ * en entier.** Quand un montant ne tient pas, c'est la taille du texte qui
+ * cède, jamais le nombre de chiffres.
  */
 
-// Module-level default currency (set by CurrencyProvider at mount)
-let _defaultSymbol = "FC";
-let _defaultDecimals = 0;
-let _defaultCode = "CDF";
-
-export function setDefaultCurrency(symbol: string, decimalPlaces: number, code?: string) {
-  _defaultSymbol = symbol;
-  _defaultDecimals = decimalPlaces;
-  if (code) _defaultCode = code;
-}
-
-export function getDefaultCurrency() {
-  return { symbol: _defaultSymbol, decimal_places: _defaultDecimals, code: _defaultCode };
-}
-
-/**
- * Formate un prix avec séparateur de milliers et symbole de devise.
- * Utilise la devise par défaut de l'organisation si aucun paramètre n'est fourni.
- * Affiche les décimales exactes de la valeur stockée (ex: 2.3 → "2,3").
- * Ex: formatPrice(20000) → "20 000 FC"
- * Ex: formatPrice(2.3) → "2,3 FC"
- * Ex: formatPrice(10.50) → "10,5 FC"
- */
-export function formatPrice(
-  price: string | number,
-  symbol?: string
-): string {
-  const num = typeof price === "string" ? parseFloat(price) : price;
-  const sym = symbol || _defaultSymbol;
-  if (isNaN(num)) return `0 ${sym}`;
-  const formatted = new Intl.NumberFormat("fr-CD", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 6,
-  }).format(num);
-  return `${formatted} ${sym}`;
-}
-
-/**
- * Formate un nombre entier avec séparateur de milliers.
- * Ex: 20000 → "20 000", 1500 → "1 500"
- */
-export function formatNumber(num: number | string): string {
-  const n = typeof num === "string" ? parseFloat(num) : num;
-  if (isNaN(n)) return "0";
-  return new Intl.NumberFormat("fr-CD", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-/**
- * Formate un nombre décimal (ex: quantités) avec séparateur de milliers.
- * Ex: 20000.500 → "20 000,500"
- */
-export function formatDecimal(num: number | string, decimals: number = 3): string {
-  const n = typeof num === "string" ? parseFloat(num) : num;
-  if (isNaN(n)) return "0";
-  return new Intl.NumberFormat("fr-CD", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: decimals,
-  }).format(n);
-}
-
-/**
- * Formate un prix sans le symbole de devise (pour les exports CSV).
- * Affiche les décimales telles quelles sans forcer un nombre fixe.
- * Ex: formatPriceValue(20000.50) → "20000.5"
- * Ex: formatPriceValue(2.3) → "2.3"
- */
-export function formatPriceValue(price: string | number): string {
-  const num = typeof price === "string" ? parseFloat(price) : price;
-  if (isNaN(num)) return "0";
-  // Utilise toString() pour garder les décimales telles quelles
-  return num.toString();
-}
-
-/**
- * Formate un pourcentage.
- * Ex: 15.5 → "15,5%"
- */
-export function formatPercent(num: number | string): string {
-  const n = typeof num === "string" ? parseFloat(num) : num;
-  if (isNaN(n)) return "0%";
-  return new Intl.NumberFormat("fr-CD", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(n) + "%";
-}
-
-/**
- * Formate une date en format court français.
- */
-export function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("fr-CD", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-/**
- * Formate une date avec heure.
- */
-export function formatDateTime(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("fr-CD", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+export {
+  setDefaultCurrency,
+  getDefaultCurrency,
+  formatPrice,
+  formatNumber,
+  formatDecimal,
+  formatPriceValue,
+  formatPercent,
+  formatDate,
+  formatDateTime,
+  formatPoints,
+} from "@vente-facile/core";
 
 /**
  * Résout une URL media relative du backend Django en URL absolue.
@@ -132,23 +34,4 @@ export function getMediaUrl(path: string | null | undefined): string | undefined
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
   const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8005/api/v1").replace("/api/v1", "");
   return `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
-}
-
-/**
- * Formate un nombre de points de fidélité.
- *
- * Les points sont fractionnaires depuis qu'un barème en pourcentage sur une
- * devise forte peut produire 0,58 point : les tronquer les faisait disparaître.
- * On affiche donc la fraction quand elle existe, et rien de plus quand le
- * compte tombe juste - « 3 pts », jamais « 3,00 pts ».
- *
- * Ex : 3 → "3" ; 0.58 → "0,58" ; 4.5 → "4,5" ; 1234.25 → "1 234,25"
- */
-export function formatPoints(points: number | string | null | undefined): string {
-  const n = typeof points === "string" ? parseFloat(points) : points ?? 0;
-  if (!Number.isFinite(n)) return "0";
-  return new Intl.NumberFormat("fr-CD", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(n);
 }
