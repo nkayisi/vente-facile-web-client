@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getRegisters,
   getRegisterSessions,
@@ -59,6 +58,7 @@ import {
 } from "@/lib/receipt";
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 /**
  * Durée écoulée depuis l'ouverture : « depuis 3 h 20 ».
@@ -92,7 +92,7 @@ export default function RegistersPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const { currency: defaultCurrency } = useCurrency();
   const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
   const printer = useReceiptPrinter();
@@ -133,10 +133,12 @@ export default function RegistersPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           // Fetch in parallel - la liste des succursales/entrepôts est
           // résolue dynamiquement par les selects async.
@@ -161,7 +163,7 @@ export default function RegistersPage() {
     };
 
     fetchData();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   // Mémo conservé pour la stabilité de la ref du handler warehouse -
   // sinon le composant async perd son cache à chaque render du parent.

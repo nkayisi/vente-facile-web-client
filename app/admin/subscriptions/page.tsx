@@ -188,7 +188,7 @@ export default function AdminSubscriptionsPage() {
       }
       setIsLoading(false);
     });
-  }, [session, debouncedSearch, statusFilter, billingCycleFilter, planFilter, currentPage, pageSize]);
+  }, [session?.accessToken, debouncedSearch, statusFilter, billingCycleFilter, planFilter, currentPage, pageSize]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(fetchSubscriptions, [fetchSubscriptions]);

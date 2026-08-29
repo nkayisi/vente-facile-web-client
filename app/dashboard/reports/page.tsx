@@ -62,7 +62,6 @@ import {
 import { toast } from "sonner";
 import { formatPrice, formatNumber, formatDate, formatDateTime, formatPriceValue } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getDashboardSummary,
   getSalesByPeriod,
@@ -118,6 +117,7 @@ import {
 } from "@/components/ui/table";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { FileText, FileSpreadsheet, Printer, ArrowDown, ArrowUp, Minus } from "lucide-react";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const PERIOD_OPTIONS = [
   { value: "today", label: "Aujourd'hui" },
@@ -135,7 +135,7 @@ export default function ReportsPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   // Même identité que les tickets thermiques : un rapport et un reçu émis par
   // la même boutique doivent porter le même en-tête.
   const { chrome } = useReceiptChrome(session?.accessToken, organization);
@@ -195,8 +195,17 @@ export default function ReportsPage() {
     return { period: period as ReportFilters["period"], group_by: groupBy };
   }, [period, dateFrom, dateTo, groupBy]);
 
-  // Fetch all data
-  const fetchData = useCallback(async () => {
+  // Chargement de l'écran, découpé selon ce qui le fait bouger.
+  //
+  // Un seul `fetchData` tirait les DOUZE rapports et dépendait des quatre
+  // numéros de page. Cliquer « page suivante » sur un seul tableau relançait
+  // donc les douze requêtes, et changer de période en déclenchait jusqu'à
+  // vingt-quatre (l'effet de remise à zéro des pages produisant un second
+  // cycle). Séparer rend aussi la pagination réactive : elle ne repeint plus
+  // l'écran entier.
+
+  // Les blocs qui ne dépendent que des filtres de période.
+  const fetchOverview = useCallback(async () => {
     if (!session?.accessToken || !organization?.id) return;
 
     setIsLoading(true);
@@ -206,27 +215,19 @@ export default function ReportsPage() {
       const [
         summaryResult,
         salesPeriodResult,
-        salesCategoryResult,
         salesPaymentResult,
-        topProductsResult,
         topCustomersResult,
         cashFlowResult,
         profitResult,
-        productProfitsResult,
-        stockDetailsResult,
         stockMovementsResult,
         productSuppliesResult,
       ] = await Promise.all([
         getDashboardSummary(session.accessToken, organization.id, filters),
         getSalesByPeriod(session.accessToken, organization.id, filters),
-        getSalesByCategory(session.accessToken, organization.id, { ...filters, page: salesByCategoryPage, page_size: 20 }),
         getSalesByPaymentMethod(session.accessToken, organization.id, filters),
-        getTopProducts(session.accessToken, organization.id, { ...filters, page: salesByArticlePage, page_size: 20 }),
         getTopCustomers(session.accessToken, organization.id, { ...filters, limit: 10 }),
         getCashFlow(session.accessToken, organization.id, filters),
         getProfitMargins(session.accessToken, organization.id, filters),
-        getProductProfits(session.accessToken, organization.id, { ...filters, page: profitsPage, page_size: 20 }),
-        getStockDetails(session.accessToken, organization.id, { page: stockPage, page_size: 20 }),
         getStockMovementsSummary(session.accessToken, organization.id, filters),
         getProductSupplies(session.accessToken, organization.id, filters),
       ]);
@@ -236,17 +237,9 @@ export default function ReportsPage() {
         setSalesByPeriod(salesPeriodResult.data.results);
         setSalesByPeriodTotal(salesPeriodResult.data.count);
       }
-      if (salesCategoryResult.success && salesCategoryResult.data) {
-        setSalesByCategory(salesCategoryResult.data.results);
-        setSalesByCategoryTotal(salesCategoryResult.data.count);
-      }
       if (salesPaymentResult.success && salesPaymentResult.data) {
         setSalesByPaymentMethod(salesPaymentResult.data.results);
         setSalesByPaymentMethodTotal(salesPaymentResult.data.count);
-      }
-      if (topProductsResult.success && topProductsResult.data) {
-        setTopProducts(topProductsResult.data.results);
-        setTopProductsTotal(topProductsResult.data.count);
       }
       if (topCustomersResult.success && topCustomersResult.data) {
         setTopCustomers(topCustomersResult.data.results);
@@ -257,14 +250,6 @@ export default function ReportsPage() {
         setCashFlowTotal(cashFlowResult.data.count);
       }
       if (profitResult.success && profitResult.data) setProfitMargins(profitResult.data);
-      if (productProfitsResult.success && productProfitsResult.data) {
-        setProductProfits(productProfitsResult.data.results);
-        setProductProfitsTotal(productProfitsResult.data.count);
-      }
-      if (stockDetailsResult.success && stockDetailsResult.data) {
-        setStockDetails(stockDetailsResult.data.results);
-        setStockDetailsTotal(stockDetailsResult.data.count);
-      }
       if (stockMovementsResult.success && stockMovementsResult.data) setStockMovementsSummary(stockMovementsResult.data);
       if (productSuppliesResult.success && productSuppliesResult.data) setProductSupplies(productSuppliesResult.data);
     } catch (error) {
@@ -273,7 +258,56 @@ export default function ReportsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [session?.accessToken, organization?.id, getFilters, salesByCategoryPage, salesByArticlePage, profitsPage, stockPage]);
+  }, [session?.accessToken, organization?.id, getFilters]);
+
+  // Un tableau paginé, un chargeur. Chacun ne dépend que de SA page : c'est
+  // toute la correction. `setIsLoading` n'est volontairement pas touché ici,
+  // pour qu'une pagination ne fasse pas disparaître le reste de l'écran.
+  const fetchSalesByCategory = useCallback(async () => {
+    if (!session?.accessToken || !organization?.id) return;
+    const result = await getSalesByCategory(session.accessToken, organization.id, {
+      ...getFilters(), page: salesByCategoryPage, page_size: 20,
+    });
+    if (result.success && result.data) {
+      setSalesByCategory(result.data.results);
+      setSalesByCategoryTotal(result.data.count);
+    }
+  }, [session?.accessToken, organization?.id, getFilters, salesByCategoryPage]);
+
+  const fetchTopProducts = useCallback(async () => {
+    if (!session?.accessToken || !organization?.id) return;
+    const result = await getTopProducts(session.accessToken, organization.id, {
+      ...getFilters(), page: salesByArticlePage, page_size: 20,
+    });
+    if (result.success && result.data) {
+      setTopProducts(result.data.results);
+      setTopProductsTotal(result.data.count);
+    }
+  }, [session?.accessToken, organization?.id, getFilters, salesByArticlePage]);
+
+  const fetchProductProfits = useCallback(async () => {
+    if (!session?.accessToken || !organization?.id) return;
+    const result = await getProductProfits(session.accessToken, organization.id, {
+      ...getFilters(), page: profitsPage, page_size: 20,
+    });
+    if (result.success && result.data) {
+      setProductProfits(result.data.results);
+      setProductProfitsTotal(result.data.count);
+    }
+  }, [session?.accessToken, organization?.id, getFilters, profitsPage]);
+
+  // L'état du stock ne dépend pas de la période : il décrit ce qui est en
+  // rayon maintenant. Il ne doit donc rien recharger quand la période change.
+  const fetchStockDetails = useCallback(async () => {
+    if (!session?.accessToken || !organization?.id) return;
+    const result = await getStockDetails(session.accessToken, organization.id, {
+      page: stockPage, page_size: 20,
+    });
+    if (result.success && result.data) {
+      setStockDetails(result.data.results);
+      setStockDetailsTotal(result.data.count);
+    }
+  }, [session?.accessToken, organization?.id, stockPage]);
 
   // Fetch daily cash report
   const fetchDailyCashReport = useCallback(async (date: string, page: number = 1) => {
@@ -342,18 +376,6 @@ export default function ReportsPage() {
     }
   }, [session?.accessToken, organization?.id, selectedUserId, userActivityGroupBy, dateFrom, dateTo, period]);
 
-  // Fetch organization
-  useEffect(() => {
-    async function fetchOrganization() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
-        }
-      }
-    }
-    fetchOrganization();
-  }, [session?.accessToken]);
 
   // Reset pages when filters change
   useEffect(() => {
@@ -365,12 +387,44 @@ export default function ReportsPage() {
     setCustomersPage(1);
   }, [period, dateFrom, dateTo]);
 
-  // Fetch data when organization or filters change
+  // Le bouton « Actualiser » vise l'écran entier, lui : c'est le seul endroit
+  // où recharger les douze rapports d'un coup a du sens.
+  const refreshAll = useCallback(() => {
+    fetchOverview();
+    fetchSalesByCategory();
+    fetchTopProducts();
+    fetchProductProfits();
+    fetchStockDetails();
+  }, [
+    fetchOverview,
+    fetchSalesByCategory,
+    fetchTopProducts,
+    fetchProductProfits,
+    fetchStockDetails,
+  ]);
+
+  // Un effet par chargeur. Chacun se réveille pour sa propre raison : les
+  // blocs de synthèse quand la période bouge, chaque tableau quand SA page
+  // bouge. C'est ce qui évite de relancer douze rapports pour une pagination.
   useEffect(() => {
-    if (organization) {
-      fetchData();
-    }
-  }, [organization, fetchData]);
+    fetchOverview();
+  }, [fetchOverview]);
+
+  useEffect(() => {
+    fetchSalesByCategory();
+  }, [fetchSalesByCategory]);
+
+  useEffect(() => {
+    fetchTopProducts();
+  }, [fetchTopProducts]);
+
+  useEffect(() => {
+    fetchProductProfits();
+  }, [fetchProductProfits]);
+
+  useEffect(() => {
+    fetchStockDetails();
+  }, [fetchStockDetails]);
 
   // Format date for chart
   const formatChartDate = (dateStr: string) => {
@@ -855,7 +909,7 @@ export default function ReportsPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchData}
+            onClick={refreshAll}
             disabled={isLoading}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />

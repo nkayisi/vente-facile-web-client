@@ -68,7 +68,6 @@ import {
 import { toast } from "sonner";
 import { formatDate, formatPrice, formatDecimal } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getWarehouses, Warehouse, getWarehouseStockSummary } from "@/actions/stock.actions";
 import { getCategories, getProducts, Category, Product } from "@/actions/products.actions";
 import {
@@ -84,6 +83,7 @@ import {
   CreateInventorySessionData,
 } from "@/actions/inventory.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const statusConfig: Record<InventorySessionStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -102,7 +102,7 @@ const scopeConfig: Record<InventoryScopeType, { label: string }> = {
 export default function InventoryPage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [sessions, setSessions] = useState<InventorySession[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -157,17 +157,6 @@ export default function InventoryPage() {
     newSession.scope_type !== "category" || categories.length > 0;
 
   // Fetch organization
-  useEffect(() => {
-    async function fetchOrg() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
-        }
-      }
-    }
-    fetchOrg();
-  }, [session?.accessToken]);
 
   // Fetch warehouses
   useEffect(() => {

@@ -38,7 +38,6 @@ import { toast } from "sonner";
 import { formatPoints, formatPrice, formatDate, formatDateTime } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { MultiCurrencyTotal } from "@/components/shared/MultiCurrencyTotal";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { createMoneyHelpers } from "@/lib/currency";
@@ -63,6 +62,7 @@ import {
   LoyaltyProgram,
 } from "@/actions/settings.actions";
 import { Star } from "lucide-react";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 /**
  * Arrondi d'une saisie de points au centième.
@@ -79,7 +79,7 @@ export default function PendingPaymentsPage() {
   const router = useRouter();
 
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [pendingSales, setPendingSales] = useState<Sale[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -162,10 +162,12 @@ export default function PendingPaymentsPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           // Récupérer les ventes partiellement payées ET en attente.
           // Chaque fetch est indépendant : si l'un échoue, on prévient
@@ -215,7 +217,7 @@ export default function PendingPaymentsPage() {
     };
 
     fetchData();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
 
   const openPaymentDialog = (sale: Sale) => {

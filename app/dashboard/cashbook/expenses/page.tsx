@@ -22,9 +22,7 @@ import { formatDate, formatNumber } from "@/lib/format";
 import { createMoneyHelpers } from "@/lib/currency";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
-  getUserOrganizations,
-  Organization,
-} from "@/actions/organization.actions";
+  } from "@/actions/organization.actions";
 import {
   getOrganizationCurrencies,
   OrganizationCurrency,
@@ -89,6 +87,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700" },
@@ -103,7 +102,7 @@ export default function ExpensesPage() {
   const { data: session } = useSession();
   const { hasPermission } = usePermissions();
   const { currency: defaultCurrency } = useCurrency();
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
   const printer = useReceiptPrinter();
   const [isLoading, setIsLoading] = useState(true);
@@ -168,22 +167,19 @@ export default function ExpensesPage() {
   // Devise de la dépense en cours de saisie (repli : devise principale).
   const expenseCurrency = createForm.currency || primaryCode;
 
+  // Les devises de l'organisation, elle-même fournie par le contexte
+  // d'`OrganizationChecker` : la redemander ici retardait cet appel
+  // d'un aller-retour complet.
   useEffect(() => {
-    async function fetchOrganization() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          const org = result.data[0];
-          setOrganization(org);
-          const ccyRes = await getOrganizationCurrencies(session.accessToken, org.id);
-          if (ccyRes.success && ccyRes.data) {
-            setOrgCurrencies(Array.isArray(ccyRes.data) ? ccyRes.data : []);
-          }
-        }
+    async function fetchCurrencies() {
+      if (!session?.accessToken || !organization?.id) return;
+      const ccyRes = await getOrganizationCurrencies(session.accessToken, organization.id);
+      if (ccyRes.success && ccyRes.data) {
+        setOrgCurrencies(Array.isArray(ccyRes.data) ? ccyRes.data : []);
       }
     }
-    fetchOrganization();
-  }, [session?.accessToken]);
+    fetchCurrencies();
+  }, [session?.accessToken, organization?.id]);
 
   useEffect(() => {
     if (organization && session?.accessToken) {

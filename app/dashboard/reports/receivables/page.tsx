@@ -12,8 +12,8 @@ import { toast } from "sonner";
 import { StatValue } from "@/components/shared/StatValue";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { createMoneyHelpers } from "@/lib/currency";
-import { getUserOrganizations } from "@/actions/organization.actions";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
+import { useOrganization } from "@/components/auth/organization-checker";
 import {
   getReceivablesReport,
   AGING_BUCKET_LABELS,
@@ -33,6 +33,7 @@ import {
  */
 export default function ReceivablesReportPage() {
   const { data: session } = useSession();
+  const { organization } = useOrganization();
   const { currency: defaultCurrency } = useCurrency();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -45,13 +46,13 @@ export default function ReceivablesReportPage() {
   );
 
   const fetchData = useCallback(async () => {
-    if (!session?.accessToken) return;
+    // L'organisation vient du contexte d'`OrganizationChecker`, qui ne rend
+    // ses enfants qu'une fois celle-ci chargée. La redemander ici mettait un
+    // `GET /organizations/` devant les deux requêtes utiles de la page.
+    if (!session?.accessToken || !organization) return;
     setIsLoading(true);
     try {
-      const orgResult = await getUserOrganizations(session.accessToken);
-      if (!orgResult.success || !orgResult.data?.length) return;
-
-      const org = orgResult.data[0];
+      const org = organization;
 
       const [reportResult, currenciesResult] = await Promise.all([
         getReceivablesReport(session.accessToken, org.id),
@@ -71,7 +72,7 @@ export default function ReceivablesReportPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   useEffect(() => {
     fetchData();

@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatDateTime } from "@/lib/format";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getSales,
   Sale,
@@ -36,6 +35,7 @@ import {
   SaleFilters,
 } from "@/actions/sales.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const STATUS_CONFIG: Record<SaleStatus, { label: string; color: string }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700" },
@@ -52,7 +52,7 @@ export default function SalesHistoryPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [sales, setSales] = useState<Sale[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
@@ -67,20 +67,6 @@ export default function SalesHistoryPage() {
   const pageSize = 20;
 
   // Fetch organization on mount
-  useEffect(() => {
-    const fetchOrg = async () => {
-      if (!session?.accessToken) return;
-      try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          setOrganization(orgResult.data[0]);
-        }
-      } catch (error) {
-        toast.error("Erreur lors du chargement");
-      }
-    };
-    fetchOrg();
-  }, [session?.accessToken]);
 
   // Fetch sales with pagination
   const fetchSales = useCallback(async () => {

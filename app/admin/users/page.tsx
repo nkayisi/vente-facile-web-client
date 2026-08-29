@@ -94,7 +94,7 @@ export default function AdminUsersPage() {
       }
       setIsLoading(false);
     });
-  }, [session, debouncedSearch, statusFilter, roleFilter, currentPage, pageSize]);
+  }, [session?.accessToken, debouncedSearch, statusFilter, roleFilter, currentPage, pageSize]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(fetchUsers, [fetchUsers]);

@@ -34,7 +34,6 @@ import {
 import { toast } from "sonner";
 import { formatPrice, formatDateTime, formatPoints } from "@/lib/format";
 import { PermissionGate } from "@/components/auth/permission-gate";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getSale,
   cancelSale,
@@ -56,6 +55,7 @@ import {
 } from "@/lib/receipt";
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const STATUS_CONFIG: Record<SaleStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -74,7 +74,7 @@ export default function SaleDetailPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [sale, setSale] = useState<Sale | null>(null);
   const { chrome, paperWidth, settings } = useReceiptChrome(
     session?.accessToken,
@@ -104,10 +104,12 @@ export default function SaleDetailPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           const saleResult = await getSale(session.accessToken, org.id, saleId);
           if (saleResult.success && saleResult.data) {

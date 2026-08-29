@@ -53,7 +53,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/format";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
 import { getPackaging, formatPackagedSplit } from "@/lib/packaging";
@@ -72,6 +71,7 @@ import {
   CreateStockTransferData,
 } from "@/actions/stock.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const STATUS_CONFIG: Record<TransferStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -87,7 +87,7 @@ export default function TransfersPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [transfers, setTransfers] = useState<StockTransfer[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -149,10 +149,12 @@ export default function TransfersPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           // Fetch warehouses
           const warehousesResult = await getWarehouses(session.accessToken, org.id);
@@ -172,7 +174,7 @@ export default function TransfersPage() {
     };
 
     fetchData();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   // Fetch transfers with filters
   const fetchTransfers = useCallback(async (orgId?: string) => {

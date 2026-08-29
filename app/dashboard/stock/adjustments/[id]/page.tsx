@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { formatPrice, formatDateTime } from "@/lib/format";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { useOrganization } from "@/components/auth/organization-checker";
 import {
   getStockAdjustment,
   approveStockAdjustment,
@@ -54,7 +54,7 @@ export default function AdjustmentDetailPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [adjustment, setAdjustment] = useState<StockAdjustment | null>(null);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -66,10 +66,12 @@ export default function AdjustmentDetailPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           // Fetch adjustment details
           const adjustmentResult = await getStockAdjustment(
@@ -155,8 +157,6 @@ export default function AdjustmentDetailPage() {
       setIsSubmitting(false);
     }
   };
-
-
 
   if (isLoading) {
     return (

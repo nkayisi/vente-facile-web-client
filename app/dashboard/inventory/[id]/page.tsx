@@ -76,7 +76,6 @@ import {
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { formatDate, formatDateTime, formatPrice, formatDecimal } from "@/lib/format";
 import { useCurrency } from "@/components/providers/currency-provider";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getInventorySession,
   getInventoryCounts,
@@ -93,6 +92,7 @@ import {
   InventoryCountFilters,
 } from "@/actions/inventory.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -135,7 +135,7 @@ export default function InventoryDetailPage() {
   const { currency: defaultCurrency } = useCurrency();
   const sessionId = params.id as string;
 
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const { chrome } = useReceiptChrome(session?.accessToken, organization);
   const reportIdentity = chrome?.org;
   const [inventorySession, setInventorySession] = useState<InventorySession | null>(null);
@@ -172,17 +172,6 @@ export default function InventoryDetailPage() {
   const [isCancelling, setIsCancelling] = useState(false);
 
   // Fetch organization
-  useEffect(() => {
-    async function fetchOrg() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
-        }
-      }
-    }
-    fetchOrg();
-  }, [session?.accessToken]);
 
   const getCountFilters = useCallback((): InventoryCountFilters => {
     const filters: InventoryCountFilters = { page: currentPage };
@@ -193,8 +182,16 @@ export default function InventoryDetailPage() {
     return filters;
   }, [countFilter, currentPage, search]);
 
+  // Valeurs primitives dérivées : elles seules doivent piloter le rechargement
+  // des lignes de comptage.
+  const inventorySessionId = inventorySession?.id;
+  const inventorySessionStatus = inventorySession?.status;
+
   const fetchCounts = useCallback(async () => {
-    if (!session?.accessToken || !organization?.id || !inventorySession || inventorySession.status === "draft") {
+    if (
+      !session?.accessToken || !organization?.id
+      || !inventorySessionId || inventorySessionStatus === "draft"
+    ) {
       return;
     }
     const countsResult = await getInventoryCounts(
@@ -219,7 +216,11 @@ export default function InventoryDetailPage() {
     }
   }, [
     getCountFilters,
-    inventorySession,
+    // L'ID et le statut, PAS l'objet : `setInventorySession` fabrique un objet
+    // neuf, dont la seule nouvelle identité relançait ce chargeur. La page
+    // demandait donc ses lignes de comptage deux fois à chaque ouverture.
+    inventorySessionId,
+    inventorySessionStatus,
     organization?.id,
     session?.accessToken,
     sessionId,
@@ -230,36 +231,20 @@ export default function InventoryDetailPage() {
     if (!session?.accessToken || !organization?.id) return;
     setIsLoading(true);
 
+    // Cette fonction ne charge QUE la session. Les lignes de comptage étaient
+    // aussi tirées ici, puis une seconde fois par l'effet de `fetchCounts` que
+    // `setInventorySession` venait de réveiller : deux appels identiques à
+    // chaque ouverture. `fetchCounts` en est désormais le seul propriétaire, et
+    // il part dès que le statut de la session est connu.
     const sessionResult = await getInventorySession(session.accessToken, organization.id, sessionId);
     if (sessionResult.success && sessionResult.data) {
       setInventorySession(sessionResult.data);
-
-      if (sessionResult.data.status !== "draft") {
-        const countsResult = await getInventoryCounts(
-          session.accessToken,
-          organization.id,
-          sessionId,
-          getCountFilters()
-        );
-        if (countsResult.success && countsResult.data) {
-          const pageCounts = countsResult.data.results || [];
-          setCounts(pageCounts);
-          setCountsTotal(countsResult.data.count || 0);
-          setHasNextCountsPage(countsResult.data.next !== null);
-          setHasPreviousCountsPage(countsResult.data.previous !== null);
-          setCountOriginals((prev) => {
-            const next = { ...prev };
-            for (const c of pageCounts) next[c.id] = c;
-            return next;
-          });
-        }
-      }
     } else {
       toast.error("Inventaire introuvable");
       router.push("/dashboard/inventory");
     }
     setIsLoading(false);
-  }, [session?.accessToken, organization?.id, sessionId, router, getCountFilters]);
+  }, [session?.accessToken, organization?.id, sessionId, router]);
 
   useEffect(() => {
     fetchData();

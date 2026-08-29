@@ -52,7 +52,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatDate } from "@/lib/format";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
 import {
@@ -78,6 +77,7 @@ import {
   CreateStockAdjustmentData,
 } from "@/actions/stock.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const STATUS_CONFIG: Record<AdjustmentStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -117,7 +117,7 @@ export default function AdjustmentsPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [adjustments, setAdjustments] = useState<StockAdjustment[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -173,10 +173,12 @@ export default function AdjustmentsPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           // Fetch warehouses
           const warehousesResult = await getWarehouses(session.accessToken, org.id);
@@ -196,7 +198,7 @@ export default function AdjustmentsPage() {
     };
 
     fetchData();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   // Fetch adjustments with filters
   const fetchAdjustments = useCallback(async (orgId?: string) => {
@@ -248,7 +250,7 @@ export default function AdjustmentsPage() {
     };
 
     fetchWarehouseStocks();
-  }, [formData.warehouse, session, organization]);
+  }, [formData.warehouse, session?.accessToken, organization?.id]);
 
   const searchProducts = useCallback(
     async (query: string) => {
@@ -414,8 +416,6 @@ export default function AdjustmentsPage() {
       setIsSubmitting(false);
     }
   };
-
-
 
   if (isLoading) {
     return (

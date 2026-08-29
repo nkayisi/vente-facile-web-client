@@ -54,7 +54,6 @@ import { PermissionGate } from "@/components/auth/permission-gate";
 import { formatPrice, formatNumber, formatDateTime } from "@/lib/format";
 import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
 import { ActionTile } from "@/components/shared/ActionTile";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getWarehouses,
   createWarehouse,
@@ -71,6 +70,7 @@ import {
   CreateWarehouseData,
 } from "@/actions/stock.actions";
 import { useSubscription } from "@/components/auth/subscription-guard";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 export default function StockPage() {
   const { data: session } = useSession();
@@ -79,7 +79,7 @@ export default function StockPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [lowStockItems, setLowStockItems] = useState<Stock[]>([]);
@@ -109,10 +109,12 @@ export default function StockPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           const [warehousesResult, stocksResult, lowStockResult, expiringResult, movementsResult] =
             await Promise.all([
@@ -148,7 +150,7 @@ export default function StockPage() {
     };
 
     fetchData();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {

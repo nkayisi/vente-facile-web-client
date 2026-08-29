@@ -21,9 +21,7 @@ import {
 import { toast } from "sonner";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
-  getUserOrganizations,
-  Organization,
-} from "@/actions/organization.actions";
+  } from "@/actions/organization.actions";
 import {
   getOrganizationCurrencies,
   OrganizationCurrency,
@@ -70,6 +68,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   sale: "Vente",
@@ -93,7 +92,7 @@ const MONTH_NAMES = [
 export default function CashbookReportsPage() {
   const { data: session } = useSession();
   const { currency: defaultCurrency } = useCurrency();
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   // Même identité que les tickets thermiques : un rapport et un reçu émis par
   // la même boutique doivent porter le même en-tête.
   const { chrome } = useReceiptChrome(session?.accessToken, organization);
@@ -222,22 +221,19 @@ export default function CashbookReportsPage() {
 
   const [activeTab, setActiveTab] = useState("daily");
 
+  // Les devises de l'organisation, elle-même fournie par le contexte
+  // d'`OrganizationChecker` : la redemander ici retardait cet appel
+  // d'un aller-retour complet.
   useEffect(() => {
-    async function fetchOrganization() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          const org = result.data[0];
-          setOrganization(org);
-          const ccyRes = await getOrganizationCurrencies(session.accessToken, org.id);
-          if (ccyRes.success && ccyRes.data) {
-            setOrgCurrencies(Array.isArray(ccyRes.data) ? ccyRes.data : []);
-          }
-        }
+    async function fetchCurrencies() {
+      if (!session?.accessToken || !organization?.id) return;
+      const ccyRes = await getOrganizationCurrencies(session.accessToken, organization.id);
+      if (ccyRes.success && ccyRes.data) {
+        setOrgCurrencies(Array.isArray(ccyRes.data) ? ccyRes.data : []);
       }
     }
-    fetchOrganization();
-  }, [session?.accessToken]);
+    fetchCurrencies();
+  }, [session?.accessToken, organization?.id]);
 
   useEffect(() => {
     if (organization && session?.accessToken) {

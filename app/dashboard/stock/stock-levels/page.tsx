@@ -32,9 +32,9 @@ import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { ProductThumb } from "@/components/products/product-thumb";
+import { useOrganization } from "@/components/auth/organization-checker";
 import {
   getStocks,
   exportStockLevels,
@@ -49,7 +49,7 @@ export default function StocksPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
@@ -74,10 +74,12 @@ export default function StocksPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           // Liste des entrepôts chargée à la volée via le SearchableSelectAsync
         }
@@ -90,7 +92,7 @@ export default function StocksPage() {
     };
 
     fetchData();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   // Filtres envoyés au serveur. Mémoïsés pour que l'effet de chargement ne se
   // redéclenche pas à chaque rendu sur un objet pourtant identique.

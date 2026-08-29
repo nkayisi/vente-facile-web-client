@@ -97,7 +97,7 @@ export default function LoyaltyRewardsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [session?.accessToken, organization]);
+  }, [session?.accessToken, organization?.id]);
 
   useEffect(() => {
     load();

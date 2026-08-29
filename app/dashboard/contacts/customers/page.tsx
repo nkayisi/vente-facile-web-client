@@ -49,7 +49,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatDateTime } from "@/lib/format";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getCustomers,
   createCustomer,
@@ -62,13 +61,14 @@ import {
 } from "@/actions/contacts.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { PermissionGate } from "@/components/auth/permission-gate";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 export default function CustomersPage() {
   const { data: session } = useSession();
   const router = useRouter();
 
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -103,22 +103,6 @@ export default function CustomersPage() {
     is_active: true,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-
-  // Fetch organization on mount
-  useEffect(() => {
-    const fetchOrg = async () => {
-      if (!session?.accessToken) return;
-      try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          setOrganization(orgResult.data[0]);
-        }
-      } catch (error) {
-        toast.error("Erreur lors du chargement");
-      }
-    };
-    fetchOrg();
-  }, [session?.accessToken]);
 
   // Fetch customers with pagination
   const fetchCustomers = useCallback(async () => {

@@ -2,7 +2,6 @@
 
 import { flattenDrfErrors } from "@/lib/api/drf-error";
 import { Customer, getCustomer, getCustomers, createCustomer, CreateCustomerData } from "@/actions/contacts.actions";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProducts, Product } from "@/actions/products.actions";
 import { getLockedProducts, LockedProductsResponse } from "@/actions/inventory.actions";
 import { getOrganizationCurrencies, OrganizationCurrency, getCustomerLoyalty, CustomerLoyalty, getLoyaltyProgram, LoyaltyProgram, getOrganizationSettings, OrganizationSettings } from "@/actions/settings.actions";
@@ -94,6 +93,11 @@ import {
   maxUsablePoints as coreMaxUsablePoints,
   loyaltyDiscount as coreLoyaltyDiscount,
   evaluateCredit as coreEvaluateCredit,
+  buildSalePayload,
+  addableBase as coreAddableBase,
+  addableChannels as coreAddableChannels,
+  addableLoose as coreAddableLoose,
+  addableSealed as coreAddableSealed,
   type BasketLine,
 } from "@/lib/pos";
 import { unpackStock } from "@/actions/stock.actions";
@@ -107,6 +111,7 @@ import {
 } from "@/lib/receipt";
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 /** Aligné sur le défaut backend (`max_sale_discount_percent` dans les paramètres org). */
 const MAX_SALE_DISCOUNT_PERCENT = 50;
@@ -339,7 +344,7 @@ export default function POSPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [currentSession, setCurrentSession] = useState<RegisterSession | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -430,10 +435,12 @@ export default function POSPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           // Check for active session
           const sessionResult = await getCurrentSession(session.accessToken, org.id);
@@ -508,7 +515,7 @@ export default function POSPage() {
     };
 
     fetchData();
-  }, [session?.accessToken, router]);
+  }, [session?.accessToken, organization?.id, router]);
 
   // Focus search on load
   useEffect(() => {
@@ -539,24 +546,26 @@ export default function POSPage() {
       }
     };
     loadCustomerLoyalty();
-  }, [session?.accessToken, organization, selectedCustomer]);
+  }, [session?.accessToken, organization?.id, selectedCustomer]);
 
   // Get available stock for a product (considering what's already in cart)
   const getAvailableStock = (product: Product) => {
     return product.stock_quantity ?? 0;
   };
 
-  // Get remaining stock (available minus what's in cart)
   const getRemainingStock = (product: Product) => {
     const available = getAvailableStock(product);
     const inCart = cart.find(item => item.product.id === product.id)?.quantity || 0;
     return available - inCart;
   };
 
-  /** Quantité max qu’on peut encore ajouter au panier (respect du stock). */
+  /** Quantité max qu'on peut encore ajouter au panier (respect du stock). */
   const getMaxAddableQty = (product: Product) => {
-    if (!product.track_inventory || product.allow_negative_stock) return 9999;
-    return Math.max(0, getRemainingStock(product));
+    // `null` du paquet vaut « aucune borne » : stock non suivi, ou entrepôt
+    // tolérant le découvert. Le grand nombre garde la sémantique d'origine des
+    // appelants, qui comparent tous à une quantité.
+    const borne = coreAddableBase(product, cart as BasketLine[]);
+    return borne === null ? 9999 : borne;
   };
 
   const canAddProductToCart = (product: Product) => {
@@ -727,58 +736,24 @@ export default function POSPage() {
    * Unités de détail encore ajoutables, `null` quand rien ne les borne
    * (produit non suivi, ou entrepôt qui tolère le stock négatif).
    */
-  const addableBase = (product: Product): number | null => {
-    if (!product.track_inventory || product.allow_negative_stock) return null;
-    return Math.max(0, getRemainingStock(product));
-  };
+  // Les bornes de stock vivent dans `@vente-facile/core/pos` : elles décident
+  // des REFUS, et deux surfaces qui refusent différemment se remarquent au
+  // comptoir, pas en relecture. `lines` est le panier tel quel : le paquet
+  // retrouve la ligne d'un produit par `product.id`.
+  const addableBase = (product: Product): number | null =>
+    coreAddableBase(product, cart as BasketLine[]);
 
-  /**
-   * Ce que les deux canaux offrent encore, une fois retranché ce que le panier
-   * consomme déjà. `null` quand le partage n'est pas connu (multi-entrepôts) :
-   * le serveur reste seul juge, on n'invente pas un zéro bloquant.
-   *
-   * La simulation rejoue l'ordre du serveur (contenants scellés d'abord, puis
-   * ouverture pour servir le détail), sans quoi deux lignes du même produit se
-   * compteraient mal.
-   */
   const addableChannels = (
     product: Product,
     ignoreCartLine = false
-  ): ChannelAvailability => {
-    const factor = packagingFactorOf(product);
-    if (product.stock_loose === null || product.stock_loose === undefined) {
-      return { sealed: null, loose: null };
-    }
-    const stock: ChannelAvailability = {
-      sealed:
-        product.stock_packages === null || product.stock_packages === undefined
-          ? null
-          : product.stock_packages,
-      loose: parseFloat(product.stock_loose) || 0,
-    };
-    if (ignoreCartLine || !factor) return stock;
-
-    const line = cart.find(item => item.product.id === product.id);
-    if (!line) return stock;
-    return remainingChannels(
-      stock,
-      { packages: line.packageQuantity, loose: looseQuantityOf(line) },
-      factor
-    );
-  };
+  ): ChannelAvailability =>
+    coreAddableChannels(product, cart as BasketLine[], { ignoreCartLine });
 
   const addableLoose = (product: Product, ignoreCartLine = false): number | null =>
-    addableChannels(product, ignoreCartLine).loose;
+    coreAddableLoose(product, cart as BasketLine[], { ignoreCartLine });
 
-  /**
-   * Contenants encore scellés et donc réellement vendables en gros. Borne
-   * absente si l'entrepôt tolère le découvert, comme le fait
-   * `PackagingService.assert_sealed_available`.
-   */
-  const addableSealed = (product: Product, ignoreCartLine = false): number | null => {
-    if (!product.track_inventory || product.allow_negative_stock) return null;
-    return addableChannels(product, ignoreCartLine).sealed;
-  };
+  const addableSealed = (product: Product, ignoreCartLine = false): number | null =>
+    coreAddableSealed(product, cart as BasketLine[], { ignoreCartLine });
 
   /** Relit le catalogue de l'entrepôt courant après un mouvement de stock. */
   const refreshProducts = async () => {
@@ -1135,75 +1110,38 @@ export default function POSPage() {
     try {
       // Prix unitaires convertis dans la devise de la facture (le backend
       // recalcule les totaux à partir de ces prix, en devise de vente).
-      const items: CreateSaleItemData[] = cart.map(item => {
-        const base: CreateSaleItemData = {
-          product: item.product.id,
-          unit_price: convMoney(item.unit_price, primaryCode(), invCur),
-          discount_percentage: r2(item.discount_percentage),
-        };
-
-        // Produit vendu en gros : on envoie la saisie du caissier (paquets et
-        // unités) plutôt qu'un total calculé ici. Le serveur fait la conversion
-        // et reste seul juge de la quantité enregistrée.
-        const factor = packagingFactorOf(item.product);
-        if (factor) {
-          return {
-            ...base,
-            package_quantity: item.packageQuantity,
-            loose_quantity: looseQuantityOf(item),
-            package_unit_price: convMoney(
-              parseFloat(item.product.wholesale_price || "0"),
-              primaryCode(),
-              invCur
-            ),
-          };
-        }
-        return { ...base, quantity: item.quantity };
-      });
-
-      // Un CreatePaymentData par règlement (montant remis dans sa devise).
-      const payments: CreatePaymentData[] = validTenders.map(t => ({
-        payment_method: t.method,
-        tendered_amount: roundMoney(parseFloat(t.amount), t.currency),
-        currency: t.currency,
-        // Taux : devise de la vente pour 1 unité de la devise du règlement.
-        exchange_rate: t.currency === invCur
-          ? undefined
-          : rateOf(t.currency) / rateOf(invCur),
-        ...(t.reference ? { reference: t.reference } : {}),
-      }));
-
-      const saleType = isCreditSale ? "credit" : "retail";
-
-      // Réduction obtenue par les points, en devise principale (`point_value` y
-      // est libellé). Le serveur la reconvertit dans la devise de facture via
-      // `resolve_redemption(target_currency=...)`, on ne la restreint donc plus
-      // aux factures en principale : cette garde faisait disparaître les points
-      // en silence, sans le moindre message au caissier.
+      // Le corps de la requête est construit par `@vente-facile/core/pos`, le
+      // même code que l'application mobile appelle. Le backend prouve par test
+      // que son opération `sale.create` et cet appel direct laissent le même
+      // état ; cette preuve ne tient que si les deux surfaces envoient la même
+      // chose, d'où la construction partagée plutôt que deux copies à surveiller.
       const pointsDiscount = calculateLoyaltyDiscount();
 
-      const result = await createSale(session.accessToken, organization.id, {
-        register: currentSession.register,
-        warehouse: currentSession.warehouse || undefined,
-        customer: selectedCustomer?.id,
-        sale_type: saleType,
-        // Échéance : seulement sur une vente à crédit, et seulement si le
-        // caissier en a fixé une.
-        ...(isCreditSale && creditDueDate ? { due_date: creditDueDate } : {}),
-        // Remise globale convertie dans la devise de la facture.
-        global_discount_amount: convMoney(calculateGlobalDiscountAmount(), primaryCode(), invCur),
-        discount_percentage: 0,
-        currency: invCur,
-        exchange_rate: rateOf(invCur),
-        change_currency: changeCurrency || invCur,
-        is_pos: true,
-        items,
-        payments,
-        // Points de fidélité utilisés. Le serveur plafonne et convertit. On
-        // n'envoie rien quand la modale n'affiche aucune remise (saisie sous le
-        // minimum) : le payload doit dire la même chose que l'écran.
-        points_used: usePoints && pointsDiscount > 0 ? pointsToUse : undefined,
-      });
+      const result = await createSale(
+        session.accessToken,
+        organization.id,
+        buildSalePayload({
+          lines: cart.map(item => ({ ...item, productId: item.product.id })),
+          currencies,
+          invoiceCurrency: invCur,
+          changeCurrency,
+          globalDiscountAmount,
+          tenders: validTenders.map(t => ({
+            method: t.method,
+            currency: t.currency,
+            amount: t.amount,
+            reference: t.reference,
+          })),
+          register: currentSession.register,
+          warehouse: currentSession.warehouse || undefined,
+          customer: selectedCustomer?.id,
+          isCredit: isCreditSale,
+          dueDate: creditDueDate,
+          loyaltyProgram,
+          pointsToUse: usePoints ? pointsToUse : 0,
+          isPos: true,
+        }),
+      );
 
       if (result.success && result.data) {
         // Valeurs autoritatives renvoyées par le backend (peuvent différer du calcul
@@ -1572,7 +1510,7 @@ export default function POSPage() {
       }
       setIsSearching(false);
     }, 300);
-  }, [session?.accessToken, organization, currentSession?.warehouse]);
+  }, [session?.accessToken, organization?.id, currentSession?.warehouse]);
 
   // Cleanup debounce on unmount
   useEffect(() => {

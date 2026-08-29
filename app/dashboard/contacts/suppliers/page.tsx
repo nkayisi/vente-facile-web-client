@@ -48,7 +48,6 @@ import {
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
 import { useCurrency } from "@/components/providers/currency-provider";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import {
   getSuppliers,
@@ -61,6 +60,7 @@ import {
 } from "@/actions/contacts.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { PermissionGate } from "@/components/auth/permission-gate";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 export default function SuppliersPage() {
   const { data: session } = useSession();
@@ -68,7 +68,7 @@ export default function SuppliersPage() {
   const { currency: defaultCurrency } = useCurrency();
 
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -109,10 +109,12 @@ export default function SuppliersPage() {
     const fetchOrg = async () => {
       if (!session?.accessToken) return;
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
           // Fetch organization currencies
           const currResult = await getOrganizationCurrencies(session.accessToken, org.id);
           if (currResult.success && currResult.data) {
@@ -124,7 +126,7 @@ export default function SuppliersPage() {
       }
     };
     fetchOrg();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   // Fetch suppliers with pagination
   const fetchSuppliers = useCallback(async () => {

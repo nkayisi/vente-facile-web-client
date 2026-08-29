@@ -42,7 +42,6 @@ import {
   Loader2,
   Ruler,
 } from "lucide-react";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   getUnits,
   createUnit,
@@ -53,11 +52,12 @@ import {
 } from "@/actions/products.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 export default function UnitsPage() {
   const { data: session } = useSession();
 
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [units, setUnits] = useState<Unit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -81,18 +81,6 @@ export default function UnitsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Fetch organization
-  useEffect(() => {
-    async function fetchOrganization() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
-        }
-      }
-    }
-    fetchOrganization();
-  }, [session?.accessToken]);
 
   // Fetch units
   const fetchUnits = useCallback(async () => {

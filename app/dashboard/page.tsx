@@ -19,11 +19,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
+import { useOrganization } from "@/components/auth/organization-checker";
 import { StatValue } from "@/components/shared/StatValue";
 import {
-  getUserOrganizations,
   getDashboardStats,
-  Organization,
   DashboardStats,
   DashboardPeriod,
 } from "@/actions/organization.actions";
@@ -54,27 +53,29 @@ const COLORS = ["#f97316", "#3b82f6", "#22c55e", "#a855f7", "#ec4899", "#14b8a6"
 
 export default function DashboardPage() {
   const { data: session } = useSession();
+  // L'organisation vient du contexte rempli par `OrganizationChecker`, qui
+  // enveloppe déjà tout le tableau de bord. La recharger ici ajoutait un
+  // `GET /organizations/` en TÊTE d'attente : la page ne demandait ses vraies
+  // données qu'une fois cette première réponse revenue.
+  const { organization } = useOrganization();
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [period, setPeriod] = useState<DashboardPeriod>("month");
 
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
-      if (!session?.accessToken) return;
+      if (!session?.accessToken || !organization?.id) return;
 
       setIsLoading(true);
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
-
-          const statsResult = await getDashboardStats(session.accessToken, org.id, period);
-          if (statsResult.success && statsResult.data) {
-            setStats(statsResult.data);
-          }
+        const statsResult = await getDashboardStats(
+          session.accessToken,
+          organization.id,
+          period,
+        );
+        if (statsResult.success && statsResult.data) {
+          setStats(statsResult.data);
         }
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
@@ -85,7 +86,7 @@ export default function DashboardPage() {
     };
 
     fetchData();
-  }, [session?.accessToken, period]);
+  }, [session?.accessToken, organization?.id, period]);
 
 
   // Format date for chart

@@ -27,7 +27,7 @@ import {
   Settings,
   Save,
 } from "lucide-react";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { Organization } from "@/actions/organization.actions";
 import {
   getProduct,
   updateProduct,
@@ -48,6 +48,7 @@ import { ProductImageField } from "@/components/products/product-image-field";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useCurrency } from "@/components/providers/currency-provider";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 export default function EditProductPage() {
   const { data: session } = useSession();
@@ -57,7 +58,7 @@ export default function EditProductPage() {
   const { currency: defaultCurrency } = useCurrency();
 
   // Organization
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
 
   // Original product
   const [originalProduct, setOriginalProduct] = useState<Product | null>(null);
@@ -74,18 +75,6 @@ export default function EditProductPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<"general" | "pricing" | "stock" | "settings">("general");
 
-  // Fetch organization
-  useEffect(() => {
-    async function fetchOrganization() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
-        }
-      }
-    }
-    fetchOrganization();
-  }, [session?.accessToken]);
 
   // Fetch product and reference data
   useEffect(() => {

@@ -76,7 +76,6 @@ import {
     CheckCircle2,
     XCircle,
 } from "lucide-react";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
     getProducts,
     getCategories,
@@ -95,6 +94,7 @@ import { formatApiErrorBody } from "@/lib/api/drf-error";
 import { cn } from "@/lib/utils";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
+import { useOrganization } from "@/components/auth/organization-checker";
 import {
     RetailPriceCell,
     WholesalePriceCell,
@@ -106,7 +106,7 @@ export default function ProductsPage() {
     const router = useRouter();
 
     // State
-    const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
     const [products, setProducts] = useState<Product[]>([]);
     const [categoriesCount, setCategoriesCount] = useState(0);
     const [brandsCount, setBrandsCount] = useState(0);
@@ -146,18 +146,6 @@ export default function ProductsPage() {
     const [exportFormat, setExportFormat] = useState<"excel" | "pdf" | null>(null);
     const isExporting = exportFormat !== null;
 
-    // Fetch organization
-    useEffect(() => {
-        async function fetchOrganization() {
-            if (session?.accessToken) {
-                const result = await getUserOrganizations(session.accessToken);
-                if (result.success && result.data && result.data.length > 0) {
-                    setOrganization(result.data[0]);
-                }
-            }
-        }
-        fetchOrganization();
-    }, [session?.accessToken]);
 
     // Counts uniquement : la liste réelle est chargée à la volée par les
     // ``SearchableSelectAsyncWithEmpty`` (page_size=1 pour minimiser le payload).
@@ -182,7 +170,7 @@ export default function ProductsPage() {
             }
         }
         fetchFiltersData();
-    }, [session?.accessToken, organization]);
+    }, [session?.accessToken, organization?.id]);
 
     // Fetch products
     const fetchProducts = useCallback(async () => {

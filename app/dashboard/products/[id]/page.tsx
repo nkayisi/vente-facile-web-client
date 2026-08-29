@@ -34,11 +34,11 @@ import {
   CheckCircle,
   XCircle,
 } from "lucide-react";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProduct, deleteProduct, Product } from "@/actions/products.actions";
 import { cn } from "@/lib/utils";
 import { ProductThumb } from "@/components/products/product-thumb";
 import { formatUnitQuantity, pluralizeUnit } from "@/lib/units";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 export default function ProductDetailPage() {
   const { data: session } = useSession();
@@ -46,7 +46,7 @@ export default function ProductDetailPage() {
   const params = useParams();
   const productId = params.id as string;
 
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [product, setProduct] = useState<Product | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,18 +56,6 @@ export default function ProductDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Fetch organization
-  useEffect(() => {
-    async function fetchOrganization() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          setOrganization(result.data[0]);
-        }
-      }
-    }
-    fetchOrganization();
-  }, [session?.accessToken]);
 
   // Fetch product
   useEffect(() => {

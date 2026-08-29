@@ -96,7 +96,7 @@ export default function SubscriptionPage() {
       }
     }
     loadData();
-  }, [session?.accessToken, organization]);
+  }, [session?.accessToken, organization?.id]);
 
   function handleSelectPlan(plan: Plan, mode: "new" | "extend" = "new") {
     const q = new URLSearchParams({ planId: plan.id, cycle: "monthly", mode });

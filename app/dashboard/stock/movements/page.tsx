@@ -66,7 +66,6 @@ import { ChannelPriceBlock } from "@/components/products/channel-price-block";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { blendedUnitCost } from "@/lib/pricing";
 import { formatPrice, formatDateTime, formatDecimal } from "@/lib/format";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
 import {
@@ -81,6 +80,7 @@ import {
   exportStockMovements,
 } from "@/actions/stock.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 const MOVEMENT_TYPES: {
   value: MovementType;
@@ -139,7 +139,7 @@ export default function MovementsPage() {
   const [isLoading, setIsLoading] = useState(true);
   /** Rechargement du tableau seul : la page reste affichée, les lignes deviennent des squelettes */
   const [isFetching, setIsFetching] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [locations, setLocations] = useState<StockLocation[]>([]);
@@ -291,10 +291,12 @@ export default function MovementsPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
           // Les entrepôts ne sont pas préchargés : les deux sélecteurs de la page
           // les cherchent à la demande via `createWarehouseSearchHandler`.
           // Les mouvements sont chargés par l'effet des filtres, une fois
@@ -312,7 +314,7 @@ export default function MovementsPage() {
     };
 
     fetchData();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   // Fetch movements with filters
   const fetchMovements = useCallback(async (orgId?: string) => {

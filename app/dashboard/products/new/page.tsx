@@ -12,7 +12,6 @@ import { Switch } from "@/components/ui/switch";
 import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
 import { ArrowLeft, Loader2, Save, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import {
   createProduct,
   checkProductDuplicate,
@@ -30,6 +29,7 @@ import {
 } from "@/components/products/selling-setup-fields";
 import { ProductImageField } from "@/components/products/product-image-field";
 import { useCurrency } from "@/components/providers/currency-provider";
+import { useOrganization } from "@/components/auth/organization-checker";
 
 /**
  * Création d'un produit.
@@ -44,7 +44,7 @@ export default function NewProductPage() {
   const router = useRouter();
   const { currency: defaultCurrency } = useCurrency();
 
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   // La photo part dans un second appel, en multipart : on la garde à part du
@@ -83,16 +83,6 @@ export default function NewProductPage() {
     is_featured: false,
   });
 
-  useEffect(() => {
-    const loadOrganization = async () => {
-      if (!session?.accessToken) return;
-      const result = await getUserOrganizations(session.accessToken);
-      if (result.success && result.data && result.data.length > 0) {
-        setOrganization(result.data[0]);
-      }
-    };
-    loadOrganization();
-  }, [session?.accessToken]);
 
   const generateSKU = () => {
     if (!formData.name) return;
@@ -124,7 +114,7 @@ export default function NewProductPage() {
 
     const timer = setTimeout(checkDuplicates, 500);
     return () => clearTimeout(timer);
-  }, [formData.sku, formData.barcode, session, organization]);
+  }, [formData.sku, formData.barcode, session?.accessToken, organization?.id]);
 
   const handleChange = (field: keyof CreateProductData, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));

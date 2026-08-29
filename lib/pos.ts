@@ -31,6 +31,13 @@ export {
   maxUsablePoints,
   loyaltyDiscount,
   evaluateCredit,
+  buildSalePayload,
+  addableBase,
+  addableChannels,
+  addableLoose,
+  addableSealed,
+  inCart,
+  verifierAjout,
 } from "@vente-facile/core/pos";
 
 export type {

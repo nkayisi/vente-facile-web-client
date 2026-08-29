@@ -23,8 +23,8 @@ import {
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
 import { useCurrency } from "@/components/providers/currency-provider";
+import { useOrganization } from "@/components/auth/organization-checker";
 import {
   getCustomers,
   getSuppliers,
@@ -41,7 +41,7 @@ export default function ContactsPage() {
   const router = useRouter();
 
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const { currency: defaultCurrency } = useCurrency();
@@ -56,10 +56,12 @@ export default function ContactsPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           const [customersResult, suppliersResult, statsResult, debtResult] = await Promise.all([
             getCustomers(session.accessToken, org.id, { is_active: true }),
@@ -90,7 +92,7 @@ export default function ContactsPage() {
     };
 
     fetchData();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   if (isLoading) {
     return (

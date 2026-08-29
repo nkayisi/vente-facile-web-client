@@ -35,7 +35,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { formatPrice, formatNumber } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
-import { getUserOrganizations, Organization } from "@/actions/organization.actions";
+import { useOrganization } from "@/components/auth/organization-checker";
 import {
   getWarehouse,
   getWarehouseStockSummary,
@@ -58,7 +58,7 @@ export default function WarehouseDetailPage() {
 
   // State
   const [isLoading, setIsLoading] = useState(true);
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [warehouse, setWarehouse] = useState<Warehouse | null>(null);
   const [stockSummary, setStockSummary] = useState<WarehouseStockSummary | null>(null);
   const [stocks, setStocks] = useState<Stock[]>([]);
@@ -79,10 +79,12 @@ export default function WarehouseDetailPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
-          setOrganization(org);
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           // Fetch warehouse details
           const warehouseResult = await getWarehouse(session.accessToken, org.id, warehouseId);

@@ -25,9 +25,7 @@ import { formatDateTime } from "@/lib/format";
 import { createMoneyHelpers } from "@/lib/currency";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
-  getUserOrganizations,
-  Organization,
-} from "@/actions/organization.actions";
+  } from "@/actions/organization.actions";
 import {
   getOrganizationCurrencies,
   OrganizationCurrency,
@@ -57,6 +55,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { useOrganization } from "@/components/auth/organization-checker";
 import {
   Table,
   TableBody,
@@ -105,7 +104,7 @@ export default function CashbookPage() {
   const { data: session } = useSession();
   const { hasPermission } = usePermissions();
   const { currency: defaultCurrency } = useCurrency();
-  const [organization, setOrganization] = useState<Organization | null>(null);
+  const { organization } = useOrganization();
   const [isLoading, setIsLoading] = useState(true);
 
   // Data
@@ -193,22 +192,19 @@ export default function CashbookPage() {
   // Devise de l'entrée en cours de saisie (repli : devise principale).
   const movementCurrency = createForm.currency || primaryCode;
 
+  // Les devises de l'organisation, elle-même fournie par le contexte
+  // d'`OrganizationChecker` : la redemander ici retardait cet appel
+  // d'un aller-retour complet.
   useEffect(() => {
-    async function fetchOrganization() {
-      if (session?.accessToken) {
-        const result = await getUserOrganizations(session.accessToken);
-        if (result.success && result.data && result.data.length > 0) {
-          const org = result.data[0];
-          setOrganization(org);
-          const ccyRes = await getOrganizationCurrencies(session.accessToken, org.id);
-          if (ccyRes.success && ccyRes.data) {
-            setOrgCurrencies(Array.isArray(ccyRes.data) ? ccyRes.data : []);
-          }
-        }
+    async function fetchCurrencies() {
+      if (!session?.accessToken || !organization?.id) return;
+      const ccyRes = await getOrganizationCurrencies(session.accessToken, organization.id);
+      if (ccyRes.success && ccyRes.data) {
+        setOrgCurrencies(Array.isArray(ccyRes.data) ? ccyRes.data : []);
       }
     }
-    fetchOrganization();
-  }, [session?.accessToken]);
+    fetchCurrencies();
+  }, [session?.accessToken, organization?.id]);
 
   useEffect(() => {
     if (organization && session?.accessToken) {

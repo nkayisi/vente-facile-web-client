@@ -30,7 +30,7 @@ import { MultiCurrencyTotal } from "@/components/shared/MultiCurrencyTotal";
 import { createMoneyHelpers } from "@/lib/currency";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
-import { getUserOrganizations } from "@/actions/organization.actions";
+import { useOrganization } from "@/components/auth/organization-checker";
 import {
   getSales,
   getSalesStats,
@@ -98,6 +98,7 @@ function formatOpenSince(openedAt?: string | null): string | null {
 
 export default function SalesPage() {
   const { data: session } = useSession();
+  const { organization } = useOrganization();
   const router = useRouter();
 
   // State
@@ -120,9 +121,12 @@ export default function SalesPage() {
       if (!session?.accessToken) return;
 
       try {
-        const orgResult = await getUserOrganizations(session.accessToken);
-        if (orgResult.success && orgResult.data && orgResult.data.length > 0) {
-          const org = orgResult.data[0];
+        // L'organisation vient du contexte d'`OrganizationChecker`,
+        // qui ne rend ses enfants qu'une fois celle-ci chargée. La
+        // redemander ici plaçait un `GET /organizations/` en tête
+        // d'attente, avant la première requête utile de la page.
+        if (organization) {
+          const org = organization;
 
           // Fetch in parallel. La liste des caisses n'est plus chargée ici :
           // le compteur « caisses actives » a cédé la place au reste à
@@ -159,7 +163,7 @@ export default function SalesPage() {
     };
 
     fetchData();
-  }, [session?.accessToken]);
+  }, [session?.accessToken, organization?.id]);
 
   // Format time
   const formatTime = (dateString: string) => {
