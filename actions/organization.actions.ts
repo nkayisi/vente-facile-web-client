@@ -46,6 +46,15 @@ export interface Organization {
   timezone: string;
   is_active: boolean;
   default_currency_info?: CurrencyInfo;
+  /**
+   * Plafond de remise par ligne et sur le total, RÉSOLU par le serveur.
+   *
+   * Le POS le codait en dur à 50, valeur qui n'est que le DÉFAUT : un marchand
+   * qui l'abaisse à 20 voyait le comptoir accepter 45 %, puis le serveur
+   * refuser la vente entière après l'annonce du prix au client. Absent de la
+   * réponse (backend antérieur), on retombe sur le même défaut que lui.
+   */
+  max_sale_discount_percent?: string | number;
   created_at: string;
 }
 
@@ -410,6 +419,21 @@ export interface PaymentMethodData {
   count: number;
 }
 
+/**
+ * Encaissements d'une période, ventilés par DEVISE du billet reçu.
+ *
+ * `native_total` est le montant tel que le caissier l'a compté, dans cette
+ * devise ; `primary_total` le même ramené en principale. C'est ce second qui
+ * donne la PART : 7 728 FC et 132 775 $ ne sont pas comparables tels quels, et
+ * un anneau bâti sur les montants natifs donnerait au franc la part du lion.
+ */
+export interface CurrencyBreakdownData {
+  code: string;
+  native_total: string;
+  primary_total: string;
+  count: number;
+}
+
 export interface TopProductData {
   id: string;
   name: string;
@@ -432,6 +456,7 @@ export interface DashboardStats {
   charts: {
     sales_evolution: SalesEvolutionData[];
     by_payment_method: PaymentMethodData[];
+    by_currency: CurrencyBreakdownData[];
     top_products: TopProductData[];
   };
   inventory: {
@@ -439,6 +464,13 @@ export interface DashboardStats {
     stock_value: string;
   };
   period: string;
+  /**
+   * Devise de lecture de TOUT l'écran : chaque montant y est converti au taux
+   * figé sur sa vente. Le serveur l'expose plutôt que de la laisser deviner,
+   * faute de quoi le tableau de bord étiquetterait des montants convertis avec
+   * le symbole que son contexte porte, sans jamais savoir s'ils le sont.
+   */
+  currency: string;
   date_range: {
     start: string;
     end: string;

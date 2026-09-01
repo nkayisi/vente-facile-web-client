@@ -112,13 +112,34 @@ import {
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import { useOrganization } from "@/components/auth/organization-checker";
+import type { Organization } from "@/actions/organization.actions";
 
-/** Aligné sur le défaut backend (`max_sale_discount_percent` dans les paramètres org). */
-const MAX_SALE_DISCOUNT_PERCENT = 50;
+/**
+ * Défaut serveur, et RIEN DE PLUS.
+ *
+ * Le plafond de remise se règle par organisation ; 50 n'en est que la valeur
+ * par défaut. Le coder en dur ici faisait diverger le comptoir du serveur dans
+ * les deux sens : un marchand qui abaisse son plafond à 20 voyait la caisse
+ * accepter 45 % puis la vente refusée ENTIÈRE, après l'annonce du prix au
+ * client ; un marchand qui le relève à 80 ne pouvait pas saisir la remise
+ * qu'il avait lui-même autorisée.
+ *
+ * La valeur résolue arrive maintenant dans `organization.max_sale_discount_percent`
+ * (`_get_max_sale_discount_percent`, côté serveur). Ce défaut ne sert plus qu'au
+ * cas où le champ manque - backend antérieur, ou organisation pas encore chargée.
+ */
+const DEFAUT_MAX_SALE_DISCOUNT_PERCENT = 50;
 
-function clampSaleDiscountPercent(value: number): number {
+/** Le plafond de l'organisation, borné comme le serveur le borne. */
+function maxSaleDiscountOf(organization: Organization | null): number {
+  const brut = Number(organization?.max_sale_discount_percent);
+  if (!Number.isFinite(brut) || brut < 0) return DEFAUT_MAX_SALE_DISCOUNT_PERCENT;
+  return Math.min(100, brut);
+}
+
+function clampSaleDiscountPercent(value: number, max: number): number {
   const n = Number.isFinite(value) ? value : 0;
-  return Math.min(MAX_SALE_DISCOUNT_PERCENT, Math.max(0, n));
+  return Math.min(max, Math.max(0, n));
 }
 
 interface CartItem {
@@ -345,6 +366,8 @@ export default function POSPage() {
   // State
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
+  // Le plafond de remise est celui du MARCHAND, pas une constante du POS.
+  const maxSaleDiscountPercent = maxSaleDiscountOf(organization);
   const [currentSession, setCurrentSession] = useState<RegisterSession | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -727,7 +750,7 @@ export default function POSPage() {
       discount_percentage:
         selection.discountPercentage === undefined
           ? item.discount_percentage
-          : clampSaleDiscountPercent(selection.discountPercentage),
+          : clampSaleDiscountPercent(selection.discountPercentage, maxSaleDiscountPercent),
     };
     setCart(newCart);
   };
@@ -1954,7 +1977,7 @@ export default function POSPage() {
                         looseAvailable={addableLoose(item.product, true)}
                         sealedAvailable={addableSealed(item.product, true)}
                         onUnpack={unpackHandlerFor(item.product)}
-                        maxDiscountPercent={MAX_SALE_DISCOUNT_PERCENT}
+                        maxDiscountPercent={maxSaleDiscountPercent}
                         onConfirm={(selection) => setCartLineSelection(index, selection)}
                         onRemove={() => removeFromCart(index)}
                         onStep={(delta) => updateQuantity(index, delta)}
@@ -2131,7 +2154,7 @@ export default function POSPage() {
                       looseAvailable={addableLoose(item.product, true)}
                       sealedAvailable={addableSealed(item.product, true)}
                       onUnpack={unpackHandlerFor(item.product)}
-                      maxDiscountPercent={MAX_SALE_DISCOUNT_PERCENT}
+                      maxDiscountPercent={maxSaleDiscountPercent}
                       onConfirm={(selection) => setCartLineSelection(index, selection)}
                       onRemove={() => removeFromCart(index)}
                       onStep={(delta) => updateQuantity(index, delta)}
