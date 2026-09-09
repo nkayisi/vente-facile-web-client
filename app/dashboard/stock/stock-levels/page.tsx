@@ -101,7 +101,11 @@ export default function StocksPage() {
     if (debouncedSearch) filters.search = debouncedSearch;
     if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
     if (selectedCategory !== "all") filters.category = selectedCategory;
-    if (showLowStock) filters.status = "low";
+    // ⚠ `low_only`, pas `low` : le concentrateur compte désormais les rayons
+    // STRICTEMENT bas, ceux qui ne sont pas déjà comptés « En rupture » à côté.
+    // Un relevé doit mener à la liste qu'il compte, sinon on tape sur un nombre
+    // pour arriver sur autre chose.
+    if (showLowStock) filters.status = "low_only";
     return filters;
   }, [debouncedSearch, selectedWarehouse, selectedCategory, showLowStock]);
 

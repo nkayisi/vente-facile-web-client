@@ -385,7 +385,21 @@ export interface StockFilters {
   status?: StockStatusFilter;
 }
 
-export type StockStatusFilter = "out" | "low" | "available" | "reserved";
+/**
+ * Les états de réassort acceptés par `StockFilter.filter_status`.
+ *
+ * ⚠ `low` et `available` sont des ALERTES et se RECOUVRENT avec `out` :
+ * `low` compte les rayons vides, `available` les rayons bas. `out`, `low_only`
+ * et `healthy` PARTITIONNENT le stock, et ce sont ceux qu'un écran doit
+ * employer dès qu'il pose deux nombres côte à côte.
+ */
+export type StockStatusFilter =
+  | "out"
+  | "low"
+  | "available"
+  | "reserved"
+  | "low_only"
+  | "healthy";
 
 export interface StockMovementFilters {
   warehouse?: string;
@@ -791,8 +805,22 @@ export async function getLowStock(
   organizationId: string
 ): Promise<ApiResponse<Stock[]>> {
   try {
+    // ┌────────────────────────────────────────────────────────────────────┐
+    // │ `low_only`, ET NON L'ACTION `low-stock/`.                          │
+    // │                                                                    │
+    // │ `low-stock/` est une ALERTE : son critère est                      │
+    // │ `quantity <= reorder_point`, qui compte AUSSI les rayons vides.    │
+    // │ Le concentrateur posait donc « Stock bas 2 » à côté de « En        │
+    // │ rupture 2 » pour DEUX rayons, et le lecteur y voit quatre choses à │
+    // │ traiter. Deux nombres côte à côte dans un même cadran ne doivent   │
+    // │ pas compter les mêmes lignes.                                      │
+    // │                                                                    │
+    // │ `low_only` exclut les ruptures et les seuils à zéro. Il partitionne│
+    // │ avec `out` et `healthy`, et c'est la même règle que celle du       │
+    // │ terminal (`data/etats-stock.ts`).                                  │
+    // └────────────────────────────────────────────────────────────────────┘
     const response = await axios.get(
-      `${API_BASE_URL}/stocks/low-stock/`,
+      `${API_BASE_URL}/stocks/?status=low_only`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 
