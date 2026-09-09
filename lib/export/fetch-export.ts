@@ -14,11 +14,14 @@ export interface ExportFile {
   filename: string;
 }
 
-export type ExportFormat = "pdf" | "xlsx";
+export type ExportFormat = "pdf" | "xlsx" | "csv";
 
 const CONTENT_TYPES: Record<ExportFormat, string> = {
   pdf: "application/pdf",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  // Le point-virgule et le BOM sont posés par le serveur ; ici on ne décrit que
+  // le type MIME sous lequel le navigateur remet le fichier.
+  csv: "text/csv;charset=utf-8",
 };
 
 /**

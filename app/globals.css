@@ -25,6 +25,13 @@
   --color-input:                    var(--input);
   --color-border:                   var(--border);
   --color-destructive:              var(--destructive);
+  /* Les deux couleurs SÉMANTIQUES qui manquaient. Huit pages du tableau de
+     bord peignaient leurs statuts en `bg-green-100` / `bg-yellow-100` faute
+     de jeton : littérales, elles restent claires en thème sombre. */
+  --color-success:                  var(--success);
+  --color-success-foreground:       var(--success-foreground);
+  --color-warning:                  var(--warning);
+  --color-warning-foreground:       var(--warning-foreground);
   --color-accent-foreground:        var(--accent-foreground);
   --color-accent:                   var(--accent);
   --color-muted-foreground:         var(--muted-foreground);
@@ -89,6 +96,15 @@
   --destructive:        #dc2626;
   --destructive-foreground: #ffffff;
 
+  /* Succès et avertissement.
+     L'ambre et non l'orange : `--primary` EST orange (#ea580c), et un
+     avertissement de la même teinte que la couleur d'action ne se distingue
+     plus d'un bouton. */
+  --success:            #16a34a;
+  --success-foreground: #ffffff;
+  --warning:            #d97706;
+  --warning-foreground: #ffffff;
+
   /* Bordures et champs
      IMPORTANT : --input = bordure des champs (convention shadcn)
      Le fond des Input est bg-transparent, celui des Select est bg-popover */
@@ -140,6 +156,11 @@
 
   --destructive:        #ef4444;
   --destructive-foreground: #ffffff;
+
+  --success:            #22c55e;
+  --success-foreground: #052e16;
+  --warning:            #f59e0b;
+  --warning-foreground: #451a03;
 
   --border:             #2d2d30;
   --input:              #3f3f46;

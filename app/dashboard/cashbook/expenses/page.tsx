@@ -474,7 +474,7 @@ export default function ExpensesPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <PermissionGate permission="cashbook.manage_categories">
             <Button
               variant="outline"
@@ -914,7 +914,7 @@ export default function ExpensesPage() {
             </div>
             <div className="space-y-2">
               <Label>Couleur</Label>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <input
                   type="color"
                   value={categoryForm.color}

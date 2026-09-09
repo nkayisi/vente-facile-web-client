@@ -20,7 +20,11 @@ const PaginationContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ul
     ref={ref}
-    className={cn("flex flex-row items-center gap-1", className)}
+    // ⚠ `flex-wrap` : mesuré à 400 px de bord droit pour une fenêtre de 390,
+    // « Suivant » était coupé - sur le seul contrôle qui permet d'aller voir
+    // la suite d'une liste. Rien ne débordait au sens du défilement, la page
+    // se contentait de le rogner. Il passe à la ligne plutôt que de sortir.
+    className={cn("flex flex-row flex-wrap items-center justify-center gap-1", className)}
     {...props}
   />
 ))

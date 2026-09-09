@@ -120,43 +120,4 @@ serverAxios.interceptors.response.use(
  * Helper pour extraire les erreurs d'une réponse Axios.
  * Détecte spécifiquement les erreurs 402 (abonnement expiré).
  */
-export function extractApiError(error: any): {
-  message: string;
-  isSubscriptionError: boolean;
-  status?: number;
-} {
-  if (error?.response?.status === 402) {
-    const data = error.response.data as Record<string, unknown> | undefined;
-    return {
-      message: data ? formatApiErrorBody(data, "Abonnement requis") : "Abonnement requis",
-      isSubscriptionError: true,
-      status: 402,
-    };
-  }
-
-  if (error?.isSubscriptionError) {
-    const msg =
-      typeof error.subscriptionMessage === "string" && error.subscriptionMessage.trim()
-        ? error.subscriptionMessage
-        : "Abonnement requis";
-    return {
-      message: msg,
-      isSubscriptionError: true,
-      status: 402,
-    };
-  }
-
-  const data = error?.response?.data;
-  const message =
-    data && typeof data === "object"
-      ? formatApiErrorBody(data as Record<string, unknown>, error?.message || "Une erreur est survenue")
-      : error?.message || "Une erreur est survenue";
-
-  return {
-    message,
-    isSubscriptionError: false,
-    status: error?.response?.status,
-  };
-}
-
 export default serverAxios;

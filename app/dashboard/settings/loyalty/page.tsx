@@ -162,7 +162,7 @@ export default function LoyaltySettingsPage() {
               </CardTitle>
               <CardDescription>Récompensez vos clients fidèles avec des points</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {loyaltyProgram && (
                 <Link href="/dashboard/settings/loyalty/rewards">
                   <Button variant="outline">

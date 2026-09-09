@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -37,16 +37,17 @@ import {
   CustomReport,
   CurrencyReportRow,
 } from "@/actions/cashbook.actions";
-import {
-  createPDFDocument,
-  addSummarySection,
-  addTable,
-  addSignatureSection,
-  formatNumberForPDF,
-  formatDateForPDF,
-  formatMonthForPDF,
-} from "@/lib/pdf-utils";
-import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
+import { ExportMenu, type ExportTarget } from "@/components/shared/ExportMenu";
+import type { ExportFormat } from "@/lib/export/fetch-export";
+import { exportCashReport } from "@/actions/cashbook.actions";
+
+/** Les quatre onglets, dans les mots qu'ils portent à l'écran. */
+const LIBELLES_RAPPORT: Record<string, string> = {
+  daily: "Rapport journalier de caisse",
+  monthly: "Rapport mensuel de caisse",
+  annual: "Rapport annuel de caisse",
+  custom: "Rapport de caisse personnalisé",
+};
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,10 +94,8 @@ export default function CashbookReportsPage() {
   const { data: session } = useSession();
   const { currency: defaultCurrency } = useCurrency();
   const { organization } = useOrganization();
-  // Même identité que les tickets thermiques : un rapport et un reçu émis par
-  // la même boutique doivent porter le même en-tête.
-  const { chrome } = useReceiptChrome(session?.accessToken, organization);
-  const reportIdentity = chrome?.org;
+  // L'identité de l'établissement n'est plus lue ici : c'est le SERVEUR qui la
+  // pose sur le document, depuis l'organisation authentifiée.
   const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -325,206 +324,69 @@ export default function CashbookReportsPage() {
     });
   }
 
-  // Montant PDF-safe AVEC symbole (jsPDF ne rend pas l'espace fine insécable
-  // d'Intl → formatNumberForPDF le remplace par un espace normal).
-  const pdfMoney = (amount: string | number, code: string) =>
-    `${formatNumberForPDF(amount, decimalsOf(code))} ${symbolOf(code)}`;
+  /**
+   * Les quatre rapports, fabriqués par le SERVEUR.
+   *
+   * ┌──────────────────────────────────────────────────────────────────┐
+   * │ ILS ÉTAIENT DESSINÉS ICI, EN jsPDF.                              │
+   * │                                                                  │
+   * │ Quatre fonctions de tracé et un `renderCurrencySections`, avec    │
+   * │ leurs styles et leur bandeau tenus en phase à la main avec ceux   │
+   * │ du serveur. PDF seul, aucun classeur, aucun CSV.                  │
+   * │                                                                  │
+   * │ ⚠ Et le journalier ne mettait dans son tableau que la PAGE        │
+   * │ affichée, sous une synthèse qui annonçait toute la journée : le   │
+   * │ document mentait sur son propre contenu.                          │
+   * └──────────────────────────────────────────────────────────────────┘
+   */
+  const cibleExport: ExportTarget[] = useMemo(() => {
+    const parametres: Record<string, string | undefined> =
+      activeTab === "daily"
+        ? { scope: "daily", date: selectedDate }
+        : activeTab === "monthly"
+          ? {
+              scope: "monthly",
+              year: String(selectedYear),
+              month: String(selectedMonth),
+            }
+          : activeTab === "annual"
+            ? { scope: "annual", year: String(annualYear) }
+            : {
+                scope: "custom",
+                date_from: customDateFrom,
+                date_to: customDateTo,
+              };
 
-  // Rend le rapport PDF PAR DEVISE, dans le style classique : pour chaque devise,
-  // un titre (si plusieurs devises) + une synthèse horizontale (Ouverture /
-  // Entrées / Sorties / Clôture) + un tableau de détail. Aucune somme mélangée.
-  // `detailFor(code, opening)` renvoie l'en-tête et le corps du tableau détail.
-  const renderCurrencySections = (
-    doc: Parameters<typeof addSummarySection>[0],
-    startY: number,
-    pageWidth: number,
-    rows: CurrencyReportRow[] | undefined,
-    detailFor: (code: string, opening: number) => { head: string[][]; body: string[][] },
-    tableOpts: Parameters<typeof addTable>[4],
-  ): number => {
-    const list = rows && rows.length > 0 ? rows : [];
-    const multi = list.length > 1;
-    let y = startY;
-    if (list.length === 0) {
-      return addSummarySection(doc, y, pageWidth, [
-        { label: "Solde ouverture", value: pdfMoney(0, defaultCurrency.code) },
-      ]);
-    }
-    list.forEach((r) => {
-      if (multi) {
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(0, 0, 0);
-        doc.text(`Devise : ${r.currency}`, 14, y);
-        y += 6;
-      }
-      y = addSummarySection(doc, y, pageWidth, [
-        { label: "Solde ouverture", value: pdfMoney(r.opening_balance, r.currency) },
-        { label: "Total entrées", value: `${sgn(r.total_in, "+")}${pdfMoney(r.total_in, r.currency)}`, color: "green" },
-        { label: "Total sorties", value: `${sgn(r.total_out, "-")}${pdfMoney(r.total_out, r.currency)}`, color: "red" },
-        { label: "Solde clôture", value: pdfMoney(r.closing_balance, r.currency), color: "blue" },
-      ]);
-      const { head, body } = detailFor(r.currency, parseFloat(r.opening_balance));
-      y = addTable(doc, y, head, body, tableOpts);
-      y += 4;
-    });
-    return y;
-  };
-
-  function printDailyReport() {
-    if (!dailyReport || !organization) return;
-
-    const { doc, y: startY, pageWidth } = createPDFDocument({
-      title: "RAPPORT JOURNALIER DE CAISSE",
-      subtitle: `Date: ${formatDateForPDF(selectedDate)}`,
-      organizationName: organization.name,
-      identity: reportIdentity,
-    });
-
-    const y = renderCurrencySections(
-      doc, startY, pageWidth, dailyReport.by_currency,
-      (code, opening) => {
-        let running = opening;
-        const body = dailyReport.movements.results
-          .filter((m) => m.currency === code)
-          .map((m) => {
-            running += (m.direction === "in" ? 1 : -1) * parseFloat(m.amount);
-            return [
-              new Date(m.movement_date).toLocaleTimeString("fr-CD", { hour: "2-digit", minute: "2-digit" }),
-              MOVEMENT_TYPE_LABELS[m.movement_type] || m.movement_type,
-              m.description.substring(0, 30),
-              m.direction === "in" ? `+${pdfMoney(m.amount, code)}` : "",
-              m.direction === "out" ? `-${pdfMoney(m.amount, code)}` : "",
-              pdfMoney(running, code),
-            ];
-          });
-        return { head: [["Heure", "Type", "Description", "Entrée", "Sortie", "Solde cumul"]], body };
-      },
+    return [
       {
-        columnStyles: { 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" } },
-        highlightColumn: 5,
+        key: `caisse-${activeTab}`,
+        label: LIBELLES_RAPPORT[activeTab] ?? "Rapport de caisse",
+        run: (format) =>
+          exportCashReport(
+            session!.accessToken!,
+            organization!.id,
+            format,
+            parametres
+          ),
       },
-    );
+    ];
+  }, [
+    activeTab,
+    selectedDate,
+    selectedYear,
+    selectedMonth,
+    annualYear,
+    customDateFrom,
+    customDateTo,
+    session,
+    organization,
+  ]);
 
-    addSignatureSection(doc, y, pageWidth, ["Caissier", "Responsable"]);
-    doc.save(`rapport-journalier-${selectedDate}.pdf`);
-  }
-
-  function printMonthlyReport() {
-    if (!monthlyReport || !organization) return;
-
-    const { doc, y: startY, pageWidth } = createPDFDocument({
-      title: "RAPPORT MENSUEL DE CAISSE",
-      subtitle: `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`,
-      organizationName: organization.name,
-      identity: reportIdentity,
-    });
-
-    const y = renderCurrencySections(
-      doc, startY, pageWidth, monthlyReport.by_currency,
-      (code, opening) => {
-        let running = opening;
-        const body = monthlyReport.by_day
-          .filter((day) => day.currency === code)
-          .map((day) => {
-            running += parseFloat(day.total_in) - parseFloat(day.total_out);
-            return [
-              formatDateForPDF(day.day),
-              `${sgn(day.total_in, "+")}${pdfMoney(day.total_in, code)}`,
-              `${sgn(day.total_out, "-")}${pdfMoney(day.total_out, code)}`,
-              pdfMoney(running, code),
-            ];
-          });
-        return { head: [["Date", "Entrées", "Sorties", "Solde cumul"]], body };
-      },
-      {
-        columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
-        highlightColumn: 3,
-      },
-    );
-
-    addSignatureSection(doc, y, pageWidth, ["Caissier", "Responsable"]);
-    doc.save(`rapport-mensuel-${selectedYear}-${String(selectedMonth).padStart(2, "0")}.pdf`);
-  }
-
-  function printAnnualReport() {
-    if (!annualReport || !organization) return;
-
-    const { doc, y: startY, pageWidth } = createPDFDocument({
-      title: "RAPPORT ANNUEL DE CAISSE",
-      subtitle: `Année ${annualYear}`,
-      organizationName: organization.name,
-      identity: reportIdentity,
-    });
-
-    const y = renderCurrencySections(
-      doc, startY, pageWidth, annualReport.by_currency,
-      (code, opening) => {
-        let running = opening;
-        const body = annualReport.by_month
-          .filter((m) => m.currency === code)
-          .map((m) => {
-            running += parseFloat(m.total_in) - parseFloat(m.total_out);
-            return [
-              formatMonthForPDF(m.month),
-              `${sgn(m.total_in, "+")}${pdfMoney(m.total_in, code)}`,
-              `${sgn(m.total_out, "-")}${pdfMoney(m.total_out, code)}`,
-              pdfMoney(running, code),
-            ];
-          });
-        return { head: [["Mois", "Entrées", "Sorties", "Solde cumul"]], body };
-      },
-      {
-        columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
-        highlightColumn: 3,
-      },
-    );
-
-    addSignatureSection(doc, y, pageWidth, ["Caissier", "Responsable"]);
-    doc.save(`rapport-annuel-${annualYear}.pdf`);
-  }
-
-  function printCustomReport() {
-    if (!customReport || !organization) return;
-
-    const { doc, y: startY, pageWidth } = createPDFDocument({
-      title: "RAPPORT DE CAISSE PERSONNALISÉ",
-      subtitle: `Du ${formatDateForPDF(customDateFrom)} au ${formatDateForPDF(customDateTo)}`,
-      organizationName: organization.name,
-      identity: reportIdentity,
-    });
-
-    const y = renderCurrencySections(
-      doc, startY, pageWidth, customReport.by_currency,
-      (code, opening) => {
-        let running = opening;
-        const body = customReport.by_day
-          .filter((day) => day.currency === code)
-          .map((day) => {
-            running += parseFloat(day.total_in) - parseFloat(day.total_out);
-            return [
-              formatDateForPDF(day.day),
-              `${sgn(day.total_in, "+")}${pdfMoney(day.total_in, code)}`,
-              `${sgn(day.total_out, "-")}${pdfMoney(day.total_out, code)}`,
-              pdfMoney(running, code),
-            ];
-          });
-        return { head: [["Date", "Entrées", "Sorties", "Solde cumul"]], body };
-      },
-      {
-        columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
-        highlightColumn: 3,
-      },
-    );
-
-    addSignatureSection(doc, y, pageWidth, ["Caissier", "Responsable"]);
-    doc.save(`rapport-personnalise-${customDateFrom}-${customDateTo}.pdf`);
-  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Link href="/dashboard/cashbook">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-5 w-5" />
@@ -580,10 +442,7 @@ export default function CashbookReportsPage() {
               </Button>
             </div>
             {dailyReport && (
-              <Button onClick={printDailyReport} variant="outline" className="w-full sm:max-w-max">
-                <Printer className="h-4 w-4 mr-2" />
-                Imprimer
-              </Button>
+              <ExportMenu targets={cibleExport} />
             )}
           </div>
 
@@ -747,10 +606,7 @@ export default function CashbookReportsPage() {
               </Button>
             </div>
             {monthlyReport && (
-              <Button onClick={printMonthlyReport} variant="outline" className="w-full sm:max-w-max">
-                <Printer className="h-4 w-4 mr-2" />
-                Imprimer
-              </Button>
+              <ExportMenu targets={cibleExport} />
             )}
           </div>
 
@@ -834,10 +690,7 @@ export default function CashbookReportsPage() {
               </Button>
             </div>
             {annualReport && (
-              <Button onClick={printAnnualReport} variant="outline" className="w-full sm:max-w-max">
-                <Printer className="h-4 w-4 mr-2" />
-                Imprimer
-              </Button>
+              <ExportMenu targets={cibleExport} />
             )}
           </div>
 
@@ -925,10 +778,7 @@ export default function CashbookReportsPage() {
               </div>
             </div>
             {customReport && (
-              <Button onClick={printCustomReport} variant="outline" className="w-full sm:max-w-max">
-                <Printer className="h-4 w-4 mr-2" />
-                Imprimer
-              </Button>
+              <ExportMenu targets={cibleExport} />
             )}
           </div>
 

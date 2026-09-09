@@ -14,11 +14,14 @@ import { useCurrency } from "@/components/providers/currency-provider";
 import { createMoneyHelpers } from "@/lib/currency";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { ExportMenu, type ExportTarget } from "@/components/shared/ExportMenu";
+import { exportStatistics } from "@/actions/reports.actions";
 import {
   getReceivablesReport,
-  AGING_BUCKET_LABELS,
-  ReceivablesReport,
+  type ReceivablesDebtor,
+  type ReceivablesReport,
 } from "@/actions/reports.actions";
+import { AGING_BUCKET_LABELS } from "@/lib/reports/aging";
 
 /**
  * Balance âgée des créances clients.
@@ -43,6 +46,58 @@ export default function ReceivablesReportPage() {
   const money = useMemo(
     () => createMoneyHelpers(orgCurrencies, defaultCurrency),
     [orgCurrencies, defaultCurrency]
+  );
+
+  /**
+   * Le document, fabriqué par le serveur, en PDF / Excel / CSV.
+   *
+   * Il porte la balance ENTIÈRE : cette page n'a pas de filtre, et l'arrêté
+   * imprimé en tête est la seule borne qui compte pour une créance.
+   */
+  /**
+   * Les débiteurs, GROUPÉS PAR DEVISE puis triés par montant.
+   *
+   * Le serveur les rend déjà triés, mais toutes devises confondues. On ne
+   * réordonne donc pas la liste, on la SÉPARE : comparer deux montants n'a de
+   * sens que dans la même monnaie.
+   *
+   * L'ordre des devises suit celui de la balance âgée juste au-dessus, pour
+   * que l'œil retrouve les mêmes blocs dans le même ordre.
+   */
+  const debiteursParDevise = useMemo<[string, ReceivablesDebtor[]][]>(() => {
+    if (!report) return [];
+    const groupes = new Map<string, ReceivablesDebtor[]>();
+    for (const d of report.by_customer) {
+      const liste = groupes.get(d.currency) ?? [];
+      liste.push(d);
+      groupes.set(d.currency, liste);
+    }
+    const ordre = report.by_currency.map(c => c.currency);
+    return [...groupes.entries()]
+      .sort((a, b) => ordre.indexOf(a[0]) - ordre.indexOf(b[0]))
+      .map(([devise, lignes]) => [
+        devise,
+        [...lignes].sort(
+          (a, b) => parseFloat(b.amount_due) - parseFloat(a.amount_due)
+        ),
+      ]);
+  }, [report]);
+
+  const cibleExport: ExportTarget[] = useMemo(
+    () => [
+      {
+        key: "creances",
+        label: "Créances clients",
+        run: (format) =>
+          exportStatistics(
+            session!.accessToken!,
+            organization!.id,
+            format,
+            "receivables"
+          ),
+      },
+    ],
+    [session, organization]
   );
 
   const fetchData = useCallback(async () => {
@@ -95,8 +150,8 @@ export default function ReceivablesReportPage() {
   if (!report) {
     return (
       <div className="py-12 text-center">
-        <CreditCard className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-        <h3 className="mb-2 text-lg font-medium text-gray-900">Créances indisponibles</h3>
+        <CreditCard className="mx-auto mb-4 h-12 w-12 text-muted-foreground/40" />
+        <h3 className="mb-2 text-lg font-medium text-foreground">Créances indisponibles</h3>
         <Button variant="outline" onClick={fetchData}>
           Réessayer
         </Button>
@@ -108,17 +163,30 @@ export default function ReceivablesReportPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/dashboard/reports">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Créances clients</h1>
-          <p className="text-sm text-gray-500">
-            Factures encore dues au {report.as_of}, classées par ancienneté
-          </p>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/reports">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Créances clients</h1>
+            <p className="text-sm text-muted-foreground">
+              Factures encore dues au {report.as_of}, classées par ancienneté
+            </p>
+          </div>
+        </div>
+        {/* Cette rubrique n'avait AUCUN export : on lit qui relancer à
+            l'écran, et rien ne permettait d'emporter la liste. Le document
+            vient du serveur, comme les huit rapports, et le terminal reçoit
+            exactement le même fichier. */}
+        <div className="items-start md:shrink-0">
+          <ExportMenu
+            targets={cibleExport}
+            disabled={!hasDebt}
+            disabledReason="Aucune facture due à exporter"
+          />
         </div>
       </div>
 
@@ -126,12 +194,12 @@ export default function ReceivablesReportPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
-            <div className="rounded-lg bg-red-100 p-2">
-              <CreditCard className="h-5 w-5 text-red-600" />
+            <div className="rounded-lg bg-destructive/10 p-2">
+              <CreditCard className="h-5 w-5 text-destructive" />
             </div>
             <div className="min-w-0 flex-1">
               <StatValue value={money.money(report.total_primary, report.primary_currency)} />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Total dû, converti en {report.primary_currency}
               </p>
             </div>
@@ -148,7 +216,7 @@ export default function ReceivablesReportPage() {
                 value={money.money(report.overdue_primary, report.primary_currency)}
                 color={parseFloat(report.overdue_primary) > 0 ? "text-orange-700" : undefined}
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Échu, converti en {report.primary_currency}
               </p>
             </div>
@@ -162,7 +230,7 @@ export default function ReceivablesReportPage() {
             </div>
             <div className="min-w-0 flex-1">
               <StatValue value={String(report.debtor_count)} />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {report.debtor_count > 1 ? "clients débiteurs" : "client débiteur"} ·{" "}
                 {report.invoice_count} facture{report.invoice_count > 1 ? "s" : ""}
               </p>
@@ -174,9 +242,9 @@ export default function ReceivablesReportPage() {
       {!hasDebt ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <CreditCard className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-            <h3 className="mb-1 text-lg font-medium text-gray-900">Aucune créance</h3>
-            <p className="text-sm text-gray-500">
+            <CreditCard className="mx-auto mb-4 h-12 w-12 text-muted-foreground/40" />
+            <h3 className="mb-1 text-lg font-medium text-foreground">Aucune créance</h3>
+            <p className="text-sm text-muted-foreground">
               Toutes les factures sont soldées.
             </p>
           </CardContent>
@@ -188,7 +256,7 @@ export default function ReceivablesReportPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Balance âgée par devise</CardTitle>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Ancienneté comptée depuis l&apos;échéance de la facture, ou depuis
                 sa date de vente quand aucune échéance n&apos;a été fixée.
               </p>
@@ -197,7 +265,7 @@ export default function ReceivablesReportPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-xs uppercase tracking-wider text-gray-500">
+                    <tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
                       <th className="pb-2 pr-4 font-medium">Devise</th>
                       {report.buckets.map(bucket => (
                         <th key={bucket} className="pb-2 pr-4 text-right font-medium">
@@ -220,8 +288,8 @@ export default function ReceivablesReportPage() {
                                 value > 0 && bucket !== "current"
                                   ? "text-orange-700"
                                   : value > 0
-                                    ? "text-gray-900"
-                                    : "text-gray-300"
+                                    ? "text-foreground"
+                                    : "text-muted-foreground/40"
                               }`}
                             >
                               {money.amountOnly(row[bucket], row.currency)}
@@ -239,48 +307,83 @@ export default function ReceivablesReportPage() {
             </CardContent>
           </Card>
 
-          {/* Qui relancer, et depuis quand. Une ligne par couple client-devise :
-              un client peut devoir dans deux devises à la fois. */}
+          {/* ┌──────────────────────────────────────────────────────────────┐
+              │ UN ORDRE INTER-DEVISES EST AUSSI FAUX QU'UNE SOMME            │
+              │ INTER-DEVISES, et c'est le corollaire qu'on oublie parce      │
+              │ qu'aucun chiffre faux n'apparaît.                             │
+              │                                                              │
+              │ Le serveur range `by_customer` par montant décroissant,       │
+              │ TOUTES DEVISES CONFONDUES : un client devant 50 000 FC        │
+              │ (environ dix-huit dollars) passait au-dessus d'un client      │
+              │ devant 3 000 $. Le marchand relance dans l'ordre de la        │
+              │ liste - c'est tout l'usage de cet écran - et il commençait    │
+              │ donc par le mauvais.                                          │
+              │                                                              │
+              │ On ne réordonne pas, on SÉPARE : une section par devise,      │
+              │ l'ordre à l'intérieur. Deux montants comparés le sont alors   │
+              │ toujours dans la même monnaie. Le terminal a été corrigé      │
+              │ ainsi ; le web ne l'était pas.                                │
+              └──────────────────────────────────────────────────────────────┘ */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Débiteurs</CardTitle>
-              <p className="text-sm text-gray-500">
-                Du montant le plus élevé au plus faible. Un client qui doit dans
-                deux devises apparaît une fois par devise.
+              <CardTitle className="text-lg">Qui relancer</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Du montant le plus élevé au plus faible, DEVISE PAR DEVISE. Un
+                client qui doit dans deux monnaies apparaît une fois par
+                monnaie.
               </p>
             </CardHeader>
-            <CardContent>
-              <div className="divide-y">
-                {report.by_customer.map(debtor => (
-                  <Link
-                    key={`${debtor.customer_id}-${debtor.currency}`}
-                    href={`/dashboard/contacts/customers/${debtor.customer_id}`}
-                    className="flex items-center justify-between gap-4 py-3 transition-colors hover:bg-gray-50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-gray-900">
-                        {debtor.customer_name}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {debtor.invoice_count} facture{debtor.invoice_count > 1 ? "s" : ""}
-                        {debtor.oldest_days > 0 && (
-                          <> · la plus ancienne échue depuis {debtor.oldest_days} j</>
-                        )}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      {parseFloat(debtor.overdue_amount) > 0 && (
-                        <Badge variant="destructive" className="font-normal">
-                          {money.money(debtor.overdue_amount, debtor.currency)} échus
-                        </Badge>
-                      )}
-                      <span className="font-semibold tabular-nums text-gray-900">
-                        {money.money(debtor.amount_due, debtor.currency)}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
+            <CardContent className="space-y-6">
+              {debiteursParDevise.map(([devise, lignes]) => (
+                <div key={devise}>
+                  {/* Un en-tête qui ne sépare rien se lirait comme le début
+                      d'une seconde liste : il n'apparaît qu'à plusieurs. */}
+                  {debiteursParDevise.length > 1 && (
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {devise}
+                    </p>
+                  )}
+                  <div className="divide-y">
+                    {lignes.map(debtor => (
+                      <div
+                        key={`${debtor.customer_id}-${debtor.currency}`}
+                        className="flex items-center justify-between gap-4 py-3"
+                      >
+                        <Link
+                          href={`/dashboard/contacts/customers/${debtor.customer_id}`}
+                          className="min-w-0 flex-1 transition-colors hover:opacity-80"
+                        >
+                          <p className="truncate font-medium">
+                            {debtor.customer_name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {debtor.invoice_count} facture
+                            {debtor.invoice_count > 1 ? "s" : ""}
+                            {debtor.oldest_days > 0 && (
+                              <> · la plus ancienne échue depuis {debtor.oldest_days} j</>
+                            )}
+                            {/* On relance au téléphone : le numéro se lit ici,
+                                et se dicte parfois à quelqu'un d'autre. */}
+                            {debtor.customer_phone && (
+                              <> · {debtor.customer_phone}</>
+                            )}
+                          </p>
+                        </Link>
+                        <div className="flex shrink-0 items-center gap-3">
+                          {parseFloat(debtor.overdue_amount) > 0 && (
+                            <Badge variant="destructive" className="font-normal">
+                              {money.money(debtor.overdue_amount, debtor.currency)} échus
+                            </Badge>
+                          )}
+                          <span className="font-semibold tabular-nums">
+                            {money.money(debtor.amount_due, debtor.currency)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </CardContent>
           </Card>
         </>

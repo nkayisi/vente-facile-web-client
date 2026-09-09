@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,7 +60,7 @@ import {
   Area,
 } from "recharts";
 import { toast } from "sonner";
-import { formatPrice, formatNumber, formatDate, formatDateTime, formatPriceValue } from "@/lib/format";
+import { formatPrice, formatNumber, formatDate, formatDateTime } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import {
   getDashboardSummary,
@@ -96,17 +96,22 @@ import {
   UserActivityFilters,
 } from "@/actions/reports.actions";
 import { getMembers, type OrganizationMember } from "@/actions/users.actions";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import {
-  createPDFDocument,
-  addTable,
-  addSummarySection,
-  addSignatureSection,
-  formatNumberForPDF,
-  formatCurrencyForPDF,
-} from "@/lib/pdf-utils";
-import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │ LE BACK-OFFICE NE FABRIQUE PLUS SES DOCUMENTS.                          │
+// │                                                                          │
+// │ Il les traçait en jsPDF, puis a décrit un `RapportSpec` rendu en HTML    │
+// │ qu'un onglet imprimait par `window.print()` : le marchand tombait sur la │
+// │ boîte d'impression du navigateur, et RIEN ne se téléchargeait. Le        │
+// │ terminal, lui, produisait un vrai fichier. Un même rapport donnait donc  │
+// │ deux documents, dont un qui n'existait pas tant qu'on ne l'avait pas     │
+// │ enregistré à la main.                                                    │
+// │                                                                          │
+// │ Le serveur les rend désormais tous les trois (PDF, classeur, CSV), avec  │
+// │ le moteur qui produit déjà les exports Stock et Ventes : même marque     │
+// │ partout, et le PÉRIMÈTRE ENTIER au lieu des vingt lignes affichées.      │
+// └──────────────────────────────────────────────────────────────────────────┘
+import { ExportMenu, type ExportTarget } from "@/components/shared/ExportMenu";
+import { exportStatistics, type ReportTab } from "@/actions/reports.actions";
 import {
   Table,
   TableBody,
@@ -116,10 +121,56 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DataPagination } from "@/components/shared/DataPagination";
-import { FileText, FileSpreadsheet, Printer, ArrowDown, ArrowUp, Minus } from "lucide-react";
+import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import { useOrganization } from "@/components/auth/organization-checker";
 
+/**
+ * Les huit onglets, dans leur ordre d'affichage.
+ *
+ * Une SEULE table : la barre d'onglets et le nom que porte le fichier exporté
+ * s'y branchent tous les deux. Deux listes finiraient par diverger, et le
+ * marchand recevrait « Rapport » là où l'écran dit « Bénéfices ».
+ * Les clés sont celles de `TAB_BUILDERS` (`backend/apps/reports/exports.py`).
+ */
+const ONGLETS: { valeur: ReportTab; label: string }[] = [
+  { valeur: "overview", label: "Vue d'ensemble" },
+  { valeur: "daily-cash", label: "Rapport journalier" },
+  { valeur: "sales", label: "Ventes" },
+  { valeur: "products", label: "Produits" },
+  { valeur: "customers", label: "Clients" },
+  { valeur: "stock", label: "Stock" },
+  { valeur: "profits", label: "Bénéfices" },
+  { valeur: "user-activity", label: "Par utilisateur" },
+];
+
+const ONGLET_LABELS = Object.fromEntries(
+  ONGLETS.map((o) => [o.valeur, o.label])
+) as Record<ReportTab, string>;
+
+/**
+ * Deux familles, et le libellé dit laquelle.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ LA PAGE S'OUVRAIT SUR UNE FENÊTRE PRESQUE TOUJOURS VIDE.                 │
+ * │                                                                          │
+ * │ Le défaut était « Ce mois », qui est CALENDAIRE. Relevé le 2 septembre   │
+ * │ 2026 sur les vraies données : la fenêtre couvrait deux jours, la         │
+ * │ dernière vente datait du 31 août, et la page entière annonçait « Aucune  │
+ * │ donnée ». Le chiffre n'était pas faux - il n'y a rien eu en septembre -  │
+ * │ mais on ouvre un écran de rapports pour voir son activité, pas pour      │
+ * │ apprendre que le mois vient de commencer. Le défaut revenait les         │
+ * │ premiers jours de CHAQUE mois, et il se lit comme une panne.             │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Les périodes calendaires RESTENT, et gardent leur sens : « Ce mois » doit
+ * suivre le calendrier, sinon le libellé ment. Ce qui change est le défaut, et
+ * l'ajout des fenêtres glissantes - les seules qui s'emboîtent quel que soit
+ * le quantième, comme au tableau de bord.
+ */
 const PERIOD_OPTIONS = [
+  { value: "last_7_days", label: "7 derniers jours" },
+  { value: "last_30_days", label: "30 derniers jours" },
+  { value: "last_12_months", label: "12 derniers mois" },
   { value: "today", label: "Aujourd'hui" },
   { value: "week", label: "Cette semaine" },
   { value: "month", label: "Ce mois" },
@@ -136,11 +187,11 @@ export default function ReportsPage() {
   // State
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
-  // Même identité que les tickets thermiques : un rapport et un reçu émis par
-  // la même boutique doivent porter le même en-tête.
-  const { chrome } = useReceiptChrome(session?.accessToken, organization);
-  const reportIdentity = chrome?.org;
-  const [period, setPeriod] = useState<string>("month");
+  // L'identité de l'établissement n'est plus lue ici : c'est le SERVEUR qui la
+  // pose sur le document, depuis l'organisation authentifiée. Elle ne peut donc
+  // plus manquer sur un fichier, ni différer de celle du terminal.
+
+  const [period, setPeriod] = useState<string>("last_30_days");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [groupBy, setGroupBy] = useState<"day" | "week" | "month">("day");
@@ -345,10 +396,11 @@ export default function ReportsPage() {
   }, [session?.accessToken, organization?.id, activeTab, members.length]);
 
   const fetchUserActivity = useCallback(async () => {
-    if (!session?.accessToken || !organization?.id || !selectedUserId) {
-      toast.error("Sélectionnez un utilisateur.");
-      return;
-    }
+    // Aucun message d'erreur ici : l'appel est désormais déclenché par un
+    // effet, pas par un bouton. Crier « Sélectionnez un utilisateur » à
+    // l'ouverture de l'onglet reprocherait au marchand de ne pas avoir encore
+    // choisi. L'écran le lui DIT, en état vide.
+    if (!session?.accessToken || !organization?.id || !selectedUserId) return;
     setIsLoadingUserActivity(true);
     try {
       const filters: UserActivityFilters = {
@@ -375,6 +427,29 @@ export default function ReportsPage() {
       setIsLoadingUserActivity(false);
     }
   }, [session?.accessToken, organization?.id, selectedUserId, userActivityGroupBy, dateFrom, dateTo, period]);
+
+  /**
+   * L'activité se recharge dès qu'un de ses paramètres bouge.
+   *
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ LES DÉPENDANCES SONT PRIMITIVES, ET C'EST OBLIGATOIRE.               │
+   * │                                                                      │
+   * │ `fetchUserActivity` est un `useCallback` dont toutes les dépendances  │
+   * │ sont des chaînes : son identité ne change donc que lorsque l'une      │
+   * │ d'elles change réellement. Le faire dépendre d'un objet reconstruit à │
+   * │ chaque rendu relancerait l'effet sans fin, sans erreur, sans journal  │
+   * │ et sans rien à l'écran - seulement une machine qui chauffe. C'est le  │
+   * │ défaut qui a fait tourner l'écran d'encaissement du terminal en       │
+   * │ boucle, et il ne se voit pas.                                         │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
+  useEffect(() => {
+    if (!selectedUserId) {
+      setUserActivity(null);
+      return;
+    }
+    fetchUserActivity();
+  }, [selectedUserId, fetchUserActivity]);
 
 
   // Reset pages when filters change
@@ -458,434 +533,101 @@ export default function ReportsPage() {
     return <span className="text-gray-500 text-sm">0%</span>;
   };
 
-  // Export PDF - Rapport journalier de caisse (style uniforme)
-  const exportDailyCashPDF = () => {
-    if (!dailyCashReport) return;
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │ LE DOCUMENT NE SE FABRIQUE PLUS ICI, ET IL NE LE DOIT PLUS.          │
+  // │                                                                      │
+  // │ Trois générations se sont succédé à cet endroit : dix fonctions       │
+  // │ jsPDF (428 lignes), puis un `RapportSpec` décrit ici et rendu en HTML │
+  // │ qu'un onglet imprimait. Aucune des trois ne TÉLÉCHARGEAIT quoi que ce │
+  // │ soit, et toutes trois ne portaient que les vingt lignes affichées,    │
+  // │ sous un en-tête qui annonçait « 347 articles ».                       │
+  // │                                                                      │
+  // │ Le serveur rend le document sur le PÉRIMÈTRE ENTIER : la page ne lui  │
+  // │ passe donc que son onglet et ses filtres.                             │
+  // └──────────────────────────────────────────────────────────────────────┘
 
-    const report = dailyCashReport.report;
-    const reportDate = new Date(report.date).toLocaleDateString("fr-CD", {
-      weekday: "long", year: "numeric", month: "long", day: "numeric"
-    });
+  /**
+   * Les filtres du document, ceux-là mêmes que la page applique à l'écran.
+   *
+   * ⚠ NI `page` NI `page_size` : l'export porte le périmètre filtré, jamais la
+   * page. C'est le défaut que ce lot referme.
+   */
+  const filtresExport = useCallback(() => {
+    const commun =
+      period === "custom" && dateFrom && dateTo
+        ? { date_from: dateFrom, date_to: dateTo }
+        : { period: period as ReportFilters["period"] };
+    return {
+      ...commun,
+      group_by: groupBy,
+      // Chaque onglet ajoute ce qui n'appartient qu'à lui : le serveur ignore
+      // ce qui ne le concerne pas, et les passer tous évite huit branches.
+      user: selectedUserId || undefined,
+      date: selectedReportDate || undefined,
+    };
+  }, [period, dateFrom, dateTo, groupBy, selectedUserId, selectedReportDate]);
 
-    const { doc, y, pageWidth } = createPDFDocument({
-      title: "RAPPORT JOURNALIER DE CAISSE",
-      subtitle: reportDate,
-      organizationName: organization?.name || "",
-      identity: reportIdentity,
-    });
-
-    let currentY = y;
-
-    // Résumé des soldes
-    currentY = addSummarySection(doc, currentY, pageWidth, [
-      { label: "Solde d'ouverture", value: formatCurrencyForPDF(report.opening_balance) },
-      { label: "Ventes du jour", value: formatCurrencyForPDF(report.total_sales), color: "green" },
-      { label: "Dépenses", value: formatCurrencyForPDF(report.expenses), color: "red" },
-      { label: "Solde de clôture", value: formatCurrencyForPDF(report.closing_balance), color: "blue" },
-    ]);
-
-    // Détail des paiements
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("DÉTAIL DES PAIEMENTS", 14, currentY);
-    currentY += 5;
-
-    const paymentData = [
-      ["Espèces", formatCurrencyForPDF(report.cash_sales)],
-      ["Mobile Money", formatCurrencyForPDF(report.mobile_money_sales)],
-      ["Carte", formatCurrencyForPDF(report.card_sales)],
-      ["Crédit", formatCurrencyForPDF(report.credit_sales)],
-      ["Recouvrements", formatCurrencyForPDF(report.debt_collections)],
-    ];
-
-    currentY = addTable(doc, currentY,
-      [["Mode de paiement", "Montant"]],
-      paymentData,
+  /**
+   * Ce que le menu d'export propose sur l'onglet ouvert.
+   *
+   * Un onglet qui n'a rien à dire ferme son menu AVEC SA RAISON : un bouton
+   * grisé sans motif est un cul-de-sac, et le marchand conclut que la fonction
+   * n'existe pas.
+   */
+  const cibleExport: ExportTarget[] = useMemo(
+    () => [
       {
-        columnStyles: {
-          0: { cellWidth: 80 },
-          1: { halign: 'right', cellWidth: 50 },
-        },
-      }
-    );
-    currentY += 10;
+        key: `rapport-${activeTab}`,
+        label: ONGLET_LABELS[activeTab as ReportTab] ?? "Rapport",
+        run: (format) =>
+          exportStatistics(
+            session!.accessToken!,
+            organization!.id,
+            format,
+            activeTab as ReportTab,
+            filtresExport()
+          ),
+      },
+    ],
+    [activeTab, session, organization, filtresExport]
+  );
 
-    // Mouvements du jour
-    if (dailyCashReport.movements.results && dailyCashReport.movements.results.length > 0) {
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text("MOUVEMENTS DU JOUR", 14, currentY);
-      currentY += 5;
+  const exportIndisponible =
+    activeTab === "user-activity" && !selectedUserId
+      ? "Choisissez un utilisateur pour exporter son activité."
+      : null;
 
-      const movementsData = dailyCashReport.movements.results.map(m => [
-        m.time,
-        m.type_display,
-        m.description || "-",
-        m.direction === "in" ? formatCurrencyForPDF(m.amount) : "",
-        m.direction === "out" ? formatCurrencyForPDF(m.amount) : "",
-        formatCurrencyForPDF(m.balance_after),
-      ]);
+  /**
+   * Le menu d'export, identique sur les huit onglets.
+   *
+   * ┌──────────────────────────────────────────────────────────────────────────┐
+   * │ UN ÉLÉMENT, ET SURTOUT PAS UN COMPOSANT DÉCLARÉ ICI.                     │
+   * │                                                                          │
+   * │ `const MenuExport = () => …` dans le corps du rendu fabrique un TYPE     │
+   * │ neuf à chaque passage : React ne peut pas réconcilier et DÉMONTE le      │
+   * │ sous-arbre. Partait avec lui l'état d'`ExportMenu` - son garde `pending` │
+   * │ contre le double clic, le témoin de progression qu'il alimente, et       │
+   * │ l'ouverture du menu Radix.                                               │
+   * │                                                                          │
+   * │ `ExportMenu` se défend pourtant de ce cas (son `event.preventDefault()`  │
+   * │ empêche Radix de le démonter en plein vol) : la défense était annulée    │
+   * │ depuis le parent. Tout rendu pendant un export en cours - fin d'un       │
+   * │ chargement, arrivée d'une synthèse - remettait `pending` à `null`.       │
+   * │                                                                          │
+   * │ Un élément est un descripteur immuable : le type rendu reste             │
+   * │ `ExportMenu`, la réconciliation opère, l'état survit.                    │
+   * └──────────────────────────────────────────────────────────────────────────┘
+   */
+  const menuExport = (
+    <div className="flex justify-end mb-4">
+      <ExportMenu
+        targets={cibleExport}
+        disabled={Boolean(exportIndisponible)}
+        disabledReason={exportIndisponible ?? undefined}
+      />
+    </div>
+  );
 
-      currentY = addTable(doc, currentY,
-        [["Heure", "Type", "Description", "Entrée", "Sortie", "Solde"]],
-        movementsData,
-        {
-          columnStyles: {
-            0: { cellWidth: 18 },
-            1: { cellWidth: 28 },
-            2: { cellWidth: 45 },
-            3: { halign: 'right', cellWidth: 28 },
-            4: { halign: 'right', cellWidth: 28 },
-            5: { halign: 'right', cellWidth: 28 },
-          },
-          useAlternateRowColors: true,
-          highlightColumn: 5,
-        }
-      );
-    }
-
-    // Signatures
-    addSignatureSection(doc, currentY + 10, pageWidth, ["Caissier", "Superviseur"]);
-
-    doc.save(`rapport-caisse-${report.date}.pdf`);
-    toast.success("Rapport PDF exporté");
-  };
-
-  // Export PDF - Ventes (style uniforme avec tableaux complets)
-  const exportSalesPDF = () => {
-    const { doc, y, pageWidth } = createPDFDocument({
-      title: "RAPPORT DES VENTES",
-      subtitle: `Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`,
-      organizationName: organization?.name || "",
-      identity: reportIdentity,
-    });
-
-    let currentY = y;
-
-    // Résumé des ventes
-    if (summary) {
-      currentY = addSummarySection(doc, currentY, pageWidth, [
-        { label: "Chiffre d'affaires", value: formatCurrencyForPDF(summary.sales.total_sales), color: "green" },
-        { label: "Nombre de ventes", value: summary.sales.total_orders.toString() },
-        { label: "Panier moyen", value: formatCurrencyForPDF(summary.sales.average_order_value) },
-        { label: "Articles vendus", value: summary.sales.total_items_sold.toString() },
-      ]);
-    }
-
-    // Tableau 1: Ventes par article (complet)
-    if (topProducts.length > 0) {
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text("VENTES PAR ARTICLE", 14, currentY);
-      currentY += 5;
-
-      const articlesData = topProducts.map((p, i) => [
-        (i + 1).toString(),
-        p.product_name,
-        p.product_sku,
-        p.quantity_display?.trim() || formatNumberForPDF(p.quantity_sold, 0),
-        formatNumberForPDF(p.quantity_sold, 0),
-        formatCurrencyForPDF(p.total_revenue),
-      ]);
-
-      currentY = addTable(doc, currentY,
-        [['#', 'Article', 'SKU', 'Quantité', 'Total unités', 'Revenus']],
-        articlesData,
-        {
-          columnStyles: {
-            0: { cellWidth: 10, halign: 'center' },
-            1: { cellWidth: 60 },
-            2: { cellWidth: 30 },
-            3: { halign: 'right', cellWidth: 25 },
-            4: { halign: 'right', cellWidth: 35 },
-          },
-          useAlternateRowColors: true,
-        }
-      );
-      currentY += 10;
-    }
-
-    // Tableau 2: Ventes par catégorie (complet)
-    if (salesByCategory.length > 0) {
-      // Vérifier si on a besoin d'une nouvelle page
-      if (currentY > 250) {
-        doc.addPage();
-        currentY = 20;
-      }
-
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text("VENTES PAR CATÉGORIE", 14, currentY);
-      currentY += 5;
-
-      const totalRevenue = salesByCategory.reduce((sum, c) => sum + parseFloat(c.total_revenue), 0);
-      const categoriesData = salesByCategory.map(cat => {
-        const percentage = totalRevenue > 0 ? (parseFloat(cat.total_revenue) / totalRevenue * 100).toFixed(1) : '0';
-        return [
-          cat.category_name || 'Sans catégorie',
-          formatNumberForPDF(cat.quantity_sold, 0),
-          formatCurrencyForPDF(cat.total_revenue),
-          `${percentage}%`,
-        ];
-      });
-
-      currentY = addTable(doc, currentY,
-        [['Catégorie', 'Quantité', 'Revenus', '% du total']],
-        categoriesData,
-        {
-          columnStyles: {
-            0: { cellWidth: 60 },
-            1: { halign: 'right', cellWidth: 30 },
-            2: { halign: 'right', cellWidth: 40 },
-            3: { halign: 'right', cellWidth: 30 },
-          },
-          useAlternateRowColors: true,
-        }
-      );
-    }
-
-    // Signatures
-    addSignatureSection(doc, currentY + 10, pageWidth, ["Établi par", "Vérifié par"]);
-
-    doc.save(`rapport-ventes-${new Date().toISOString().split("T")[0]}.pdf`);
-    toast.success("Rapport PDF exporté");
-  };
-
-  // Export PDF - Produits vendus (style uniforme)
-  const exportProductsPDF = () => {
-    const { doc, y, pageWidth } = createPDFDocument({
-      title: "RAPPORT DES PRODUITS VENDUS",
-      subtitle: `Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`,
-      organizationName: organization?.name || "",
-      identity: reportIdentity,
-    });
-
-    // Préparer les données avec stock de départ, approvisionnement et restant
-    // Les quantités sortent dans les termes du marchand (« 10 casiers +
-    // 5 bouteilles ») avec le total en unités juste à côté : le premier sert au
-    // rayon, le second au réassort. Le stock de départ, lui, se déduit et son
-    // partage d'alors n'est enregistré nulle part : il reste en unités.
-    const productsData = topProducts.map(p => {
-      const stockInfo = stockDetails.find(s => s.product_id === p.product_id);
-      const currentStock = stockInfo ? parseFloat(stockInfo.current_stock) : 0;
-      const startingStock = currentStock + p.quantity_sold;
-      const stockValue = stockInfo ? parseFloat(stockInfo.stock_value) : 0;
-      const supply = productSupplies[p.product_id];
-      return [
-        p.product_name,
-        formatNumberForPDF(startingStock, 0),
-        supply && supply.quantity > 0
-          ? supply.display?.trim() || formatNumberForPDF(supply.quantity, 0)
-          : '-',
-        p.quantity_display?.trim() || formatNumberForPDF(p.quantity_sold, 0),
-        formatNumberForPDF(p.quantity_sold, 0),
-        formatCurrencyForPDF(p.total_revenue),
-        stockInfo?.stock_display?.trim() || formatNumberForPDF(currentStock, 0),
-        formatNumberForPDF(currentStock, 0),
-        formatCurrencyForPDF(stockValue),
-      ];
-    });
-
-    // Tableau des produits (pleine largeur)
-    addTable(doc, y,
-      [['Produit', 'Stock départ', 'Approv.', 'Qté vendue', 'Total vendu',
-        'Valeur vendue', 'Qté restante', 'Total restant', 'Valeur restante']],
-      productsData,
-      {
-        useAlternateRowColors: true,
-      }
-    );
-
-    // Signatures
-    addSignatureSection(doc, (doc as any).lastAutoTable.finalY + 10, pageWidth, ["Établi par", "Vérifié par"]);
-
-    doc.save(`rapport-produits-${new Date().toISOString().split("T")[0]}.pdf`);
-    toast.success("Rapport PDF exporté");
-  };
-
-  // Export PDF - Bénéfices par produit (style uniforme)
-  const exportProfitsPDF = () => {
-    const { doc, y, pageWidth } = createPDFDocument({
-      title: "RAPPORT DES BÉNÉFICES PAR PRODUIT",
-      subtitle: `Période: ${period === 'custom' ? `${dateFrom} - ${dateTo}` : PERIOD_OPTIONS.find(p => p.value === period)?.label}`,
-      organizationName: organization?.name || "",
-      identity: reportIdentity,
-    });
-
-    let currentY = y;
-
-    // Résumé des marges
-    if (profitMargins) {
-      currentY = addSummarySection(doc, currentY, pageWidth, [
-        { label: "CA (HT net)", value: formatCurrencyForPDF(profitMargins.total_revenue), color: "blue" },
-        { label: "Bénéfice brut", value: formatCurrencyForPDF(profitMargins.gross_profit), color: "green" },
-        { label: "Marge brute", value: `${profitMargins.gross_margin_percentage}%` },
-        { label: "Bénéfice net", value: formatCurrencyForPDF(profitMargins.net_profit), color: "green" },
-      ]);
-    }
-
-    // Tableau des bénéfices par produit (complet)
-    if (productProfits.length > 0) {
-      const productsData = productProfits.map(p => [
-        p.product_name,
-        p.product_sku,
-        p.quantity_display?.trim() || formatNumberForPDF(Number(p.quantity_sold), 0),
-        formatNumberForPDF(Number(p.quantity_sold), 0),
-        formatCurrencyForPDF(p.total_revenue),
-        formatCurrencyForPDF(p.total_cost),
-        formatCurrencyForPDF(p.profit),
-        `${p.margin_percentage}%`,
-      ]);
-
-      currentY = addTable(doc, currentY,
-        [["Produit", "SKU", "Qté", "Total unités", "CA (HT)", "Coût", "Bénéfice", "Marge"]],
-        productsData,
-        {
-          columnStyles: {
-            0: { cellWidth: 40 },
-            1: { cellWidth: 22 },
-            2: { halign: 'right', cellWidth: 15 },
-            3: { halign: 'right', cellWidth: 28 },
-            4: { halign: 'right', cellWidth: 28 },
-            5: { halign: 'right', cellWidth: 28 },
-            6: { halign: 'right', cellWidth: 18 },
-          },
-          useAlternateRowColors: true,
-        }
-      );
-    }
-
-    // Signatures
-    addSignatureSection(doc, currentY + 10, pageWidth, ["Établi par", "Vérifié par"]);
-
-    doc.save(`rapport-benefices-${new Date().toISOString().split("T")[0]}.pdf`);
-    toast.success("Rapport PDF exporté");
-  };
-
-  // Export PDF - Stock (style uniforme)
-  const exportStockPDF = () => {
-    const { doc, y, pageWidth } = createPDFDocument({
-      title: "RAPPORT DE STOCK",
-      subtitle: new Date().toLocaleDateString("fr-CD"),
-      organizationName: organization?.name || "",
-      identity: reportIdentity,
-    });
-
-    // Résumé du stock
-    const totalValue = stockDetails.reduce((sum, s) => sum + parseFloat(s.stock_value), 0);
-    const outOfStock = stockDetails.filter(s => s.status === "out_of_stock").length;
-    const lowStock = stockDetails.filter(s => s.status === "low_stock").length;
-
-    let currentY = addSummarySection(doc, y, pageWidth, [
-      { label: "Total produits", value: stockDetails.length.toString() },
-      { label: "Valeur totale", value: formatCurrencyForPDF(totalValue), color: "blue" },
-      { label: "Ruptures", value: outOfStock.toString(), color: "red" },
-      { label: "Stock bas", value: lowStock.toString() },
-    ]);
-
-    // Tableau des stocks (complet)
-    // Le stock est imprimé dans les termes du marchand (« 12 cartons + 3
-    // bouteilles »), avec le total en unités juste à côté : le premier sert au
-    // comptoir, le second au réassort.
-    const stockData = stockDetails.map(s => [
-      s.product_name,
-      s.product_sku,
-      s.category_name || "-",
-      s.stock_display?.trim() || formatNumberForPDF(s.current_stock, 0),
-      s.available_display?.trim() || formatNumberForPDF(s.available_stock, 0),
-      formatNumberForPDF(s.current_stock, 0),
-      formatCurrencyForPDF(s.stock_value),
-      s.status === "out_of_stock" ? "Rupture" : s.status === "low_stock" ? "Bas" : "OK",
-    ]);
-
-    addTable(doc, currentY,
-      [["Produit", "SKU", "Catégorie", "Stock", "Disponible", "Total", "Valeur", "Statut"]],
-      stockData,
-      {
-        columnStyles: {
-          0: { cellWidth: 30 },
-          1: { cellWidth: 20 },
-          2: { cellWidth: 22 },
-          3: { cellWidth: 32 },
-          4: { cellWidth: 32 },
-          5: { halign: 'right', cellWidth: 16 },
-          6: { halign: 'right', cellWidth: 24 },
-          7: { halign: 'center', cellWidth: 16 },
-        },
-        useAlternateRowColors: true,
-      }
-    );
-
-    // Signatures
-    addSignatureSection(doc, (doc as any).lastAutoTable.finalY + 10, pageWidth, ["Établi par", "Vérifié par"]);
-
-    doc.save(`rapport-stock-${new Date().toISOString().split("T")[0]}.pdf`);
-    toast.success("Rapport PDF exporté");
-  };
-
-  // Export Excel (CSV)
-  const exportToCSV = (data: any[], filename: string, headers: string[]) => {
-    const csvContent = [
-      headers.join(";"),
-      ...data.map(row => headers.map(h => row[h] ?? "").join(";"))
-    ].join("\n");
-
-    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const blobUrl = URL.createObjectURL(blob);
-    link.href = blobUrl;
-    link.download = `${filename}.csv`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-    toast.success("Fichier Excel/CSV exporté");
-  };
-
-  const exportSalesCSV = () => {
-    const data = topProducts.map(p => ({
-      Produit: p.product_name,
-      SKU: p.product_sku,
-      // Ce qui est sorti du rayon, puis le total en unités : 10 casiers et
-      // 245 bouteilles ne se réapprovisionnent pas de la même façon.
-      "Quantité vendue": p.quantity_display?.trim() || String(p.quantity_sold),
-      "Total en unités": p.quantity_sold,
-      "Chiffre d'affaires": parseFloat(p.total_revenue),
-    }));
-    exportToCSV(data, `ventes-produits-${new Date().toISOString().split("T")[0]}`,
-      ["Produit", "SKU", "Quantité vendue", "Total en unités", "Chiffre d'affaires"]);
-  };
-
-  const exportStockCSV = () => {
-    const data = stockDetails.map(s => ({
-      Produit: s.product_name,
-      SKU: s.product_sku,
-      Catégorie: s.category_name || "",
-      "Stock détaillé": s.stock_display || "",
-      "Disponible détaillé": s.available_display || "",
-      "Réservé": s.reserved_display || parseFloat(s.reserved_stock).toFixed(0),
-      "Stock actuel": parseFloat(s.current_stock),
-      "Stock disponible": parseFloat(s.available_stock),
-      "Valeur stock": parseFloat(s.stock_value),
-      Statut: s.status === "out_of_stock" ? "Rupture" : s.status === "low_stock" ? "Bas" : "OK",
-    }));
-    exportToCSV(data, `stock-${new Date().toISOString().split("T")[0]}`,
-      ["Produit", "SKU", "Catégorie", "Stock détaillé", "Disponible détaillé", "Réservé",
-       "Stock actuel", "Stock disponible", "Valeur stock", "Statut"]);
-  };
-
-  const exportProfitsCSV = () => {
-    const data = productProfits.map(p => ({
-      Produit: p.product_name,
-      SKU: p.product_sku,
-      "Quantité vendue": p.quantity_display?.trim() || String(p.quantity_sold),
-      "Total en unités": p.quantity_sold,
-      "CA (HT net)": parseFloat(p.total_revenue),
-      "Coût": parseFloat(p.total_cost),
-      "Bénéfice": parseFloat(p.profit),
-      "Marge %": parseFloat(p.margin_percentage),
-    }));
-    exportToCSV(data, `benefices-${new Date().toISOString().split("T")[0]}`,
-      ["Produit", "SKU", "Quantité vendue", "Total en unités", "CA (HT net)", "Coût", "Bénéfice", "Marge %"]);
-  };
 
   if (isLoading && !summary) {
     return (
@@ -918,11 +660,11 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
         <div className="space-y-1">
           <Label className="text-xs text-gray-500">Période</Label>
           <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-full sm:w-[160px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -943,7 +685,7 @@ export default function ReportsPage() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="w-[150px]"
+                className="w-full sm:w-[150px]"
               />
             </div>
             <div className="space-y-1">
@@ -952,7 +694,7 @@ export default function ReportsPage() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="w-[150px]"
+                className="w-full sm:w-[150px]"
               />
             </div>
           </>
@@ -961,7 +703,7 @@ export default function ReportsPage() {
         <div className="space-y-1">
           <Label className="text-xs text-gray-500">Grouper par</Label>
           <Select value={groupBy} onValueChange={(v) => setGroupBy(v as typeof groupBy)}>
-            <SelectTrigger className="w-[130px]">
+            <SelectTrigger className="w-full sm:w-[130px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -973,15 +715,28 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* ┌──────────────────────────────────────────────────────────────┐
+          │ DEUX CARTES PAR RANGÉE AU TÉLÉPHONE, comme le terminal.       │
+          │                                                              │
+          │ `grid-cols-1` les empilait une par une : les quatre relevés   │
+          │ prenaient plus d'un écran, et les onglets passaient sous la   │
+          │ ligne de flottaison - on ouvrait la rubrique sans voir        │
+          │ qu'elle en avait huit. L'icône monte en outre dans la ligne   │
+          │ du libellé : dans une cellule de moitié, un rond de           │
+          │ quarante-huit points retire un quart de la place au MONTANT,  │
+          │ et un montant en CDF à sept chiffres est ce que cet écran     │
+          │ doit rendre en entier.                                        │
+          └──────────────────────────────────────────────────────────────┘ */}
       {summary && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {/* Ventes */}
           <Card className="py-1">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-500">Chiffre d'affaires</p>
+              <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <DollarSign className="h-4 w-4 shrink-0 text-orange-600" />
+                    <p className="text-xs sm:text-sm text-gray-500 truncate">Chiffre d'affaires</p>
+                  </div>
                   <StatValue value={formatPrice(summary.sales.total_sales)} />
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-sm text-gray-500">
@@ -990,28 +745,22 @@ export default function ReportsPage() {
                     {renderGrowth(summary.sales.sales_growth)}
                   </div>
                 </div>
-                <div className="h-12 w-12 bg-orange-100 rounded-full flex items-center justify-center">
-                  <DollarSign className="h-6 w-6 text-orange-600" />
-                </div>
-              </div>
             </CardContent>
           </Card>
 
           {/* Panier moyen */}
           <Card className="py-1">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-500">Panier moyen</p>
+              <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <ShoppingCart className="h-4 w-4 shrink-0 text-blue-600" />
+                    <p className="text-xs sm:text-sm text-gray-500 truncate">Panier moyen</p>
+                  </div>
                   <StatValue value={formatPrice(summary.sales.average_order_value)} />
                   <p className="text-sm text-gray-500 mt-1">
                     {summary.sales.total_items_sold} articles vendus
                   </p>
                 </div>
-                <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
-                  <ShoppingCart className="h-6 w-6 text-blue-600" />
-                </div>
-              </div>
             </CardContent>
           </Card>
 
@@ -1020,9 +769,11 @@ export default function ReportsPage() {
               (40 USD et 46 000 CDF coexistent, ils ne s'additionnent pas). */}
           <Card className="py-1">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-500">Solde caisse</p>
+              <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <Wallet className="h-4 w-4 shrink-0 text-green-600" />
+                    <p className="text-xs sm:text-sm text-gray-500 truncate">Solde caisse</p>
+                  </div>
                   <StatValue value={formatPrice(summary.cashbook.current_balance)} />
                   {(summary.cashbook.balance_by_currency?.length ?? 0) > 1 && (
                     <p className="text-xs text-gray-500 mt-1">
@@ -1035,10 +786,6 @@ export default function ReportsPage() {
                     Flux net: {formatPrice(parseFloat(summary.cashbook.net_flow))}
                   </p>
                 </div>
-                <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
-                  <Wallet className="h-6 w-6 text-green-600" />
-                </div>
-              </div>
             </CardContent>
           </Card>
 
@@ -1051,18 +798,16 @@ export default function ReportsPage() {
           >
             <Card className="h-full py-1 transition-shadow hover:shadow-md">
               <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-gray-500">Créances clients</p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <CreditCard className="h-4 w-4 shrink-0 text-red-600" />
+                    <p className="text-xs sm:text-sm text-gray-500 truncate">Créances clients</p>
+                  </div>
                     <StatValue value={formatPrice(summary.customers.total_receivables)} />
                     <p className="text-sm text-gray-500 mt-1">
                       {summary.customers.customers_with_debt} client
                       {summary.customers.customers_with_debt > 1 ? "s" : ""} avec une dette
                     </p>
-                  </div>
-                  <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center">
-                    <CreditCard className="h-6 w-6 text-red-600" />
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1076,45 +821,40 @@ export default function ReportsPage() {
           <Card>
             <CardContent className="px-4">
               <p className="text-xs text-gray-500">Produits actifs</p>
-              <p className="text-xl font-semibold">{summary.stock.total_products}</p>
+              <StatValue value={String(summary.stock.total_products)} />
             </CardContent>
           </Card>
           <Card>
             <CardContent className="px-4">
               <p className="text-xs text-gray-500">Valeur stock</p>
-              <p className="text-xl font-semibold">
-                {formatPrice(parseFloat(summary.stock.total_stock_value))}
-              </p>
+              <StatValue value={String(formatPrice(parseFloat(summary.stock.total_stock_value)))} />
             </CardContent>
           </Card>
           <Card>
             <CardContent className="px-4">
               <p className="text-xs text-gray-500">Stock bas</p>
-              <p className="text-xl font-semibold text-yellow-600">
-                {summary.stock.low_stock_count}
-              </p>
+              <StatValue value={String(summary.stock.low_stock_count)} color="text-yellow-600" />
             </CardContent>
           </Card>
           <Card>
             <CardContent className="px-4">
               <p className="text-xs text-gray-500">Ruptures</p>
-              <p className="text-xl font-semibold text-red-600">
-                {summary.stock.out_of_stock_count}
-              </p>
+              <StatValue value={String(summary.stock.out_of_stock_count)} color="text-red-600" />
             </CardContent>
           </Card>
           <Card>
             <CardContent className="px-4">
               <p className="text-xs text-gray-500">Clients</p>
-              <p className="text-xl font-semibold">{summary.customers.total_customers}</p>
+              <StatValue value={String(summary.customers.total_customers)} />
             </CardContent>
           </Card>
           <Card>
             <CardContent className="px-4">
               <p className="text-xs text-gray-500">Nouveaux clients</p>
-              <p className="text-xl font-semibold text-green-600">
-                +{summary.customers.new_customers_period}
-              </p>
+              <StatValue
+                value={`+${summary.customers.new_customers_period}`}
+                color="text-green-600"
+              />
             </CardContent>
           </Card>
         </div>
@@ -1122,29 +862,32 @@ export default function ReportsPage() {
 
       {/* Charts */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="flex flex-wrap gap-1 mt-3">
-          <TabsTrigger value="overview">Vue d'ensemble</TabsTrigger>
-          <TabsTrigger value="daily-cash">Rapport journalier</TabsTrigger>
-          <TabsTrigger value="sales">Ventes</TabsTrigger>
-          <TabsTrigger value="products">Produits</TabsTrigger>
-          <TabsTrigger value="customers">Clients</TabsTrigger>
-          <TabsTrigger value="stock">Stock</TabsTrigger>
-          <TabsTrigger value="profits">Bénéfices</TabsTrigger>
-          <TabsTrigger value="user-activity">Par utilisateur</TabsTrigger>
-        </TabsList>
+        {/* ┌──────────────────────────────────────────────────────────────┐
+            │ LES ONGLETS DÉFILENT, ILS NE SE REPLIENT PAS.                │
+            │                                                              │
+            │ `flex-wrap` les rangeait sur QUATRE lignes à 390 points, ce   │
+            │ qui mange la moitié de l'écran avant le premier chiffre. Le   │
+            │ terminal a tranché la même question par un défilement         │
+            │ horizontal, en laissant le dernier onglet à demi visible pour │
+            │ que la coupe se voie.                                         │
+            │                                                              │
+            │ `w-max` est ce qui compte : sans lui, la liste se contraint à │
+            │ la largeur du conteneur et le défilement n'a rien à faire     │
+            │ défiler.                                                      │
+            └──────────────────────────────────────────────────────────────┘ */}
+        <div className="-mx-1 overflow-x-auto px-1 pb-1">
+          <TabsList className="mt-3 flex w-max gap-1">
+          {ONGLETS.map((onglet) => (
+            <TabsTrigger key={onglet.valeur} value={onglet.valeur}>
+              {onglet.label}
+            </TabsTrigger>
+          ))}
+          </TabsList>
+        </div>
 
         {/* Sales Tab */}
         <TabsContent value="sales" className="space-y-4">
-          <div className="flex justify-end gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={exportSalesPDF}>
-              <FileText className="h-4 w-4 mr-2" />
-              Export PDF
-            </Button>
-            <Button variant="outline" size="sm" onClick={exportSalesCSV}>
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Export Excel
-            </Button>
-          </div>
+          {menuExport}
 
           {/* Tableau 1: Ventes par article (en premier, avec pagination) */}
           <Card>
@@ -1371,42 +1114,7 @@ export default function ReportsPage() {
 
         {/* Products Tab */}
         <TabsContent value="products" className="space-y-4">
-          <div className="flex justify-end gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={exportProductsPDF}>
-              <FileText className="h-4 w-4 mr-2" />
-              Export PDF
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => {
-              // Combiner les données de vente avec les données de stock et approvisionnements
-              const productsWithStock = topProducts.map(p => {
-                const stockInfo = stockDetails.find(s => s.product_id === p.product_id);
-                const currentStock = stockInfo ? parseFloat(stockInfo.current_stock) : 0;
-                const startingStock = currentStock + p.quantity_sold;
-                const stockValue = stockInfo ? parseFloat(stockInfo.stock_value) : 0;
-                const supply = productSupplies[p.product_id];
-                return {
-                  'Produit': p.product_name,
-                  'SKU': p.product_sku,
-                  'Stock départ': startingStock.toFixed(0),
-                  'Approv.': supply && supply.quantity > 0
-                    ? supply.display?.trim() || supply.quantity.toFixed(0)
-                    : '',
-                  'Qté vendue': p.quantity_display?.trim() || p.quantity_sold.toString(),
-                  'Total vendu': p.quantity_sold.toString(),
-                  'Valeur vendue': formatPriceValue(p.total_revenue),
-                  'Qté restante': stockInfo?.stock_display?.trim() || currentStock.toFixed(0),
-                  'Total restant': currentStock.toFixed(0),
-                  'Valeur restante': formatPriceValue(stockValue),
-                };
-              });
-              exportToCSV(productsWithStock, `produits-vendus-${new Date().toISOString().split('T')[0]}`,
-                ['Produit', 'SKU', 'Stock départ', 'Approv.', 'Qté vendue', 'Total vendu',
-                 'Valeur vendue', 'Qté restante', 'Total restant', 'Valeur restante']);
-            }}>
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Export Excel
-            </Button>
-          </div>
+          {menuExport}
 
           {isLoading ? (
             <Card>
@@ -1537,6 +1245,7 @@ export default function ReportsPage() {
 
         {/* Customers Tab */}
         <TabsContent value="customers" className="space-y-4">
+          {menuExport}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Top Customers */}
             <Card>
@@ -1610,6 +1319,7 @@ export default function ReportsPage() {
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4">
+          {menuExport}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Cash Flow Chart */}
             <Card>
@@ -1637,6 +1347,60 @@ export default function ReportsPage() {
                       <Bar dataKey="expenses" fill="#ef4444" name="expenses" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
+                </div>
+
+                {/* ┌────────────────────────────────────────────────────────┐
+                    │ LES CHIFFRES SOUS LE GRAPHIQUE, PARCE QU'UN SURVOL NE  │
+                    │ SE LIT PAS.                                            │
+                    │                                                        │
+                    │ Le back-office cachait ses valeurs dans l'infobulle :   │
+                    │ il fallait promener la souris barre par barre pour      │
+                    │ savoir ce qu'une journée avait rapporté, et rien ne     │
+                    │ restait à l'écran. Le terminal les rend en clair depuis │
+                    │ le début - il n'a pas de survol - et c'est la lecture   │
+                    │ qui manquait ici. Elles vivent DANS la section du flux, │
+                    │ comme là-bas : un chiffre séparé de son graphique se    │
+                    │ lit comme une seconde mesure.                           │
+                    └────────────────────────────────────────────────────────┘ */}
+                <div className="mt-4 space-y-1 max-h-[220px] overflow-y-auto border-t pt-3">
+                  {cashFlow.length > 0 ? (
+                    cashFlow.map((flux) => {
+                      const net = parseFloat(flux.net);
+                      return (
+                        <div
+                          key={flux.period}
+                          className="flex items-center justify-between gap-3 py-1"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">
+                              {formatChartDate(flux.period)}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              Entrées {formatPrice(parseFloat(flux.income))} · Sorties{" "}
+                              {formatPrice(parseFloat(flux.expenses))}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            {/* Un net négatif est la seule chose qu'on vient
+                                chercher ici : il porte sa couleur, le reste
+                                reste neutre pour qu'elle se voie. */}
+                            <p
+                              className={`text-sm font-semibold ${
+                                net < 0 ? "text-red-600" : ""
+                              }`}
+                            >
+                              {formatPrice(net)}
+                            </p>
+                            <p className="text-xs text-gray-500">Net</p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-gray-500 text-center py-4">
+                      Aucun mouvement de caisse sur cette période.
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1667,32 +1431,45 @@ export default function ReportsPage() {
               </CardContent>
             </Card>
           </div>
+
         </TabsContent>
 
         {/* Daily Cash Report Tab */}
         <TabsContent value="daily-cash" className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-            <div className="flex items-center gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs text-gray-500">Date du rapport</Label>
+            {/* ┌────────────────────────────────────────────────────────┐
+                │ LE LIBELLÉ SORT DE LA RANGÉE, SINON RIEN NE S'ALIGNE.  │
+                │                                                        │
+                │ Il vivait DANS la colonne de gauche : la rangée devait  │
+                │ alors aligner un bloc « libellé + champ » contre un     │
+                │ bouton seul, et le `mt-5` posé sur le bouton était un   │
+                │ rattrapage à la main - juste tant que le libellé fait   │
+                │ une ligne, faux dès qu'il en fait deux. Le libellé      │
+                │ au-dessus, les deux commandes ont la même hauteur.      │
+                │ Défaut identique corrigé sur le terminal.               │
+                └────────────────────────────────────────────────────────┘ */}
+            <div className="space-y-1">
+              <Label className="text-xs text-gray-500">Date du rapport</Label>
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   type="date"
                   value={selectedReportDate}
                   onChange={(e) => setSelectedReportDate(e.target.value)}
-                  className="w-[180px]"
+                  className="w-full sm:w-[180px]"
                 />
+                <Button variant="outline" size="sm" onClick={() => fetchDailyCashReport(selectedReportDate, dailyReportMovementsPage)} disabled={isLoadingDailyReport} className="shrink-0">
+                  {isLoadingDailyReport ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  {isLoadingDailyReport ? "Chargement..." : "Charger"}
+                </Button>
               </div>
-              <Button variant="outline" size="sm" onClick={() => fetchDailyCashReport(selectedReportDate, dailyReportMovementsPage)} className="mt-5" disabled={isLoadingDailyReport}>
-                {isLoadingDailyReport ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                {isLoadingDailyReport ? "Chargement..." : "Charger"}
-              </Button>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={exportDailyCashPDF} disabled={!dailyCashReport}>
-                <FileText className="h-4 w-4 mr-2" />
-                Export PDF
-              </Button>
-            </div>
+            {/* Le menu reste ouvert même si l'écran n'a rien chargé : le
+                serveur rend le rapport de la date demandée, vide ou non. */}
+            <ExportMenu
+              targets={cibleExport}
+              disabled={Boolean(exportIndisponible)}
+              disabledReason={exportIndisponible ?? undefined}
+            />
           </div>
 
           {isLoadingDailyReport ? (
@@ -1834,16 +1611,7 @@ export default function ReportsPage() {
 
         {/* Stock Tab */}
         <TabsContent value="stock" className="space-y-4">
-          <div className="flex justify-end gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={exportStockPDF}>
-              <FileText className="h-4 w-4 mr-2" />
-              Export PDF
-            </Button>
-            <Button variant="outline" size="sm" onClick={exportStockCSV}>
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Export Excel
-            </Button>
-          </div>
+          {menuExport}
 
           {/* Stock Movement Summary */}
           {stockMovementsSummary && (
@@ -1976,16 +1744,7 @@ export default function ReportsPage() {
 
         {/* Profits Tab */}
         <TabsContent value="profits" className="space-y-4">
-          <div className="flex justify-end gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={exportProfitsPDF}>
-              <FileText className="h-4 w-4 mr-2" />
-              Export PDF
-            </Button>
-            <Button variant="outline" size="sm" onClick={exportProfitsCSV}>
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Export Excel
-            </Button>
-          </div>
+          {menuExport}
 
           {/* Profit Summary */}
           {profitMargins && (
@@ -2120,7 +1879,7 @@ export default function ReportsPage() {
             <div className="space-y-1">
               <Label className="text-xs text-gray-500">Utilisateur</Label>
               <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger className="w-[240px]">
+                <SelectTrigger className="w-full sm:w-[240px]">
                   <SelectValue placeholder="Choisir un utilisateur" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2138,7 +1897,7 @@ export default function ReportsPage() {
                 value={userActivityGroupBy}
                 onValueChange={(v) => setUserActivityGroupBy(v as "day" | "hour")}
               >
-                <SelectTrigger className="w-[130px]">
+                <SelectTrigger className="w-full sm:w-[130px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -2147,19 +1906,21 @@ export default function ReportsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchUserActivity}
-              disabled={isLoadingUserActivity || !selectedUserId}
-            >
-              {isLoadingUserActivity ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Générer
-            </Button>
+            {/* ┌──────────────────────────────────────────────────────┐
+                │ PAS DE BOUTON « GÉNÉRER ».                           │
+                │                                                      │
+                │ Il fallait le presser après CHAQUE changement         │
+                │ d'utilisateur, de granularité ou de période, sans     │
+                │ que rien ne dise que l'écran affichait encore les     │
+                │ chiffres du précédent. Le terminal recharge tout      │
+                │ seul depuis toujours ; c'est la parité, et c'est      │
+                │ aussi la seule lecture honnête.                       │
+                └──────────────────────────────────────────────────────┘ */}
+            <ExportMenu
+              targets={cibleExport}
+              disabled={Boolean(exportIndisponible)}
+              disabledReason={exportIndisponible ?? undefined}
+            />
           </div>
           <p className="text-xs text-gray-500 -mt-2 mb-2">
             Période : utilise les filtres de date/période en haut de page.
@@ -2260,7 +2021,10 @@ export default function ReportsPage() {
           ) : (
             <Card>
               <CardContent className="py-12 text-center text-gray-500">
-                Sélectionnez un utilisateur puis cliquez sur « Générer ».
+                {/* Le bouton « Générer » n'existe plus : l'état vide ne peut
+                    donc plus y renvoyer. Il ne reste qu'un geste à faire. */}
+                <Users className="h-8 w-8 mx-auto mb-3 text-gray-300" />
+                <p>Choisissez un utilisateur pour voir son activité.</p>
               </CardContent>
             </Card>
           )}

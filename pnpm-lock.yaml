@@ -26,12 +26,9 @@ importers:
       '@tanstack/react-query-devtools':
         specifier: ^5.91.3
         version: 5.91.3(@tanstack/react-query@5.90.20(react@19.2.3))(react@19.2.3)
-      '@tanstack/react-table':
-        specifier: ^8.21.3
-        version: 8.21.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@vente-facile/core':
-        specifier: github:nkayisi/vente-facile-core#v0.6.2
-        version: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/7298070bd207c99e2404bfba54b8487f5650f62b
+        specifier: github:nkayisi/vente-facile-core#v0.7.3
+        version: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/72c9b4330065a126ffb05042d82e9aa197e0bad3
       axios:
         specifier: ^1.13.4
         version: 1.13.4
@@ -50,9 +47,6 @@ importers:
       jspdf:
         specifier: ^4.1.0
         version: 4.1.0
-      jspdf-autotable:
-        specifier: ^5.0.7
-        version: 5.0.7(jspdf@4.1.0)
       lucide-react:
         specifier: ^0.563.0
         version: 0.563.0(react@19.2.3)
@@ -1921,17 +1915,6 @@ packages:
     peerDependencies:
       react: ^18 || ^19
 
-  '@tanstack/react-table@8.21.3':
-    resolution: {integrity: sha512-5nNMTSETP4ykGegmVkhjcS8tTLW6Vl4axfEGQN3v0zdHYbK4UfoqfPChclTrJ4EoK9QynqAu9oUf8VEmrpZ5Ww==}
-    engines: {node: '>=12'}
-    peerDependencies:
-      react: '>=16.8'
-      react-dom: '>=16.8'
-
-  '@tanstack/table-core@8.21.3':
-    resolution: {integrity: sha512-ldZXEhOBb8Is7xLs01fR3YEc3DERiz5silj8tnGkFZytt1abEvl/GhUmCE0PMLaMPTa3Jk4HbKmRlHmu+gCftg==}
-    engines: {node: '>=12'}
-
   '@ts-morph/common@0.27.0':
     resolution: {integrity: sha512-Wf29UqxWDpc+i61k3oIOzcUfQt79PIT9y/MWfAGlrkjg6lBC1hwDECLXPVJAhWjiGbfBCxZd65F/LIZF3+jeJQ==}
 
@@ -2160,9 +2143,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/7298070bd207c99e2404bfba54b8487f5650f62b':
-    resolution: {tarball: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/7298070bd207c99e2404bfba54b8487f5650f62b}
-    version: 0.6.2
+  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/72c9b4330065a126ffb05042d82e9aa197e0bad3':
+    resolution: {tarball: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/72c9b4330065a126ffb05042d82e9aa197e0bad3}
+    version: 0.7.3
 
   '@webassemblyjs/ast@1.14.1':
     resolution: {integrity: sha512-nuBEDgQfm1ccRp/8bCQrx1frohyufl4JlbMMZ4P1wpeOfDhF6FQkxZJ1b/e+PLwr6X1Nhw6OLme5usuBWYBvuQ==}
@@ -3562,11 +3545,6 @@ packages:
 
   jsonfile@6.2.0:
     resolution: {integrity: sha512-FGuPw30AdOIUTRMC2OMRtQV+jkVj2cfPqSeWXv1NEAJ1qZ5zb1X6z1mFhbfOB/iy3ssJCD+3KuZ8r8C3uVFlAg==}
-
-  jspdf-autotable@5.0.7:
-    resolution: {integrity: sha512-2wr7H6liNDBYNwt25hMQwXkEWFOEopgKIvR1Eukuw6Zmprm/ZcnmLTQEjW7Xx3FCbD3v7pflLcnMAv/h1jFDQw==}
-    peerDependencies:
-      jspdf: ^2 || ^3 || ^4
 
   jspdf@4.1.0:
     resolution: {integrity: sha512-xd1d/XRkwqnsq6FP3zH1Q+Ejqn2ULIJeDZ+FTKpaabVpZREjsJKRJwuokTNgdqOU+fl55KgbvgZ1pRTSWCP2kQ==}
@@ -6747,14 +6725,6 @@ snapshots:
       '@tanstack/query-core': 5.90.20
       react: 19.2.3
 
-  '@tanstack/react-table@8.21.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
-    dependencies:
-      '@tanstack/table-core': 8.21.3
-      react: 19.2.3
-      react-dom: 19.2.3(react@19.2.3)
-
-  '@tanstack/table-core@8.21.3': {}
-
   '@ts-morph/common@0.27.0':
     dependencies:
       fast-glob: 3.3.3
@@ -6974,7 +6944,7 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.11.1':
     optional: true
 
-  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/7298070bd207c99e2404bfba54b8487f5650f62b': {}
+  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/72c9b4330065a126ffb05042d82e9aa197e0bad3': {}
 
   '@webassemblyjs/ast@1.14.1':
     dependencies:
@@ -8516,10 +8486,6 @@ snapshots:
       universalify: 2.0.1
     optionalDependencies:
       graceful-fs: 4.2.11
-
-  jspdf-autotable@5.0.7(jspdf@4.1.0):
-    dependencies:
-      jspdf: 4.1.0
 
   jspdf@4.1.0:
     dependencies:

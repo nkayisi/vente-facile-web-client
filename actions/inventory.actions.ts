@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import axios from "@/lib/auth/api-helper";
 import { getErrorBody } from "@/lib/api/drf-error";
+import {
+  fetchExportFile,
+  type ExportFile,
+  type ExportFormat,
+} from "@/lib/export/fetch-export";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -122,26 +127,6 @@ export interface CountItemData {
   notes?: string;
 }
 
-export interface PrintData {
-  session: InventorySession;
-  warehouse: {
-    name: string;
-    code: string;
-    address: string;
-  };
-  categories: Record<string, InventoryCount[]>;
-  summary: {
-    total_products: number;
-    counted_products: number;
-    products_with_difference: number;
-    total_expected_quantity: string;
-    total_counted_quantity: string;
-    total_difference_quantity: string;
-    total_difference_value: string;
-  };
-  printed_at: string;
-  printed_by: string;
-}
 
 // Response types
 interface ApiResponse<T> {
@@ -416,24 +401,6 @@ export async function getInventoryCounts(
   }
 }
 
-export async function getInventoryPrintData(
-  accessToken: string,
-  organizationId: string,
-  sessionId: string
-): Promise<ApiResponse<PrintData>> {
-  try {
-    const response = await axios.get(
-      `${API_BASE_URL}/inventory-sessions/${sessionId}/print-data/`,
-      { headers: getHeaders(accessToken, organizationId) }
-    );
-
-    return { success: true, data: response.data };
-  } catch (error: unknown) {
-    console.error("[inventory] Get print data error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la récupération des données d'impression" };
-  }
-}
-
 export interface LockedProductsResponse {
   locked_product_ids: string[];
   active_sessions: {
@@ -461,4 +428,31 @@ export async function getLockedProducts(
     console.error("[inventory] Get locked products error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des produits bloqués" };
   }
+}
+
+/**
+ * Télécharge un document de session d'inventaire.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ LA FICHE ET LE RAPPORT ÉTAIENT DESSINÉS DANS LE NAVIGATEUR.             │
+ * │                                                                          │
+ * │ Cent quatre-vingt-dix lignes de jsPDF alimentées par `print-data/`, avec │
+ * │ leurs styles et leur bandeau tenus en phase à la main avec ceux du       │
+ * │ serveur, et le PDF pour seul format.                                     │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+export async function exportInventorySession(
+  accessToken: string,
+  organizationId: string,
+  sessionId: string,
+  document: "sheet" | "report",
+  format: ExportFormat
+): Promise<ExportFile> {
+  return fetchExportFile(
+    `/inventory-sessions/${sessionId}/export/`,
+    accessToken,
+    organizationId,
+    format,
+    { document }
+  );
 }

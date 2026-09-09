@@ -206,7 +206,7 @@ export default function AdjustmentDetailPage() {
             <p className="text-sm text-gray-500 mt-1">{adjustment.adjustment_type_display}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {adjustment.status === "draft" && (
             <>
               <Button
@@ -258,7 +258,7 @@ export default function AdjustmentDetailPage() {
       </Card>
 
       {/* Details */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Info Card */}
         <Card>
           <CardHeader>

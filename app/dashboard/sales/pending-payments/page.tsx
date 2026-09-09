@@ -523,9 +523,14 @@ export default function PendingPaymentsPage() {
               {paginatedSales.map((sale) => (
                 <div
                   key={sale.id}
-                  className="flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors"
+                  // ⚠ `flex` seul poussait le bouton « Payer » HORS de l'écran à
+                  // 390 points : mesuré à 441 et 497 px de bord droit pour une
+                  // fenêtre de 390. Rien ne débordait au sens du défilement - le
+                  // bouton était simplement coupé, sur la page dont c'est le
+                  // seul geste. La rangée s'empile donc sous le seuil.
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-lg border hover:bg-gray-50 transition-colors"
                 >
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="font-semibold text-gray-900">{sale.reference}</h3>
                       {sale.status === 'partially_paid' ? (
@@ -578,8 +583,8 @@ export default function PendingPaymentsPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 ml-4">
-                    <div className="text-right">
+                  <div className="flex items-center justify-between gap-4 sm:ml-4 sm:justify-start">
+                    <div className="sm:text-right">
                       <p className="text-xs text-gray-500">Reste à payer</p>
                       <p className="text-xl font-bold text-orange-600">
                         {money.money(sale.amount_due, sale.currency)}
@@ -587,7 +592,7 @@ export default function PendingPaymentsPage() {
                     </div>
                     <Button
                       onClick={() => openPaymentDialog(sale)}
-                      className="bg-orange-500 hover:bg-orange-600"
+                      className="shrink-0 bg-orange-500 hover:bg-orange-600"
                     >
                       <CreditCard className="h-4 w-4 mr-2" />
                       Payer
@@ -761,7 +766,7 @@ export default function PendingPaymentsPage() {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Input
                     type="number"
                     min={0}

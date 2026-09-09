@@ -56,11 +56,19 @@ import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
 import {
   getPackaging,
-  formatPackaged,
   formatPackagedSplit,
   formatPackagedDifference,
   splitPackaged,
 } from "@/lib/packaging";
+import {
+  afficherPartage,
+  ecartDuComptage,
+  resumeConversion,
+  verifierQuantite,
+  type ErreursQuantite,
+  type PartageStock,
+  type SaisieQuantite,
+} from "@/lib/stock/lignes-conditionnees";
 import { PackagedQuantityInput } from "@/components/stock/packaged-quantity-input";
 import {
   getStockAdjustments,
@@ -68,7 +76,7 @@ import {
   approveStockAdjustment,
   rejectStockAdjustment,
   getWarehouses,
-  getStockByWarehouse,
+  getStocks,
   StockAdjustment,
   Warehouse,
   Stock,
@@ -121,7 +129,6 @@ export default function AdjustmentsPage() {
   const [adjustments, setAdjustments] = useState<StockAdjustment[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [warehouseStocks, setWarehouseStocks] = useState<Stock[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
 
@@ -145,9 +152,16 @@ export default function AdjustmentsPage() {
   });
 
   // Item being added
+  // ⚠ `quantity_counted` est OPTIONNEL, et ce n'est pas un détail de typage :
+  // `undefined` dit « rien tapé », `0` dit « rayon vide ». Tant qu'il valait
+  // `number` initialisé à 0, les deux étaient le même nombre, et le `|| null`
+  // qui en découlait transformait un zéro TAPÉ en « rien tapé » : un rayon
+  // vidé par un vol se faisait refuser « Indiquez ce que vous avez compté,
+  // même si c'est zéro » - c'est-à-dire exactement ce que l'opérateur venait
+  // de faire. Le champ, lui, effaçait le 0 sous ses yeux.
   const [newItem, setNewItem] = useState<{
     product: string;
-    quantity_counted: number;
+    quantity_counted?: number;
     quantity_expected: number;
     /** Part vrac du stock théorique, LUE sur la ligne de stock */
     expected_loose_quantity?: number;
@@ -156,16 +170,71 @@ export default function AdjustmentsPage() {
     counted_loose_quantity?: number;
   }>({
     product: "",
-    quantity_counted: 0,
     quantity_expected: 0,
     unit_cost: 0,
   });
+
+  /** Messages sous les champs de quantité. Un appui doit RÉPONDRE. */
+  const [newItemErrors, setNewItemErrors] = useState<ErreursQuantite>({});
+
+  /**
+   * La ligne de stock de l'article choisi, DANS L'ENTREPÔT VISÉ.
+   *
+   * ┌────────────────────────────────────────────────────────────────────────┐
+   * │ L'ATTENDU NE SE LIT PLUS DANS UNE LISTE PAGINÉE.                      │
+   * │                                                                        │
+   * │ Il venait de `warehouseStocks`, alimenté par `getStockByWarehouse`,    │
+   * │ qui ne garde que la PREMIÈRE PAGE de `stocks/by-warehouse/` - une      │
+   * │ action paginée côté serveur. Sur un dépôt de plus d'une page de        │
+   * │ rayons, tout article au-delà était compté contre un attendu de ZÉRO.   │
+   * │                                                                        │
+   * │ Le stock final n'en souffrait pas (`approve_adjustment` POSE le        │
+   * │ comptage, il n'ajoute pas l'écart), mais `quantity_difference` était   │
+   * │ faux, donc le mouvement enregistré aussi : le journal annonçait        │
+   * │ « +50 trouvés » là où le rayon n'avait pas bougé, et son sens          │
+   * │ (`adjustment_in` / `adjustment_out`) avec lui. Un inventaire sert      │
+   * │ précisément à ce que ce chiffre-là soit juste.                         │
+   * │                                                                        │
+   * │ La ligne est donc demandée À L'UNITÉ, ce qui ne dépend d'aucune liste. │
+   * └────────────────────────────────────────────────────────────────────────┘
+   */
+  const [itemStock, setItemStock] = useState<Stock | null>(null);
 
   /**
    * Conditionnement du produit en cours de saisie. Un produit vendu par
    * contenant se compte comme il est rangé : « 3 cartons + 2 bouteilles ».
    */
   const newItemPackaging = getPackaging(products.find(p => p.id === newItem.product));
+
+  /**
+   * Le THÉORIQUE, relevé sur la ligne de stock et jamais saisi.
+   *
+   * Ses deux compteurs sont LUS : redécouper le total au facteur du jour
+   * annoncerait « 4 casiers + 3 bouteilles » pour un rayon qui en porte 3 et
+   * 27, et l'écart s'appuierait alors sur un attendu qui n'a jamais existé.
+   */
+  const attendu: PartageStock | null = itemStock
+    ? {
+        contenants: Number(itemStock.package_quantity ?? 0),
+        vrac: Number(itemStock.loose_quantity ?? 0),
+        total: Number(itemStock.quantity ?? 0),
+      }
+    : null;
+
+  const saisie: SaisieQuantite = {
+    conditionnement: newItemPackaging,
+    contenants: newItem.counted_package_quantity ?? null,
+    vrac: newItemPackaging
+      ? (newItem.counted_loose_quantity ?? null)
+      : (newItem.quantity_counted ?? null),
+  };
+  const recap = resumeConversion(saisie, "comptez");
+  // L'écart se lit PENDANT la saisie : c'est lui qui dit s'il faut recompter,
+  // et le découvrir une ligne plus bas est déjà trop tard.
+  const ecartEnCours =
+    attendu && (saisie.contenants != null || saisie.vrac != null)
+      ? ecartDuComptage(newItemPackaging, attendu, saisie)
+      : null;
 
   // Fetch data
   useEffect(() => {
@@ -234,35 +303,22 @@ export default function AdjustmentsPage() {
     }
   }, [organization, fetchAdjustments]);
 
-  // Fetch warehouse stocks when warehouse changes
-  useEffect(() => {
-    const fetchWarehouseStocks = async () => {
-      if (!session?.accessToken || !organization?.id || !formData.warehouse) return;
-
-      const result = await getStockByWarehouse(
-        session.accessToken,
-        organization.id,
-        formData.warehouse
-      );
-      if (result.success && result.data) {
-        setWarehouseStocks(result.data);
-      }
-    };
-
-    fetchWarehouseStocks();
-  }, [formData.warehouse, session?.accessToken, organization?.id]);
-
+  /*
+   * ┌────────────────────────────────────────────────────────────────────────┐
+   * │ LE STOCK A QUITTÉ LE LIBELLÉ DES OPTIONS.                             │
+   * │                                                                        │
+   * │ Il s'y écrivait « (Stock: 0) » pour tout article absent de la première │
+   * │ page de `stocks/by-warehouse/`, seule page que l'écran chargeait : un  │
+   * │ rayon plein s'annonçait vide dans la liste déroulante. Le théorique se │
+   * │ lit maintenant sous le sélecteur, relevé À L'UNITÉ sur la vraie ligne  │
+   * │ de stock - donc juste, et à un seul endroit. Deux affichages du même   │
+   * │ chiffre dont l'un peut mentir, c'est un de trop.                       │
+   * └────────────────────────────────────────────────────────────────────────┘
+   */
   const searchProducts = useCallback(
     async (query: string) => {
       if (!session?.accessToken || !organization) return [];
       return createProductSearchHandler(session.accessToken, organization.id, {
-        formatLabel: p => {
-          const stock = warehouseStocks.find(s => s.product === p.id);
-          const q =
-            stock?.stock_display?.trim() ||
-            (stock ? parseFloat(stock.quantity).toFixed(0) : "0");
-          return `${p.name} (Stock: ${q})`;
-        },
         onResults: results => {
           setProducts(prev => {
             const existingIds = new Set(prev.map(p => p.id));
@@ -272,8 +328,35 @@ export default function AdjustmentsPage() {
         },
       })(query);
     },
-    [session?.accessToken, organization, warehouseStocks]
+    [session?.accessToken, organization]
   );
+
+  /**
+   * Le théorique de l'article choisi, dans l'entrepôt visé.
+   *
+   * Les dépendances sont PRIMITIVES : un objet reconstruit à chaque rendu
+   * relancerait l'effet sans fin, sans erreur et sans rien à l'écran.
+   */
+  useEffect(() => {
+    const produit = newItem.product;
+    const depot = formData.warehouse;
+    if (!session?.accessToken || !organization?.id || !produit || !depot) {
+      setItemStock(null);
+      return;
+    }
+    let vivant = true;
+    getStocks(session.accessToken, organization.id, { warehouse: depot, product: produit }).then(
+      res => {
+        // Une réponse arrivée APRÈS un changement d'article ne doit pas se
+        // ranger : elle décrirait le théorique du précédent, et l'écart entier
+        // porterait sur le mauvais rayon.
+        if (vivant) setItemStock(res.success && res.data?.length ? res.data[0] : null);
+      }
+    );
+    return () => {
+      vivant = false;
+    };
+  }, [newItem.product, formData.warehouse, session?.accessToken, organization?.id]);
 
   // Add item to adjustment
   const addItem = async () => {
@@ -295,46 +378,73 @@ export default function AdjustmentsPage() {
       return;
     }
 
-    // Get expected quantity from warehouse stock
-    const stock = warehouseStocks.find(s => s.product === newItem.product);
-    const expectedQty = stock ? parseFloat(stock.quantity) : 0;
-    // Part vrac LUE sur la ligne de stock : redécouper `expectedQty` au facteur
-    // annoncerait « 4 casiers + 3 bouteilles » pour un rayon qui porte
-    // « 3 casiers + 27 bouteilles », et l'écart s'appuierait sur un attendu
-    // qui n'a jamais existé.
-    const expectedLoose = stock ? parseFloat(stock.loose_quantity || "0") : 0;
+    // L'attendu vient de la ligne de stock DEMANDÉE À L'UNITÉ, jamais d'une
+    // liste paginée : voir l'encadré sur `itemStock`. Sa part vrac est LUE,
+    // jamais redécoupée au facteur du jour.
+    const expectedQty = attendu?.total ?? 0;
+    const expectedLoose = attendu?.vrac ?? 0;
 
     const packaging = getPackaging(product);
     const packages = newItem.counted_package_quantity ?? 0;
     const loose = newItem.counted_loose_quantity ?? 0;
 
-    if (packaging && packages <= 0 && loose <= 0) {
-      toast.error("Indiquez la quantité comptée");
-      return;
-    }
+    // ┌──────────────────────────────────────────────────────────────────────┐
+    // │ ZÉRO EST UNE VALEUR ICI, ET UNE VALEUR QUI COMPTE.                  │
+    // │                                                                      │
+    // │ « 0 compté face à un théorique de 10 » est précisément l'écart qu'un │
+    // │ ajustement existe pour écrire, et c'était REFUSÉ : le contrôle       │
+    // │ demandait `packages > 0 || loose > 0`. Un rayon vidé par un vol ne   │
+    // │ pouvait donc pas s'enregistrer. Ce qui est refusé est la saisie      │
+    // │ VIDE - deux champs blancs ne disent pas « rien en rayon », ils ne    │
+    // │ disent rien.                                                         │
+    // │                                                                      │
+    // │ Au passage, le chemin SANS conditionnement n'avait aucun contrôle du │
+    // │ tout : un comptage jamais tapé partait à zéro, et l'écart valait     │
+    // │ tout le rayon.                                                       │
+    // └──────────────────────────────────────────────────────────────────────┘
+    const erreurs = verifierQuantite(
+      {
+        conditionnement: packaging,
+        contenants: newItem.counted_package_quantity ?? null,
+        vrac: packaging
+          ? (newItem.counted_loose_quantity ?? null)
+          : (newItem.quantity_counted ?? null),
+      },
+      { zeroAccepte: true }
+    );
+    setNewItemErrors(erreurs);
+    if (Object.keys(erreurs).length > 0) return;
+
+    const ligne = {
+      product: newItem.product,
+      // Produit vendu par contenant : on transmet la saisie telle quelle,
+      // le serveur recompose le total. Sinon, quantité simple d'origine.
+      ...(packaging
+        ? {
+            counted_package_quantity: packages,
+            // Une valeur restée d'un article précédent ne doit pas partir : sur
+            // un article vendu en gros seul, le champ n'existe pas à l'écran.
+            counted_loose_quantity: packaging.packageOnly ? 0 : loose,
+          }
+        // `?? 0` sans risque : `verifierQuantite` vient de refuser la saisie
+        // vide, donc la valeur a été tapée - fût-elle zéro.
+        : { quantity_counted: newItem.quantity_counted ?? 0 }),
+      quantity_expected: expectedQty,
+      expected_loose_quantity: expectedLoose,
+      unit_cost: parseFloat(product.cost_price) || 0,
+    };
 
     setFormData({
       ...formData,
-      items: [
-        ...formData.items,
-        {
-          product: newItem.product,
-          // Produit vendu par contenant : on transmet la saisie telle quelle,
-          // le serveur recompose le total. Sinon, quantité simple d'origine.
-          ...(packaging
-            ? {
-                counted_package_quantity: packages,
-                counted_loose_quantity: loose,
-              }
-            : { quantity_counted: newItem.quantity_counted }),
-          quantity_expected: expectedQty,
-          expected_loose_quantity: expectedLoose,
-          unit_cost: parseFloat(product.cost_price) || 0,
-        },
-      ],
+      // Le même article deux fois n'est pas deux comptages : le second REMPLACE
+      // le premier. Deux lignes sur le même produit donneraient deux écarts
+      // contradictoires sur le même rayon, et le serveur appliquerait le
+      // dernier sans que rien ne le dise.
+      items: [...formData.items.filter(i => i.product !== newItem.product), ligne],
     });
 
-    setNewItem({ product: "", quantity_counted: 0, quantity_expected: 0, unit_cost: 0 });
+    setNewItem({ product: "", quantity_expected: 0, unit_cost: 0 });
+    setNewItemErrors({});
   };
 
   // Remove item from adjustment
@@ -352,6 +462,14 @@ export default function AdjustmentsPage() {
 
     if (!formData.warehouse) {
       toast.error("Veuillez sélectionner un entrepôt");
+      return;
+    }
+
+    // L'explication est OBLIGATOIRE, comme sur le terminal. Le serveur
+    // l'accepte vide, mais un ajustement fait bouger du stock sans autre pièce
+    // justificative, et le TYPE seul ne dit pas pourquoi.
+    if (!formData.reason?.trim()) {
+      toast.error("Expliquez la raison de cet ajustement");
       return;
     }
 
@@ -622,7 +740,7 @@ export default function AdjustmentsPage() {
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Entrepôt *</Label>
                 <SearchableSelectAsyncWithEmpty
@@ -665,96 +783,146 @@ export default function AdjustmentsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Raison</Label>
+              {/* OBLIGATOIRE, comme sur le terminal, qui bloquait déjà dessus.
+                  Le serveur l'accepte vide (`reason = TextField(blank=True)`),
+                  mais un ajustement fait bouger du stock sans autre pièce
+                  justificative : le TYPE dit « comptage » ou « casse », il ne
+                  dit pas POURQUOI. Les deux surfaces demandaient deux choses
+                  différentes pour le même acte. */}
+              <Label htmlFor="adjustment_reason">Explication *</Label>
               <Textarea
+                id="adjustment_reason"
                 value={formData.reason}
                 onChange={e => setFormData({ ...formData, reason: e.target.value })}
-                placeholder="Décrivez la raison de cet ajustement..."
+                placeholder="Comptage du 30/08, casse en réserve..."
                 rows={2}
               />
+              <p className="text-xs text-muted-foreground">
+                Elle figure sur la pièce et dans l&apos;historique.
+              </p>
             </div>
 
-            {/* Add Items */}
-            {formData.warehouse && (
-              <div className="space-y-2">
-                <Label>Articles à ajuster</Label>
-                <div className="flex gap-2">
+            {/*
+              LE BOUTON SUIT LES CHAMPS QU'IL VALIDE.
+
+              Il était posé SUR LA MÊME LIGNE que le sélecteur de produit, donc
+              AU-DESSUS du bloc de comptage qu'il enregistre : on lisait
+              « produit, ajouter », puis on découvrait des cases en dessous.
+              L'ordre de lecture doit être l'ordre du geste - choisir, compter,
+              ajouter.
+            */}
+            <div className="space-y-3 rounded-lg border p-4">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Compter un article</Label>
+                {formData.items.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {formData.items.length} déjà au comptage
+                  </span>
+                )}
+              </div>
+
+              {!formData.warehouse ? (
+                <p className="text-sm text-muted-foreground">
+                  Choisissez d&apos;abord l&apos;entrepôt : c&apos;est lui qui dit ce que le
+                  système attend.
+                </p>
+              ) : (
+                <>
                   <SearchableSelectAsync
                     onSearch={searchProducts}
                     value={newItem.product || undefined}
                     onValueChange={value => {
-                      const stock = warehouseStocks.find(s => s.product === value);
                       setNewItem({
                         ...newItem,
                         product: value,
-                        quantity_expected: stock ? parseFloat(stock.quantity) : 0,
-                        expected_loose_quantity: stock
-                          ? parseFloat(stock.loose_quantity || "0")
-                          : 0,
+                        quantity_counted: undefined,
                         counted_package_quantity: undefined,
                         counted_loose_quantity: undefined,
                       });
+                      setNewItemErrors({});
                     }}
                     placeholder="Sélectionner un produit"
                     searchPlaceholder="Rechercher un produit..."
-                    className="flex-1"
+                    className="w-full"
                   />
-                  {!newItemPackaging && (
-                    <Input
-                      type="number"
-                      placeholder="Compté"
-                      value={newItem.quantity_counted || ""}
-                      onChange={e =>
-                        setNewItem({ ...newItem, quantity_counted: parseInt(e.target.value) || 0 })
-                      }
-                      className="w-24"
-                      min="0"
-                    />
-                  )}
-                  <Button type="button" variant="outline" onClick={addItem}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
 
-                {/* Comptage en contenants : « 3 cartons + 2 bouteilles » */}
-                {newItemPackaging && (
-                  <div className="rounded-lg border p-3">
-                    {(() => {
-                      const stock = warehouseStocks.find(s => s.product === newItem.product);
-                      // Le serveur envoie le partage LU sur ses deux compteurs :
-                      // on le rend tel quel plutôt que de rediviser le total.
-                      return (
-                        <p className="mb-3 text-xs text-gray-500">
-                          En stock d&apos;après le système :{" "}
-                          <span className="font-medium text-gray-700">
-                            {stock?.stock_display?.trim() ||
-                              formatPackaged(
-                                newItemPackaging,
-                                stock ? parseFloat(stock.quantity) : 0,
-                                stock ? parseFloat(stock.loose_quantity || "0") : 0
-                              )}
+                  {!newItem.product ? (
+                    <p className="text-sm text-muted-foreground">
+                      Cherchez un article par son nom, son code ou son code-barres.
+                    </p>
+                  ) : (
+                    <>
+                      {/* Le théorique est RELEVÉ, jamais saisi : le laisser
+                          modifiable permettrait d'écrire un écart qui n'existe
+                          pas. Ses deux compteurs sont LUS sur la ligne de
+                          stock, jamais redécoupés depuis leur somme. */}
+                      <p className="text-xs text-muted-foreground">
+                        {attendu ? (
+                          <>
+                            Le système attend :{" "}
+                            <span className="font-medium text-foreground">
+                              {afficherPartage(newItemPackaging, attendu)}
+                            </span>
+                          </>
+                        ) : (
+                          "Aucune ligne de stock dans cet entrepôt : le théorique est à zéro."
+                        )}
+                      </p>
+
+                      <PackagedQuantityInput
+                        packaging={newItemPackaging}
+                        packages={newItem.counted_package_quantity}
+                        loose={newItem.counted_loose_quantity}
+                        quantity={newItem.quantity_counted}
+                        onChange={next => {
+                          setNewItem({
+                            ...newItem,
+                            counted_package_quantity: next.packages,
+                            counted_loose_quantity: next.loose,
+                            quantity_counted: next.quantity,
+                          });
+                          setNewItemErrors({});
+                        }}
+                        recap={recap}
+                        erreurs={newItemErrors}
+                        simpleLabel="Quantité comptée"
+                        idPrefix="counted"
+                      />
+
+                      {ecartEnCours && (
+                        <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                          <span className="text-sm text-muted-foreground">Écart constaté</span>
+                          <span
+                            className={`text-sm font-medium tabular-nums ${
+                              ecartEnCours.signe < 0
+                                ? "text-destructive"
+                                : ecartEnCours.signe > 0
+                                  ? "text-success"
+                                  : "text-muted-foreground"
+                            }`}
+                          >
+                            {/* Un écart NUL reste neutre : le peindre en vert
+                                ferait du vert la couleur ordinaire de l'écran,
+                                et on ne verrait plus le vrai. */}
+                            {ecartEnCours.signe === 0 ? "Conforme" : ecartEnCours.texte}
                           </span>
-                        </p>
-                      );
-                    })()}
-                    <PackagedQuantityInput
-                      packaging={newItemPackaging}
-                      packages={newItem.counted_package_quantity}
-                      loose={newItem.counted_loose_quantity}
-                      onChange={next =>
-                        setNewItem({
-                          ...newItem,
-                          counted_package_quantity: next.packages,
-                          counted_loose_quantity: next.loose,
-                        })
-                      }
-                      verb="comptez"
-                      idPrefix="counted"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+                        </div>
+                      )}
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={addItem}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Ajouter au comptage
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
 
             {/* Items List */}
             {formData.items.length > 0 && (
@@ -846,7 +1014,9 @@ export default function AdjustmentsPage() {
               </Button>
               <Button
                 type="submit"
-                disabled={isSubmitting || formData.items.length === 0}
+                disabled={
+                  isSubmitting || formData.items.length === 0 || !formData.reason?.trim()
+                }
                 className="bg-orange-500 hover:bg-orange-600"
               >
                 {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

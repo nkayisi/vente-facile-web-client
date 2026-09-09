@@ -761,7 +761,7 @@ export default function CashbookPage() {
                     <SelectContent>
                       {incomeCategories.map((type) => (
                         <SelectItem key={type.id} value={type.id}>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <div
                               className="w-3 h-3 rounded-full"
                               style={{ backgroundColor: type.color }}

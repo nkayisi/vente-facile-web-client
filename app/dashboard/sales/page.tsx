@@ -22,6 +22,7 @@ import {
   FileText,
   Calculator,
   CircleDashed,
+  PackageX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/format";
@@ -65,6 +66,12 @@ const QUICK_LINKS = [
     label: "Devis",
     icon: FileText,
     tint: "bg-purple-100 text-purple-600",
+  },
+  {
+    href: "/dashboard/sales/returns",
+    label: "Retours",
+    icon: PackageX,
+    tint: "bg-rose-100 text-rose-600",
   },
 ] as const;
 
@@ -453,7 +460,7 @@ export default function SalesPage() {
                 ({filteredSales.length})
               </span>
             </CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="relative flex-1 sm:w-64">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input

@@ -84,12 +84,12 @@ import {
     deleteProduct,
     downloadImportTemplate,
     importProducts,
-    exportProductsExcel,
-    exportProductsPdf,
+    exportProducts,
     Product,
     ProductFilters,
     ImportResult,
 } from "@/actions/products.actions";
+import { ExportMenu, type ExportTarget } from "@/components/shared/ExportMenu";
 import { formatApiErrorBody } from "@/lib/api/drf-error";
 import { cn } from "@/lib/utils";
 import { DataPagination } from "@/components/shared/DataPagination";
@@ -143,8 +143,6 @@ export default function ProductsPage() {
     const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
     // Export
-    const [exportFormat, setExportFormat] = useState<"excel" | "pdf" | null>(null);
-    const isExporting = exportFormat !== null;
 
 
     // Counts uniquement : la liste réelle est chargée à la volée par les
@@ -283,49 +281,47 @@ export default function ProductsPage() {
     };
 
     // Handle export (excel | pdf)
-    const handleExport = async (format: "excel" | "pdf") => {
-        if (!session?.accessToken || !organization?.id) return;
-        if (totalCount === 0) {
-            toast.info("Aucun produit à exporter");
-            return;
-        }
-
-        setExportFormat(format);
-        try {
-            const result =
-                format === "excel"
-                    ? await exportProductsExcel(session.accessToken, organization.id)
-                    : await exportProductsPdf(session.accessToken, organization.id);
-
-            if (!result) {
-                toast.error("Erreur lors de l'export. Vérifiez vos permissions.");
-                return;
-            }
-
-            const uint8Array = new Uint8Array(result.data);
-            const blob = new Blob([uint8Array], { type: result.contentType });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = result.filename;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-            toast.success(
-                format === "excel"
-                    ? "Export Excel généré avec succès"
-                    : "Export PDF généré avec succès"
-            );
-        } catch (error: unknown) {
-            console.error("Export error:", error);
-            const message =
-                error instanceof Error ? error.message : "Erreur lors de l'export";
-            toast.error(message);
-        } finally {
-            setExportFormat(null);
-        }
-    };
+    /**
+     * Le catalogue, fabriqué par le serveur, sur le PÉRIMÈTRE FILTRÉ.
+     *
+     * ┌──────────────────────────────────────────────────────────────────┐
+     * │ L'EXPORT SUIT L'ÉCRAN, ET IL NE LE FAISAIT PAS.                  │
+     * │                                                                  │
+     * │ Deux endpoints séparés, aucun CSV, et surtout : le fichier       │
+     * │ sortait TOUT l'établissement quels que soient les filtres posés  │
+     * │ ici. On filtrait sur une catégorie, on exportait, et on recevait │
+     * │ le catalogue entier - sans que rien ne le signale.                │
+     * └──────────────────────────────────────────────────────────────────┘
+     */
+    const cibleExport: ExportTarget[] = useMemo(
+        () => [
+            {
+                key: "catalogue",
+                label: "Catalogue des produits",
+                run: (format) =>
+                    exportProducts(session!.accessToken!, organization!.id, format, {
+                        search: searchQuery || undefined,
+                        category:
+                            selectedCategory !== "all" ? selectedCategory : undefined,
+                        brand: selectedBrand !== "all" ? selectedBrand : undefined,
+                        is_active:
+                            selectedStatus === "active"
+                                ? true
+                                : selectedStatus === "inactive"
+                                  ? false
+                                  : undefined,
+                    }),
+            },
+        ],
+        [
+            session,
+            organization,
+            searchQuery,
+            selectedCategory,
+            selectedBrand,
+            selectedStatus,
+        ]
+    );
 
     // Handle import
     const handleImport = async () => {
@@ -610,49 +606,11 @@ export default function ProductsPage() {
                     </div>
 
                     <div className="flex gap-2 shrink-0">
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    className="gap-2"
-                                    disabled={isExporting}
-                                    title="Exporter tous les produits"
-                                >
-                                    {isExporting ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <Download className="h-4 w-4" />
-                                    )}
-                                    <span className="hidden sm:inline">Exporter</span>
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuItem
-                                    className="gap-2"
-                                    disabled={isExporting}
-                                    onClick={() => handleExport("excel")}
-                                >
-                                    {exportFormat === "excel" ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                                    )}
-                                    Format Excel
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    className="gap-2"
-                                    disabled={isExporting}
-                                    onClick={() => handleExport("pdf")}
-                                >
-                                    {exportFormat === "pdf" ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <FileText className="h-4 w-4 text-red-600" />
-                                    )}
-                                    Format PDF
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                        <ExportMenu
+                            targets={cibleExport}
+                            disabled={totalCount === 0}
+                            disabledReason="Aucun produit à exporter"
+                        />
 
                         <Popover open={showFilters} onOpenChange={setShowFilters}>
                             <PopoverTrigger asChild>

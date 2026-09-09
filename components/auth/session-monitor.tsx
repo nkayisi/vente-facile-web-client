@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
 
 // Le callback jwt (lib/auth/config.ts) ne rafraîchit le token QUE dans les
@@ -24,14 +24,16 @@ let signOutRequested = false;
 /**
  * Composant pour surveiller l'état de la session et synchroniser le token.
  *
- * 1. Écoute l'événement 'session-token-refreshed' émis par l'intercepteur axios
- *    après un refresh réussi via /api/auth/refresh, et appelle update() pour
- *    forcer useSession() à re-fetcher la session depuis le serveur (JWT cookie mis à jour).
+ * 1. Détecte les erreurs de refresh (RefreshAccessTokenError) et déconnecte
+ *    l'utilisateur.
  *
- * 2. Détecte les erreurs de refresh (RefreshAccessTokenError) et déconnecte l'utilisateur.
- * 
- * 3. Rafraîchit proactivement le token 1 min 30 avant son expiration pour éviter
- *    les interruptions lors d'une inactivité prolongée.
+ * 2. Rafraîchit proactivement le token 1 min 30 avant son expiration pour
+ *    éviter les interruptions lors d'une inactivité prolongée.
+ *
+ * Il écoutait aussi un événement `session-token-refreshed`, émis par une route
+ * `/api/auth/refresh` et par un intercepteur axios qui n'existent plus ni l'un
+ * ni l'autre : l'écouteur n'avait donc plus d'émetteur. Le rafraîchissement
+ * passe entièrement par `lib/auth/api-helper.ts`.
  */
 export function SessionMonitor() {
   const { data: session, status, update } = useSession();
@@ -50,19 +52,6 @@ export function SessionMonitor() {
       immediateRefreshRequestedFor = null;
     }
   }, [status]);
-
-  // Forcer la mise à jour de la session côté client quand le token a été rafraîchi côté serveur
-  const handleTokenRefreshed = useCallback(() => {
-    console.log("[SessionMonitor] Token rafraîchi côté serveur, mise à jour de la session client...");
-    update();
-  }, [update]);
-
-  useEffect(() => {
-    window.addEventListener("session-token-refreshed", handleTokenRefreshed);
-    return () => {
-      window.removeEventListener("session-token-refreshed", handleTokenRefreshed);
-    };
-  }, [handleTokenRefreshed]);
 
   // Refresh proactif : programmer un refresh avant l'expiration du token
   useEffect(() => {

@@ -115,7 +115,7 @@ export default function ContactsPage() {
             Gérez vos clients, fournisseurs et leurs informations
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             onClick={() => router.push("/dashboard/contacts/suppliers")}
@@ -236,7 +236,7 @@ export default function ContactsPage() {
       </div>
 
       {/* Recent Contacts */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Recent Customers */}
         <Card>
           <CardHeader className="pb-3">

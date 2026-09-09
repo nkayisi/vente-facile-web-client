@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -44,7 +44,6 @@ import {
   Lock,
   Unlock,
   Save,
-  Printer,
   Send,
   ShieldCheck,
   AlertCircle,
@@ -52,30 +51,17 @@ import {
   Package,
   Warehouse as WarehouseIcon,
   ClipboardList,
-  Filter,
   ArrowUpDown,
-  ChevronDown,
-  ChevronUp,
   Minus,
   Plus,
-  FileText,
   Timer,
   Ban,
-  BarChart3,
   CircleDollarSign,
 } from "lucide-react";
-import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
-import {
-  addSignatureSection,
-  alignHead,
-  createPDFDocument,
-  formatCurrencyForPDF,
-  formatNumberForPDF,
-} from "@/lib/pdf-utils";
-import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
+import { ExportMenu, type ExportTarget } from "@/components/shared/ExportMenu";
+import type { ExportFormat } from "@/lib/export/fetch-export";
 import { formatDate, formatDateTime, formatPrice, formatDecimal } from "@/lib/format";
-import { useCurrency } from "@/components/providers/currency-provider";
 import {
   getInventorySession,
   getInventoryCounts,
@@ -84,11 +70,10 @@ import {
   validateInventorySession,
   cancelInventorySession,
   startInventorySession,
-  getInventoryPrintData,
+  exportInventorySession,
   InventorySession,
   InventoryCount,
   CountItemData,
-  PrintData,
   InventoryCountFilters,
 } from "@/actions/inventory.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
@@ -102,42 +87,15 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
   cancelled: { label: "Annulé", color: "bg-red-100 text-red-700", icon: XCircle },
 };
 
-/**
- * Colonnes chiffrées des trois documents d'inventaire.
- *
- * Déclarées une fois et passées à la fois en `columnStyles` et à `alignHead` :
- * le corps du tableau et sa ligne d'en-tête ne peuvent donc plus s'aligner
- * différemment.
- */
-const COUNT_SHEET_COLUMNS = {
-  2: { halign: "right" as const },
-  3: { halign: "right" as const, fontStyle: "bold" as const },
-  4: { halign: "right" as const },
-};
-
-const DIFFERENCE_COLUMNS = {
-  3: { halign: "right" as const },
-  4: { halign: "right" as const },
-  5: { halign: "right" as const },
-  6: { halign: "right" as const },
-};
-
-const RESULT_COLUMNS = {
-  2: { halign: "right" as const },
-  3: { halign: "right" as const },
-  4: { halign: "right" as const },
-};
-
 export default function InventoryDetailPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const params = useParams();
-  const { currency: defaultCurrency } = useCurrency();
   const sessionId = params.id as string;
 
   const { organization } = useOrganization();
-  const { chrome } = useReceiptChrome(session?.accessToken, organization);
-  const reportIdentity = chrome?.org;
+  // L'identité de l'établissement n'est plus lue ici : c'est le SERVEUR qui la
+  // pose sur le document, depuis l'organisation authentifiée.
   const [inventorySession, setInventorySession] = useState<InventorySession | null>(null);
   const [counts, setCounts] = useState<InventoryCount[]>([]);
   const [countsTotal, setCountsTotal] = useState(0);
@@ -489,323 +447,41 @@ export default function InventoryDetailPage() {
   };
 
   // Print inventory sheet as PDF
-  const handlePrint = async () => {
-    if (!session?.accessToken || !organization?.id || !inventorySession) return;
-
-    const result = await getInventoryPrintData(session.accessToken, organization.id, inventorySession.id);
-    if (!result.success || !result.data) {
-      toast.error("Erreur lors de la récupération des données d'impression");
-      return;
+  /**
+   * Les deux documents, fabriqués par le SERVEUR.
+   *
+   * ┌──────────────────────────────────────────────────────────────────┐
+   * │ ILS ÉTAIENT DESSINÉS ICI, EN jsPDF.                              │
+   * │                                                                  │
+   * │ Cent quatre-vingt-dix lignes de tracé alimentées par un           │
+   * │ `print-data/` qui rendait du JSON : le navigateur montait la mise │
+   * │ en page, avec ses styles et son bandeau tenus en phase à la main  │
+   * │ avec ceux du serveur, et n'offrait que le PDF.                    │
+   * └──────────────────────────────────────────────────────────────────┘
+   */
+  const cibleExport: ExportTarget[] = useMemo(() => {
+    if (!session?.accessToken || !organization || !inventorySession) return [];
+    const documents: { cle: "sheet" | "report"; label: string }[] = [
+      { cle: "sheet", label: "Fiche de comptage" },
+    ];
+    // Le rapport n'existe qu'une fois la session validée : avant, il n'y a pas
+    // d'écart constaté, seulement des lignes en attente de comptage.
+    if (inventorySession.status === "validated") {
+      documents.push({ cle: "report", label: "Rapport d'écarts" });
     }
-
-    const data = result.data;
-    // En-tête commun à tous les documents de la plateforme : ces deux fonctions
-    // le réimplémentaient à la main, sans logo ni mentions légales.
-    const { doc, y: headerY, pageWidth } = createPDFDocument({
-      title: "FICHE D'INVENTAIRE",
-      subtitle: `${data.session.reference} - ${data.session.name}`,
-      organizationName: organization.name,
-      identity: reportIdentity,
-    });
-    let y = headerY;
-
-    // Info section
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.text("Entrepot:", 14, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${data.warehouse.name} (${data.warehouse.code})`, 35, y);
-    doc.setFont("helvetica", "bold");
-    doc.text("Imprime le:", pageWidth - 70, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(new Date(data.printed_at).toLocaleString("fr-CD"), pageWidth - 45, y);
-    y += 5;
-
-    if (data.warehouse.address) {
-      doc.setFont("helvetica", "bold");
-      doc.text("Adresse:", 14, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(data.warehouse.address, 35, y);
-      y += 5;
-    }
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Statut:", 14, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(data.session.status_display, 30, y);
-    doc.setFont("helvetica", "bold");
-    doc.text("Par:", pageWidth - 70, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(data.printed_by, pageWidth - 62, y);
-    y += 3;
-
-    doc.setDrawColor(0);
-    doc.line(14, y, pageWidth - 14, y);
-    y += 5;
-
-    // Tables by category
-    Object.entries(data.categories).forEach(([catName, items]) => {
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text(catName, 14, y);
-      y += 2;
-
-      autoTable(doc, {
-        startY: y,
-        head: [["Produit", "SKU", "Stock système", "Compté", "Écart", "Notes"]],
-        body: (items as InventoryCount[]).map((item) => [
-          item.product_name,
-          item.product_sku || "-",
-          // Le compteur voit des cartons dans le rayon : la feuille doit les
-          // annoncer dans les mêmes termes, sinon il recompte de tête.
-          item.packaging_factor && item.expected_display
-            ? item.expected_display
-            : formatNumberForPDF(item.quantity_expected, 0),
-          item.is_counted
-            ? (item.packaging_factor && item.counted_display
-                ? item.counted_display
-                : formatNumberForPDF(item.quantity_counted, 0))
-            : "___________",
-          item.is_counted
-            ? item.difference_display?.trim() ||
-              (parseFloat(item.quantity_difference) > 0 ? "+" : "") +
-                formatNumberForPDF(item.quantity_difference, 0)
-            : "-",
-          item.notes || "",
-        ]),
-        theme: "grid",
-        tableWidth: 'auto',
-        styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
-        headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold" },
-        columnStyles: COUNT_SHEET_COLUMNS,
-        margin: { left: 14, right: 14 },
-        didParseCell: alignHead(COUNT_SHEET_COLUMNS, (hookData) => {
-          if (hookData.section === "body" && hookData.column.index === 4) {
-            const val = String(hookData.cell.raw);
-            if (val.startsWith("+")) hookData.cell.styles.textColor = [22, 163, 74];
-            else if (val.startsWith("-")) hookData.cell.styles.textColor = [220, 38, 38];
-          }
-        }),
-      });
-
-      y = (doc as any).lastAutoTable.finalY + 6;
-    });
-
-    // Summary
-    doc.setDrawColor(0);
-    doc.line(14, y, pageWidth - 14, y);
-    y += 5;
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.text("Resume:", 14, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(
-      `Total produits: ${data.summary.total_products}  |  Comptés: ${data.summary.counted_products}  |  Avec écart: ${data.summary.products_with_difference}` +
-      (data.summary.total_difference_value !== "0.00" ? `  |  Écart valeur: ${formatCurrencyForPDF(data.summary.total_difference_value)}` : ""),
-      14, y + 5
-    );
-    y += 15;
-
-    // Signatures (toujours en bas de page)
-    addSignatureSection(doc, y, pageWidth, ["Signature compteur", "Signature responsable"]);
-
-    doc.save(`Inventaire_${data.session.reference}.pdf`);
-  };
-
-  // Print post-validation report as PDF
-  const handlePrintReport = async () => {
-    if (!session?.accessToken || !organization?.id || !inventorySession) return;
-
-    const result = await getInventoryPrintData(session.accessToken, organization.id, inventorySession.id);
-    if (!result.success || !result.data) {
-      toast.error("Erreur lors de la récupération des données du rapport");
-      return;
-    }
-
-    const data = result.data;
-    // En-tête commun à tous les documents de la plateforme : ces deux fonctions
-    // le réimplémentaient à la main, sans logo ni mentions légales.
-    const { doc, y: headerY, pageWidth } = createPDFDocument({
-      title: "RAPPORT D'INVENTAIRE",
-      subtitle: `${data.session.reference} - ${data.session.name}`,
-      organizationName: organization.name,
-      identity: reportIdentity,
-    });
-    let y = headerY;
-
-    // Info section
-    doc.setFontSize(9);
-    const leftCol = 14;
-    const rightCol = pageWidth / 2 + 5;
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Entrepot:", leftCol, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${data.warehouse.name} (${data.warehouse.code})`, leftCol + 22, y);
-    doc.setFont("helvetica", "bold");
-    doc.text("Statut:", rightCol, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(data.session.status_display, rightCol + 16, y);
-    y += 5;
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Valide le:", leftCol, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(inventorySession.validated_at ? new Date(inventorySession.validated_at).toLocaleString("fr-CD") : "-", leftCol + 22, y);
-    doc.setFont("helvetica", "bold");
-    doc.text("Valide par:", rightCol, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(inventorySession.validated_by_name || "-", rightCol + 22, y);
-    y += 5;
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Imprime le:", leftCol, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(new Date(data.printed_at).toLocaleString("fr-CD"), leftCol + 22, y);
-    doc.setFont("helvetica", "bold");
-    doc.text("Par:", rightCol, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(data.printed_by, rightCol + 10, y);
-    y += 3;
-
-    doc.setDrawColor(0);
-    doc.line(14, y, pageWidth - 14, y);
-    y += 6;
-
-    // Summary box
-    doc.setFillColor(240, 249, 255);
-    doc.roundedRect(14, y, pageWidth - 28, 28, 2, 2, "F");
-    y += 6;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("Resume des resultats", 20, y);
-    y += 6;
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Total produits: ${data.summary.total_products}`, 20, y);
-    doc.text(`Produits comptes: ${data.summary.counted_products}`, 80, y);
-    doc.text(`Avec ecart: ${data.summary.products_with_difference}`, 140, y);
-    y += 5;
-    doc.text(`Ecart quantite total: ${data.summary.total_difference_quantity}`, 20, y);
-    doc.text(`Ecart valeur total: ${data.summary.total_difference_value} ${defaultCurrency.code}`, 80, y);
-    y += 12;
-
-    // Only items with differences
-    const itemsWithDiff: InventoryCount[] = [];
-    Object.values(data.categories).forEach((items) => {
-      (items as InventoryCount[]).forEach((item) => {
-        if (item.is_counted && parseFloat(item.quantity_difference) !== 0) {
-          itemsWithDiff.push(item);
-        }
-      });
-    });
-
-    if (itemsWithDiff.length > 0) {
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text("Produits avec ecart", 14, y);
-      y += 2;
-
-      autoTable(doc, {
-        startY: y,
-        head: [["Produit", "SKU", "Catégorie", "Stock syst.", "Compté", "Écart", "Valeur écart"]],
-        body: itemsWithDiff.map((item) => [
-          item.product_name,
-          item.product_sku || "-",
-          item.product_category_name || "-",
-          item.packaging_factor && item.expected_display
-            ? item.expected_display
-            : formatNumberForPDF(item.quantity_expected, 0),
-          item.packaging_factor && item.counted_display
-            ? item.counted_display
-            : formatNumberForPDF(item.quantity_counted, 0),
-          item.difference_display?.trim() ||
-            (parseFloat(item.quantity_difference) > 0 ? "+" : "") +
-              formatNumberForPDF(item.quantity_difference, 0),
-          formatCurrencyForPDF(item.difference_value),
-        ]),
-        theme: "grid",
-        tableWidth: 'auto',
-        styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
-        headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold" },
-        columnStyles: DIFFERENCE_COLUMNS,
-        margin: { left: 14, right: 14 },
-        didParseCell: alignHead(DIFFERENCE_COLUMNS, (hookData) => {
-          if (hookData.section === "body" && hookData.column.index === 5) {
-            const val = String(hookData.cell.raw);
-            if (val.startsWith("+")) hookData.cell.styles.textColor = [22, 163, 74];
-            else if (val.startsWith("-")) hookData.cell.styles.textColor = [220, 38, 38];
-          }
-          if (hookData.section === "body" && hookData.column.index === 6) {
-            const val = parseFloat(String(hookData.cell.raw).replace(/[^\d,-]/g, "").replace(",", "."));
-            if (val > 0) hookData.cell.styles.textColor = [22, 163, 74];
-            else if (val < 0) hookData.cell.styles.textColor = [220, 38, 38];
-          }
-        }),
-      });
-
-      y = (doc as any).lastAutoTable.finalY + 8;
-    } else {
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.text("Aucun ecart detecte - Tous les produits correspondent au stock systeme.", 14, y);
-      y += 8;
-    }
-
-    // Full inventory table
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("Detail complet de l'inventaire", 14, y);
-    y += 2;
-
-    const allItems: InventoryCount[] = [];
-    Object.values(data.categories).forEach((items) => {
-      (items as InventoryCount[]).forEach((item) => allItems.push(item));
-    });
-
-    autoTable(doc, {
-      startY: y,
-      head: [["Produit", "SKU", "Stock système", "Compté", "Écart", "Notes"]],
-      body: allItems.map((item) => [
-        item.product_name,
-        item.product_sku || "-",
-        item.packaging_factor && item.expected_display
-          ? item.expected_display
-          : formatNumberForPDF(item.quantity_expected, 0),
-        item.is_counted
-          ? (item.packaging_factor && item.counted_display
-              ? item.counted_display
-              : formatNumberForPDF(item.quantity_counted, 0))
-          : "-",
-        item.is_counted
-          ? item.difference_display?.trim() ||
-            (parseFloat(item.quantity_difference) > 0 ? "+" : "") +
-              formatNumberForPDF(item.quantity_difference, 0)
-          : "-",
-        item.notes || "",
-      ]),
-      theme: "grid",
-      tableWidth: 'auto',
-      styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
-      headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: "bold" },
-      columnStyles: RESULT_COLUMNS,
-      margin: { left: 14, right: 14 },
-      didParseCell: alignHead(RESULT_COLUMNS, (hookData) => {
-        if (hookData.section === "body" && hookData.column.index === 4) {
-          const val = String(hookData.cell.raw);
-          if (val.startsWith("+")) hookData.cell.styles.textColor = [22, 163, 74];
-          else if (val.startsWith("-")) hookData.cell.styles.textColor = [220, 38, 38];
-        }
-      }),
-    });
-
-    y = (doc as any).lastAutoTable.finalY + 10;
-
-    // Signatures (toujours en bas de page)
-    addSignatureSection(doc, y, pageWidth, ["Signature compteur", "Signature responsable"]);
-
-    doc.save(`Rapport_Inventaire_${data.session.reference}.pdf`);
-  };
+    return documents.map((d) => ({
+      key: d.cle,
+      label: d.label,
+      run: (format: ExportFormat) =>
+        exportInventorySession(
+          session.accessToken!,
+          organization.id,
+          inventorySession.id,
+          d.cle,
+          format
+        ),
+    }));
+  }, [session, organization, inventorySession]);
 
   const totalPages = Math.max(1, Math.ceil(countsTotal / 20));
 
@@ -850,7 +526,7 @@ export default function InventoryDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link href="/dashboard/inventory">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-5 w-5" />
@@ -924,16 +600,7 @@ export default function InventoryDetailPage() {
             </Button>
           )}
           {inventorySession.status !== "draft" && (
-            <Button variant="outline" onClick={handlePrint}>
-              <Printer className="h-4 w-4 mr-2" />
-              Imprimer la fiche
-            </Button>
-          )}
-          {inventorySession.status === "validated" && (
-            <Button variant="outline" onClick={handlePrintReport}>
-              <FileText className="h-4 w-4 mr-2" />
-              Imprimer le rapport
-            </Button>
+            <ExportMenu targets={cibleExport} label="Documents" />
           )}
           {(inventorySession.status === "in_progress" || inventorySession.status === "review") && (
             <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setShowCancelDialog(true)}>
@@ -1086,7 +753,7 @@ export default function InventoryDetailPage() {
                   />
                 </div>
                 <Select value={countFilter} onValueChange={setCountFilter}>
-                  <SelectTrigger className="w-[160px]">
+                  <SelectTrigger className="w-full sm:w-[160px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1300,14 +967,7 @@ export default function InventoryDetailPage() {
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">
-                <Button size="sm" variant="outline" className="border-green-300 text-green-700 hover:bg-green-100" onClick={handlePrint}>
-                  <Printer className="h-3.5 w-3.5 mr-1" />
-                  Fiche
-                </Button>
-                <Button size="sm" variant="outline" className="border-green-300 text-green-700 hover:bg-green-100" onClick={handlePrintReport}>
-                  <FileText className="h-3.5 w-3.5 mr-1" />
-                  Rapport
-                </Button>
+                <ExportMenu targets={cibleExport} label="Documents" />
               </div>
             </div>
           </CardContent>

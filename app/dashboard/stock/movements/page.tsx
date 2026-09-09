@@ -423,11 +423,19 @@ export default function MovementsPage() {
    * Conditionnement du produit sélectionné. `null` pour un produit vendu à
    * l'unité, qui conserve alors la saisie simple d'origine.
    */
+  //
+  // ⚠ Le seuil est DEUX, comme `getPackaging` du noyau et
+  // `PackagingService.factor` du serveur. La condition ne testait que la
+  // PRÉSENCE : un produit configuré « en gros » avec un contenant d'UNE unité
+  // se voyait proposer les deux canaux, et le serveur refusait ensuite la
+  // saisie (« Ce produit n'est pas vendu par conditionnement »). Le formulaire
+  // se contredisait d'ailleurs lui-même - `prefillPrices`, trois cents lignes
+  // plus haut, testait bien `>= 2` pour les prix.
   const packagingFactor =
     selectedProduct?.selling_mode &&
     selectedProduct.selling_mode !== "retail_only" &&
-    selectedProduct.units_per_package
-      ? selectedProduct.units_per_package
+    (selectedProduct.units_per_package ?? 0) >= 2
+      ? selectedProduct.units_per_package!
       : null;
 
   /**
@@ -657,7 +665,7 @@ export default function MovementsPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ExportMenu
             disabled={!session?.accessToken || !organization?.id || totalCount === 0}
             disabledReason="Aucun mouvement à exporter"

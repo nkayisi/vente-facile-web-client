@@ -822,7 +822,7 @@ export default function CustomerDetailPage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             onClick={openCreditLimitDialog}
@@ -997,7 +997,7 @@ export default function CustomerDetailPage() {
       </Card>
 
       {/* Main Content */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left: Details + Transactions */}
         <div className="lg:col-span-2 space-y-6">
           {/* Contact Info */}
@@ -1156,7 +1156,7 @@ export default function CustomerDetailPage() {
                   Historique des mouvements
                 </CardTitle>
                 <Select value={txnFilter} onValueChange={setTxnFilter}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="w-full sm:w-[200px]">
                     <SelectValue placeholder="Filtrer" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1496,7 +1496,7 @@ export default function CustomerDetailPage() {
 
             <div className="space-y-2">
               <Label>Points à utiliser</Label>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   type="number"
                   min={0}

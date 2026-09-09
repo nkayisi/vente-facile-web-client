@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { formatApiErrorBody, formatAxiosErrorMessage, getErrorBody } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
+import {
+  fetchExportFile,
+  type ExportFile,
+  type ExportFormat,
+} from "@/lib/export/fetch-export";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -1109,77 +1114,35 @@ export async function importProducts(
   }
 }
 
-export async function exportProductsExcel(
+/**
+ * Télécharge le catalogue, sur le PÉRIMÈTRE FILTRÉ.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ DEUX ACTIONS, DEUX ENDPOINTS, ET AUCUN FILTRE.                          │
+ * │                                                                          │
+ * │ `exportProductsExcel` et `exportProductsPdf` appelaient deux routes      │
+ * │ séparées qui n'acceptaient pas `export_format`, ne rendaient pas de CSV, │
+ * │ et sortaient TOUT l'établissement quels que soient les filtres de la     │
+ * │ page. Le catalogue portait en outre sa propre marque, dessinée à part.   │
+ * │                                                                          │
+ * │ Il passe par le tuyau commun : un endpoint, trois formats, et le fichier │
+ * │ dit ce que l'écran montrait quand on l'a demandé.                         │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+export async function exportProducts(
   accessToken: string,
-  organizationId: string
-): Promise<{ data: number[]; contentType: string; filename: string } | null> {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/products/export/excel/`, {
-      headers: getHeaders(accessToken, organizationId),
-      responseType: "arraybuffer",
-    });
-
-    const contentType = response.headers["content-type"] || "";
-    if (contentType.includes("application/json")) {
-      const text = new TextDecoder().decode(response.data);
-      const errorData = JSON.parse(text);
-      console.error("[Products] Export Excel error:", errorData);
-      throw new Error(
-        formatApiErrorBody(errorData as Record<string, unknown>, "Erreur lors de l'export")
-      );
-    }
-
-    const uint8Array = new Uint8Array(response.data);
-    const disposition = (response.headers["content-disposition"] as string) || "";
-    const match = disposition.match(/filename="?([^";]+)"?/i);
-    const filename = match?.[1] || `produits_export.xlsx`;
-
-    return {
-      data: Array.from(uint8Array),
-      contentType:
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      filename,
-    };
-  } catch (error: unknown) {
-    console.error("[Products] Export Excel error:", getErrorBody(error) || (error as Error)?.message);
-    throw error;
-  }
-}
-
-export async function exportProductsPdf(
-  accessToken: string,
-  organizationId: string
-): Promise<{ data: number[]; contentType: string; filename: string } | null> {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/products/export/pdf/`, {
-      headers: getHeaders(accessToken, organizationId),
-      responseType: "arraybuffer",
-    });
-
-    const contentType = response.headers["content-type"] || "";
-    if (contentType.includes("application/json")) {
-      const text = new TextDecoder().decode(response.data);
-      const errorData = JSON.parse(text);
-      console.error("[Products] Export PDF error:", errorData);
-      throw new Error(
-        formatApiErrorBody(errorData as Record<string, unknown>, "Erreur lors de l'export")
-      );
-    }
-
-    const uint8Array = new Uint8Array(response.data);
-    const disposition = (response.headers["content-disposition"] as string) || "";
-    const match = disposition.match(/filename="?([^";]+)"?/i);
-    const filename = match?.[1] || `produits_export.pdf`;
-
-    return {
-      data: Array.from(uint8Array),
-      contentType: "application/pdf",
-      filename,
-    };
-  } catch (error: unknown) {
-    console.error("[Products] Export PDF error:", getErrorBody(error) || (error as Error)?.message);
-    throw error;
-  }
+  organizationId: string,
+  format: ExportFormat,
+  filters: Omit<ProductFilters, "page" | "page_size"> = {}
+): Promise<ExportFile> {
+  return fetchExportFile("/products/export/", accessToken, organizationId, format, {
+    search: filters.search,
+    category: filters.category,
+    brand: filters.brand,
+    is_active:
+      filters.is_active === undefined ? undefined : String(filters.is_active),
+    ordering: filters.ordering,
+  });
 }
 
 export async function checkProductDuplicate(

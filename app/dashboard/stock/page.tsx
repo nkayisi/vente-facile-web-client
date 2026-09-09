@@ -309,7 +309,7 @@ export default function StockPage() {
             Vue d&apos;ensemble de vos entrepôts, niveaux de stock et mouvements
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             onClick={() => router.push("/dashboard/stock/movements")}
@@ -416,9 +416,9 @@ export default function StockPage() {
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left Column: Warehouses + Alerts */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="min-w-0 lg:col-span-2 space-y-6">
           {/* Warehouses */}
           <div>
             <div className="flex items-center justify-between gap-4 mb-4">
@@ -458,7 +458,7 @@ export default function StockPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {filteredWarehouses.map(warehouse => (
                   <Card key={warehouse.id} className="p-0 hover:shadow-md transition-shadow">
                     <CardContent className="p-4">

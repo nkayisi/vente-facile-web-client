@@ -1,7 +1,13 @@
 "use server";
 
 import axios from "@/lib/auth/api-helper";
+import type { AgingBucket } from "@/lib/reports/aging";
 import { getErrorBody } from "@/lib/api/drf-error";
+import {
+  fetchExportFile,
+  type ExportFile,
+  type ExportFormat,
+} from "@/lib/export/fetch-export";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -120,7 +126,22 @@ export interface CashFlowByPeriod {
 }
 
 export interface ReportFilters {
-  period?: "today" | "week" | "month" | "quarter" | "year";
+  /**
+   * Les CALENDAIRES suivent le calendrier (« Ce mois » part du 1er) ; les
+   * GLISSANTES comptent en arrière depuis aujourd'hui, inclus. Seules les
+   * secondes s'emboîtent quel que soit le quantième, et c'est pourquoi le
+   * défaut du serveur est `last_30_days` : `month` ouvrait la page sur une
+   * fenêtre de deux jours les 2 du mois, donc sur « Aucune donnée ».
+   */
+  period?:
+    | "today"
+    | "week"
+    | "month"
+    | "quarter"
+    | "year"
+    | "last_7_days"
+    | "last_30_days"
+    | "last_12_months";
   date_from?: string;
   date_to?: string;
   group_by?: "day" | "week" | "month";
@@ -460,16 +481,10 @@ export async function getCustomerStats(
 // CRÉANCES CLIENTS (BALANCE ÂGÉE)
 // =============================================================================
 
-/** Tranches d'ancienneté du rapport de créances, dans l'ordre d'affichage. */
-export type AgingBucket = "current" | "d1_30" | "d31_60" | "d61_90" | "d90_plus";
-
-export const AGING_BUCKET_LABELS: Record<AgingBucket, string> = {
-  current: "Pas encore échu",
-  d1_30: "1 à 30 j",
-  d31_60: "31 à 60 j",
-  d61_90: "61 à 90 j",
-  d90_plus: "Plus de 90 j",
-};
+// Les tranches et leurs libellés vivent dans `lib/reports/aging.ts` : un
+// fichier `"use server"` n'exporte que des fonctions asynchrones, et l'objet
+// des libellés faisait échouer le rendu de TOUT le tableau de bord.
+// Le TYPE, lui, peut rester ici : il est effacé à la compilation.
 
 /**
  * Une ligne par devise. Les montants ne s'additionnent JAMAIS entre devises :
@@ -484,6 +499,13 @@ export interface ReceivablesByCurrency extends Record<AgingBucket, string> {
 export interface ReceivablesDebtor {
   customer_id: string;
   customer_name: string;
+  /**
+   * Le téléphone du client, rendu par le serveur.
+   *
+   * On relance au téléphone, pas par la pensée : cet écran n'en portait aucun,
+   * et il fallait ouvrir la fiche du client pour en trouver un.
+   */
+  customer_phone: string;
   currency: string;
   amount_due: string;
   invoice_count: number;
@@ -784,4 +806,85 @@ export async function getProductSupplies(
     console.error("[Reports] Get product supplies error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des approvisionnements" };
   }
+}
+
+// =============================================================================
+// EXPORT
+// =============================================================================
+
+/**
+ * Les huit onglets, tels que le serveur les nomme.
+ *
+ * Ce sont les clés de `TAB_BUILDERS` (`backend/apps/reports/exports.py`) : une
+ * faute de frappe ici répondrait 400 en nommant les huit onglets, ce qui est
+ * exactement ce qu'on veut d'un refus.
+ */
+export type ReportTab =
+  | "overview"
+  | "daily-cash"
+  | "sales"
+  | "products"
+  | "customers"
+  | "stock"
+  | "profits"
+  | "user-activity"
+  /**
+   * Les créances ne sont pas un onglet de la page : elles ont leur propre
+   * rubrique. Elles passent par le même registre pour porter la même marque
+   * que les huit autres documents, et le terminal reçoit le même fichier.
+   */
+  | "receivables";
+
+export interface ReportExportFilters extends Omit<ReportFilters, "limit" | "page" | "page_size"> {
+  /** L'employé, pour le seul onglet « Par utilisateur ». */
+  user?: string;
+  /** La date propre au rapport journalier. */
+  date?: string;
+  /** Le filtre d'état de l'onglet Stock. */
+  status?: string;
+}
+
+/**
+ * Télécharge un onglet de « Rapports & Statistiques ».
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ LE DOCUMENT EST FABRIQUÉ PAR LE SERVEUR, ET C'EST TOUT L'INTÉRÊT.        │
+ * │                                                                          │
+ * │ Le back-office traçait sa propre mise en page, puis a ouvert un onglet   │
+ * │ pour appeler `window.print()` : le marchand tombait sur la boîte         │
+ * │ d'impression du navigateur, et rien ne se téléchargeait. Le terminal,    │
+ * │ lui, produisait un vrai fichier. Un même rapport donnait donc deux       │
+ * │ documents.                                                               │
+ * │                                                                          │
+ * │ Ici les deux surfaces ne font plus que télécharger des octets, et        │
+ * │ l'export porte le PÉRIMÈTRE ENTIER là où les deux clients n'exportaient  │
+ * │ que les vingt lignes affichées.                                          │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Aucune pagination transmise : `page` et `page_size` produiraient un fichier
+ * qui ne dit pas ce que son titre annonce.
+ */
+export async function exportStatistics(
+  accessToken: string,
+  organizationId: string,
+  format: ExportFormat,
+  tab: ReportTab,
+  filters: ReportExportFilters = {}
+): Promise<ExportFile> {
+  return fetchExportFile(
+    "/reports/statistics/export/",
+    accessToken,
+    organizationId,
+    format,
+    {
+      tab,
+      period: filters.period,
+      date_from: filters.date_from,
+      date_to: filters.date_to,
+      group_by: filters.group_by,
+      user: filters.user,
+      date: filters.date,
+      status: filters.status,
+    }
+  );
 }

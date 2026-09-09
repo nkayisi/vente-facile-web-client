@@ -58,24 +58,3 @@ export {
   type CashSessionCurrencyLine,
   type ExpenseReceiptData,
 } from "./documents/cash-session";
-
-import type { PaperWidth } from "./tokens";
-import { renderReceiptUrl } from "./render-pdf";
-import { buildSaleReceipt, type SaleReceiptData } from "./documents/sale";
-import { buildPaymentReceipt, type PaymentReceiptData } from "./documents/payment";
-
-/** Reçu de vente, vente à crédit ou proforma, prêt à ouvrir. */
-export function generateSaleReceiptUrl(
-  data: SaleReceiptData,
-  paperWidth: PaperWidth = 58
-): string {
-  return renderReceiptUrl(buildSaleReceipt(data), paperWidth);
-}
-
-/** Reçu de règlement, d'avance ou d'ajustement, prêt à ouvrir. */
-export function generatePaymentReceiptUrl(
-  data: PaymentReceiptData,
-  paperWidth: PaperWidth = 58
-): string {
-  return renderReceiptUrl(buildPaymentReceipt(data), paperWidth);
-}

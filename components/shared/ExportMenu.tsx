@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, FileType2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { downloadExportFile, type ExportFile, type ExportFormat } from "@/lib/export/download";
+
+/** Ce que le marchand vient de recevoir, dit dans ses mots. */
+const LIBELLES: Record<ExportFormat, string> = {
+  pdf: "PDF",
+  xlsx: "fichier Excel",
+  csv: "fichier CSV",
+};
 
 /**
  * Un rapport proposé au téléchargement. Le composant reste ignorant de ce qui
@@ -63,11 +70,7 @@ export function ExportMenu({
     try {
       const file = await target.run(format);
       downloadExportFile(file);
-      toast.success(
-        format === "pdf"
-          ? `${target.label} : PDF téléchargé`
-          : `${target.label} : fichier Excel téléchargé`
-      );
+      toast.success(`${target.label} : ${LIBELLES[format]} téléchargé`);
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "Erreur lors de l'export";
@@ -140,6 +143,23 @@ export function ExportMenu({
                 <FileSpreadsheet className="h-4 w-4" />
               )}
               Exporter en Excel
+            </DropdownMenuItem>
+            {/* Le CSV s'ouvre partout, y compris dans un tableur libre ou sur
+                un téléphone : c'est le format de dépannage, et il vient de la
+                même description que les deux autres. */}
+            <DropdownMenuItem
+              disabled={isBusy}
+              onSelect={(event) => {
+                event.preventDefault();
+                void handleExport(target, "csv");
+              }}
+            >
+              {pending === `${target.key}:csv` ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileType2 className="h-4 w-4" />
+              )}
+              Exporter en CSV
             </DropdownMenuItem>
           </div>
         ))}

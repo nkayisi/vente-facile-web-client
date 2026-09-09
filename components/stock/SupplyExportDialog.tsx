@@ -21,7 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { downloadExportFile, type ExportFormat } from "@/lib/export/download";
+import { type ExportFormat } from "@/lib/export/download";
+import { ExportMenu } from "@/components/shared/ExportMenu";
 import {
   exportStockSupplies,
   type SupplyExportFilters,
@@ -59,30 +60,18 @@ export function SupplyExportDialog({
 }: SupplyExportDialogProps) {
   const [source, setSource] = useState<"all" | "receipts">("all");
   const [groupBy, setGroupBy] = useState<"product" | "movement">("product");
-  const [pending, setPending] = useState<ExportFormat | null>(null);
-
-  const handleExport = async (format: ExportFormat) => {
-    setPending(format);
-    try {
-      const file = await exportStockSupplies(accessToken, organizationId, format, {
-        ...baseFilters,
-        source,
-        group_by: groupBy,
-      });
-      downloadExportFile(file);
-      toast.success(
-        format === "pdf"
-          ? "Rapport d'approvisionnement PDF téléchargé"
-          : "Rapport d'approvisionnement Excel téléchargé"
-      );
-      onOpenChange(false);
-    } catch (error: unknown) {
-      toast.error(
-        error instanceof Error ? error.message : "Erreur lors de l'export"
-      );
-    } finally {
-      setPending(null);
-    }
+  /**
+   * `ExportMenu` porte l'attente, le téléchargement et le message : il ne
+   * reste ici que d'aller chercher le fichier, avec les deux choix du dialogue.
+   */
+  const lancerExport = async (format: ExportFormat) => {
+    const file = await exportStockSupplies(accessToken, organizationId, format, {
+      ...baseFilters,
+      source,
+      group_by: groupBy,
+    });
+    onOpenChange(false);
+    return file;
   };
 
   return (
@@ -152,31 +141,21 @@ export function SupplyExportDialog({
           </div>
         </div>
 
+        {/* Deux boutons en dur laissaient de côté le CSV, seul export du
+            produit à ne pas l'offrir. `ExportMenu` porte les trois formats et
+            son propre indicateur d'attente. */}
         <DialogFooter className="gap-2 sm:gap-2">
-          <Button
-            variant="outline"
-            disabled={pending !== null}
-            onClick={() => void handleExport("pdf")}
-          >
-            {pending === "pdf" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FileText className="h-4 w-4" />
-            )}
-            PDF
-          </Button>
-          <Button
-            className="bg-orange-500 hover:bg-orange-600"
-            disabled={pending !== null}
-            onClick={() => void handleExport("xlsx")}
-          >
-            {pending === "xlsx" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FileSpreadsheet className="h-4 w-4" />
-            )}
-            Excel
-          </Button>
+          <ExportMenu
+            targets={[
+              {
+                key: "approvisionnement",
+                label: "Approvisionnement",
+                run: (format) => lancerExport(format),
+              },
+            ]}
+            variant="default"
+            size="default"
+          />
         </DialogFooter>
       </DialogContent>
     </Dialog>

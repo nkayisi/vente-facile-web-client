@@ -56,6 +56,15 @@ import { formatDate } from "@/lib/format";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
 import { getPackaging, formatPackagedSplit } from "@/lib/packaging";
+import {
+  afficherPartage,
+  alerteDisponible,
+  resumeConversion,
+  verifierQuantite,
+  type ErreursQuantite,
+  type PartageStock,
+  type SaisieQuantite,
+} from "@/lib/stock/lignes-conditionnees";
 import { PackagedQuantityInput } from "@/components/stock/packaged-quantity-input";
 import {
   getStockTransfers,
@@ -65,6 +74,8 @@ import {
   receiveStockTransfer,
   cancelStockTransfer,
   getWarehouses,
+  getStocks,
+  Stock,
   StockTransfer,
   Warehouse,
   TransferStatus,
@@ -124,8 +135,51 @@ export default function TransfersPage() {
     quantity_requested: 0,
   });
 
+  /** Messages sous les champs de quantité. Un appui doit RÉPONDRE. */
+  const [newItemErrors, setNewItemErrors] = useState<ErreursQuantite>({});
+
+  /**
+   * La ligne de stock de l'article choisi, DANS L'ENTREPÔT SOURCE.
+   *
+   * ⚠ Elle est demandée à l'unité (`getStocks({ warehouse, product })`) et non
+   * lue dans une liste : `stocks/by-warehouse/` est PAGINÉ côté serveur, et
+   * `getStockByWarehouse` n'en garde que la première page. Sur un dépôt qui
+   * porte plus d'une page de rayons, tout article au-delà serait annoncé sans
+   * stock - ce qui, sur un transfert, ferait taire l'avertissement là où il
+   * compte le plus.
+   */
+  const [sourceStock, setSourceStock] = useState<Stock | null>(null);
+
   /** Conditionnement du produit en cours de saisie, `null` s'il se vend à l'unité. */
   const newItemPackaging = getPackaging(products.find(p => p.id === newItem.product));
+
+  const sourceWarehouse = warehouses.find(w => w.id === formData.source_warehouse) ?? null;
+
+  /**
+   * Le disponible de la source, réservations imputées comme le fait le serveur.
+   *
+   * `null` n'est PAS zéro : sans ligne de stock dans ce dépôt, on ne fabrique
+   * pas un « 0 » qui affirmerait une rupture qu'on n'a pas constatée.
+   */
+  const disponible: PartageStock | null = sourceStock
+    ? {
+        contenants: Number(sourceStock.available_packages ?? 0),
+        vrac: Number(sourceStock.available_loose ?? 0),
+        total: Number(sourceStock.available_quantity ?? 0),
+      }
+    : null;
+
+  const saisie: SaisieQuantite = {
+    conditionnement: newItemPackaging,
+    contenants: newItem.package_quantity ?? null,
+    vrac: newItemPackaging
+      ? (newItem.loose_quantity ?? null)
+      : (newItem.quantity_requested || null),
+  };
+  const recap = resumeConversion(saisie, "transférez");
+  const alerte = alerteDisponible(saisie, disponible, {
+    negatifAutorise: Boolean(sourceWarehouse?.allow_negative_stock),
+  });
 
   const searchProducts = useCallback(
     async (query: string) => {
@@ -210,6 +264,34 @@ export default function TransfersPage() {
     }
   }, [organization, fetchTransfers]);
 
+  /**
+   * Le disponible de l'article choisi, dans l'entrepôt source.
+   *
+   * Les dépendances sont PRIMITIVES : un objet reconstruit à chaque rendu
+   * relancerait l'effet sans fin, sans erreur et sans rien à l'écran. C'est la
+   * famille de défaut qui a fait tourner l'écran d'encaissement du terminal en
+   * boucle.
+   */
+  useEffect(() => {
+    const produit = newItem.product;
+    const depot = formData.source_warehouse;
+    if (!session?.accessToken || !organization?.id || !produit || !depot) {
+      setSourceStock(null);
+      return;
+    }
+    let vivant = true;
+    getStocks(session.accessToken, organization.id, { warehouse: depot, product: produit }).then(
+      res => {
+        // Une réponse arrivée APRÈS un changement d'article ne doit pas se
+        // ranger : elle décrirait le stock du précédent.
+        if (vivant) setSourceStock(res.success && res.data?.length ? res.data[0] : null);
+      }
+    );
+    return () => {
+      vivant = false;
+    };
+  }, [newItem.product, formData.source_warehouse, session?.accessToken, organization?.id]);
+
   const addItem = async () => {
     if (!newItem.product) {
       toast.error("Veuillez sélectionner un produit");
@@ -233,27 +315,44 @@ export default function TransfersPage() {
     const packages = newItem.package_quantity ?? 0;
     const loose = newItem.loose_quantity ?? 0;
 
-    if (packaging ? packages <= 0 && loose <= 0 : newItem.quantity_requested <= 0) {
-      toast.error("Veuillez indiquer une quantité valide");
-      return;
-    }
+    // Le message va SOUS le champ fautif, et il nomme les canaux réellement
+    // offerts. Un toast « quantité valide » ne dit ni où corriger, ni en quoi
+    // se compte l'article, et il disparaît avant qu'on ait relu le formulaire.
+    const erreurs = verifierQuantite({
+      conditionnement: packaging,
+      contenants: newItem.package_quantity ?? null,
+      vrac: packaging ? (newItem.loose_quantity ?? null) : (newItem.quantity_requested || null),
+    });
+    setNewItemErrors(erreurs);
+    if (Object.keys(erreurs).length > 0) return;
+
+    const ligne = {
+      product: newItem.product,
+      // Produit vendu par contenant : on charge le camion en cartons, le
+      // serveur convertit en unité de détail. `quantity_requested` ne part
+      // alors PAS - le serveur le recompose, et le lui souffler ferait
+      // cohabiter deux vérités sur la même ligne.
+      ...(packaging
+        ? {
+            package_quantity: packages,
+            // Une valeur restée d'un article précédent ne doit pas partir : sur
+            // un article vendu en gros seul, le champ n'existe pas à l'écran, et
+            // le serveur refuserait la ligne.
+            loose_quantity: packaging.packageOnly ? 0 : loose,
+          }
+        : { quantity_requested: newItem.quantity_requested }),
+    };
 
     setFormData({
       ...formData,
-      items: [
-        ...formData.items,
-        {
-          product: newItem.product,
-          // Produit vendu par contenant : on charge le camion en cartons, le
-          // serveur convertit en unité de détail.
-          ...(packaging
-            ? { package_quantity: packages, loose_quantity: loose }
-            : { quantity_requested: newItem.quantity_requested }),
-        },
-      ],
+      // Le même article deux fois n'est pas deux lignes : la seconde saisie
+      // REMPLACE la première. Deux lignes sur le même produit se lisent comme
+      // un doublon à l'expédition, et personne ne sait laquelle fait foi.
+      items: [...formData.items.filter(i => i.product !== newItem.product), ligne],
     });
 
     setNewItem({ product: "", quantity_requested: 0 });
+    setNewItemErrors({});
   };
 
   // Remove item from transfer
@@ -551,7 +650,7 @@ export default function TransfersPage() {
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Entrepôt source *</Label>
                 <SearchableSelectAsyncWithEmpty
@@ -580,7 +679,17 @@ export default function TransfersPage() {
                   }
                   onSearch={
                     session?.accessToken && organization?.id
-                      ? createWarehouseSearchHandler(session.accessToken, organization.id)
+                      ? // LA SOURCE EST RETIRÉE DE LA LISTE. Proposer un
+                        // transfert sur place, que le serveur refuse, c'est
+                        // laisser découvrir le refus au moment de valider - et
+                        // le message n'arrivait qu'en toast, après coup.
+                        async (q: string) =>
+                          (
+                            await createWarehouseSearchHandler(
+                              session.accessToken!,
+                              organization.id
+                            )(q)
+                          ).filter(o => o.value !== formData.source_warehouse)
                       : async () => []
                   }
                   emptyLabel="-"
@@ -590,63 +699,103 @@ export default function TransfersPage() {
                     !session?.accessToken || !organization?.id || !formData.source_warehouse
                   }
                 />
+                {!formData.source_warehouse && (
+                  <p className="text-xs text-muted-foreground">
+                    Choisissez d&apos;abord la source.
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* Add Items */}
-            <div className="space-y-2">
-              <Label>Articles à transférer</Label>
-              <div className="flex gap-2">
-                <SearchableSelectAsync
-                  onSearch={searchProducts}
-                  value={newItem.product || undefined}
-                  onValueChange={value =>
-                    setNewItem({
-                      ...newItem,
-                      product: value,
-                      package_quantity: undefined,
-                      loose_quantity: undefined,
-                    })
-                  }
-                  placeholder="Sélectionner un produit"
-                  searchPlaceholder="Rechercher un produit..."
-                  className="flex-1"
-                />
-                {!newItemPackaging && (
-                  <Input
-                    type="number"
-                    placeholder="Qté"
-                    value={newItem.quantity_requested || ""}
-                    onChange={e =>
-                      setNewItem({ ...newItem, quantity_requested: parseInt(e.target.value) || 0 })
-                    }
-                    className="w-20"
-                    min="1"
-                  />
+            {/*
+              LE BOUTON SUIT LES CHAMPS QU'IL VALIDE.
+
+              Il était posé SUR LA MÊME LIGNE que le sélecteur de produit, donc
+              AU-DESSUS du bloc de quantités qu'il enregistre : on lisait
+              « produit, ajouter », puis on découvrait des cases en dessous.
+              L'ordre de lecture doit être l'ordre du geste - choisir, compter,
+              ajouter.
+            */}
+            <div className="space-y-3 rounded-lg border p-4">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Ajouter un article</Label>
+                {formData.items.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {formData.items.length} déjà au bordereau
+                  </span>
                 )}
-                <Button type="button" variant="outline" onClick={addItem}>
-                  <Plus className="h-4 w-4" />
-                </Button>
               </div>
 
-              {/* Saisie en contenants pour les produits vendus en gros */}
-              {newItemPackaging && (
-                <div className="rounded-lg border p-3">
+              <SearchableSelectAsync
+                onSearch={searchProducts}
+                value={newItem.product || undefined}
+                onValueChange={value => {
+                  setNewItem({
+                    ...newItem,
+                    product: value,
+                    quantity_requested: 0,
+                    package_quantity: undefined,
+                    loose_quantity: undefined,
+                  });
+                  setNewItemErrors({});
+                }}
+                placeholder="Sélectionner un produit"
+                searchPlaceholder="Rechercher un produit..."
+                className="w-full"
+              />
+
+              {!formData.source_warehouse ? (
+                <p className="text-sm text-muted-foreground">
+                  Choisissez d&apos;abord l&apos;entrepôt source : c&apos;est lui qui dit ce
+                  qui est disponible.
+                </p>
+              ) : !newItem.product ? (
+                <p className="text-sm text-muted-foreground">
+                  Cherchez un article par son nom, son code ou son code-barres.
+                </p>
+              ) : (
+                <>
+                  {/* Le disponible est RELEVÉ sur la ligne de stock de la
+                      source. `null` n'est pas zéro : sans ligne dans ce dépôt,
+                      on le DIT plutôt que d'afficher « 0 », qui affirmerait une
+                      rupture qu'on n'a pas constatée. */}
+                  <p className="text-xs text-muted-foreground">
+                    {disponible
+                      ? `Disponible dans ${sourceWarehouse?.name ?? "la source"} : `
+                      : `Aucune ligne de stock dans ${sourceWarehouse?.name ?? "la source"}.`}
+                    {disponible && (
+                      <span className="font-medium text-foreground">
+                        {afficherPartage(newItemPackaging, disponible)}
+                      </span>
+                    )}
+                  </p>
+
                   <PackagedQuantityInput
                     packaging={newItemPackaging}
                     packages={newItem.package_quantity}
                     loose={newItem.loose_quantity}
-                    onChange={next =>
+                    quantity={newItem.quantity_requested || undefined}
+                    onChange={next => {
                       setNewItem({
                         ...newItem,
                         package_quantity: next.packages,
                         loose_quantity: next.loose,
-                      })
-                    }
-                    verb="transférez"
+                        quantity_requested: next.quantity ?? 0,
+                      });
+                      setNewItemErrors({});
+                    }}
+                    recap={recap}
+                    alerte={alerte}
+                    erreurs={newItemErrors}
+                    simpleLabel="Quantité à transférer"
                     idPrefix="transfer"
                   />
-                </div>
+
+                  <Button type="button" variant="outline" className="w-full" onClick={addItem}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Ajouter au bordereau
+                  </Button>
+                </>
               )}
             </div>
 
@@ -661,7 +810,7 @@ export default function TransfersPage() {
                         <p className="font-medium text-sm">{product?.name}</p>
                         <p className="text-xs text-gray-500">{product?.sku}</p>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3">
                         <span className="font-medium">
                           {(() => {
                             const packaging = getPackaging(product);

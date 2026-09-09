@@ -5,6 +5,8 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
@@ -38,6 +40,7 @@ import {
   receiveStockTransfer,
   cancelStockTransfer,
   StockTransfer,
+  StockTransferItem,
   TransferStatus,
 } from "@/actions/stock.actions";
 
@@ -97,9 +100,109 @@ export default function TransferDetailPage() {
     fetchData();
   }, [session?.accessToken, transferId]);
 
+  // ┌────────────────────────────────────────────────────────────────────────┐
+  // │ UNE RÉCEPTION PARTIELLE EST LE CAS ORDINAIRE.                          │
+  // │                                                                        │
+  // │ L'écran réceptionnait TOUJOURS la totalité expédiée : le magasinier     │
+  // │ qui ne décharge qu'un casier sur deux ne pouvait pas le dire, et le     │
+  // │ stock de destination entrait faux. Le serveur accepte pourtant un      │
+  // │ décompte PAR LIGNE et PAR CANAL depuis toujours, et                     │
+  // │ `receiveStockTransfer` savait déjà le transmettre - sans appelant.      │
+  // └────────────────────────────────────────────────────────────────────────┘
+  //
+  // ┌────────────────────────────────────────────────────────────────────────┐
+  // │ LES CHAMPS SONT PRÉREMPLIS DE L'EXPÉDIÉ, ILS NE SONT PAS LAISSÉS VIDES.│
+  // │                                                                        │
+  // │ « Laissez un champ vide pour tout réceptionner » était une promesse que │
+  // │ le serveur ne tient pas : sa règle est PAR LIGNE, pas par champ. Dès    │
+  // │ qu'un seul des deux canaux portait une valeur, l'autre partait à ZÉRO.  │
+  // │ Le magasinier qui saisissait « 3 contenants » sur un envoi de           │
+  // │ « 3 casiers + 7 bouteilles » perdait les sept bouteilles, en silence,   │
+  // │ en croyant avoir tout réceptionné.                                      │
+  // │                                                                        │
+  // │ Préremplir lève l'ambiguïté au lieu de la documenter : ce qui est à     │
+  // │ l'écran est ce qui part, et on corrige la ligne venue courte. Un champ  │
+  // │ vidé À LA MAIN vaut alors bien zéro - c'est une affirmation, et elle    │
+  // │ se tape.                                                                │
+  // └────────────────────────────────────────────────────────────────────────┘
+  const [recu, setRecu] = useState<
+    Record<string, { contenants: string; vrac: string }>
+  >({});
+
+  const majRecu = (id: string, patch: { contenants?: string; vrac?: string }) =>
+    setRecu(prev => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? { contenants: "", vrac: "" }), ...patch },
+    }));
+
+  /**
+   * Le partage EXPÉDIÉ d'une ligne, tel qu'il a été enregistré.
+   *
+   * ⚠ Il est LU, jamais redivisé : `quantity_shipped / packaging_factor`
+   * redécouperait au facteur du jour un envoi préparé sous un autre, et c'est
+   * la classe de défaut que `PackagingService.split` existe pour fermer.
+   * Sans partage enregistré, il n'y en a pas à proposer : on retombe sur le
+   * total, et les deux canaux ne sont pas offerts.
+   */
+  const partageExpedie = (item: StockTransferItem) => {
+    const total = parseFloat(item.quantity_shipped || item.quantity_requested || "0") || 0;
+    const facteur = item.packaging_factor ?? 0;
+    const pkg = item.package_quantity == null ? null : parseFloat(item.package_quantity);
+    const vrac = item.loose_quantity == null ? null : parseFloat(item.loose_quantity);
+    if (facteur < 2 || (pkg == null && vrac == null)) {
+      return { canaux: false as const, total };
+    }
+    return { canaux: true as const, contenants: pkg ?? 0, vrac: vrac ?? 0, total };
+  };
+
   const openActionDialog = (type: "approve" | "ship" | "receive" | "cancel") => {
     setActionType(type);
+    // Prérempli de l'expédié : le cas le plus fréquent est « tout est arrivé »,
+    // et il se valide sans une frappe.
+    if (type === "receive") {
+      const depart: Record<string, { contenants: string; vrac: string }> = {};
+      for (const item of transfer?.items ?? []) {
+        const p = partageExpedie(item);
+        depart[item.id] = p.canaux
+          ? { contenants: String(p.contenants), vrac: String(p.vrac) }
+          : { contenants: "", vrac: String(p.total) };
+      }
+      setRecu(depart);
+    } else {
+      setRecu({});
+    }
     setShowActionDialog(true);
+  };
+
+  /**
+   * Ce que le magasinier a réellement déchargé, ligne par ligne.
+   *
+   * Les champs étant préremplis de l'expédié, ce qui part est exactement ce
+   * qui est à l'écran : plus de champ « vide » à interpréter, donc plus d'écart
+   * entre ce que la page promet et ce que le serveur applique.
+   *
+   * `undefined` seulement si le transfert n'a aucune ligne - le serveur retient
+   * alors l'expédié, comme avant.
+   */
+  const lignesRecues = () => {
+    const lignes = (transfer?.items ?? []).map(item => {
+      const saisie = recu[item.id] ?? { contenants: "", vrac: "" };
+      const p = partageExpedie(item);
+      // Un champ vidé à la main vaut ZÉRO, et c'est voulu : le préremplissage
+      // a montré ce qui était attendu, l'effacer est une affirmation.
+      const nb = (v: string) => {
+        const n = parseFloat(v.trim().replace(",", "."));
+        return Number.isFinite(n) ? n : 0;
+      };
+      return p.canaux
+        ? {
+            id: item.id,
+            package_quantity: nb(saisie.contenants),
+            loose_quantity: nb(saisie.vrac),
+          }
+        : { id: item.id, quantity_received: nb(saisie.vrac) };
+    });
+    return lignes.length > 0 ? lignes : undefined;
   };
 
   const handleAction = async () => {
@@ -117,7 +220,12 @@ export default function TransferDetailPage() {
           result = await shipStockTransfer(session.accessToken, organization.id, transferId);
           break;
         case "receive":
-          result = await receiveStockTransfer(session.accessToken, organization.id, transferId);
+          result = await receiveStockTransfer(
+            session.accessToken,
+            organization.id,
+            transferId,
+            lignesRecues(),
+          );
           break;
         case "cancel":
           result = await cancelStockTransfer(session.accessToken, organization.id, transferId);
@@ -245,7 +353,7 @@ export default function TransferDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {transfer.status === "draft" && (
             <>
               <Button
@@ -333,7 +441,7 @@ export default function TransferDetailPage() {
       </Card>
 
       {/* Details Grid */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Info */}
         <Card className="p-0 lg:col-span-1">
           <CardHeader className="pb-3">
@@ -540,11 +648,83 @@ export default function TransferDetailPage() {
 
       {/* Action Dialog */}
       <Dialog open={showActionDialog} onOpenChange={setShowActionDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent
+          className={
+            actionType === "receive"
+              ? "max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+              : "sm:max-w-md"
+          }
+        >
           <DialogHeader>
             <DialogTitle>{getActionDialogConfig().title}</DialogTitle>
             <DialogDescription>{getActionDialogConfig().description}</DialogDescription>
           </DialogHeader>
+
+          {/* La saisie de ce qui est RÉELLEMENT déchargé, PRÉREMPLIE de
+              l'expédié : ce qui est à l'écran est ce qui part. */}
+          {actionType === "receive" && (transfer?.items?.length ?? 0) > 0 && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Les quantités sont celles qui ont été expédiées. Corrigez
+                seulement les lignes reçues en partie.
+              </p>
+              {(transfer?.items ?? []).map(item => {
+                const saisie = recu[item.id];
+                const p = partageExpedie(item);
+                return (
+                  <div key={item.id} className="rounded-lg border p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="font-medium">{item.product_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Expédié :{" "}
+                          {item.requested_display?.trim() ||
+                            parseFloat(item.quantity_shipped || item.quantity_requested)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      {/* Deux canaux quand le produit est conditionné : un
+                          magasinier compte des casiers et des bouteilles, pas
+                          un total. Le seuil est DEUX, comme `getPackaging` du
+                          noyau et `PackagingService.factor` du serveur. */}
+                      {/* Les deux canaux ne sont offerts que si l'envoi porte
+                          un partage ENREGISTRÉ. Sans lui, il n'y a rien à
+                          proposer par canal, et le déduire reviendrait à
+                          redécouper un total au facteur du jour. */}
+                      {p.canaux && (
+                        <div className="space-y-1">
+                          <Label className="text-xs">Contenants reçus</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="any"
+                            className="w-28"
+                            value={saisie?.contenants ?? ""}
+                            onChange={e => majRecu(item.id, { contenants: e.target.value })}
+                          />
+                        </div>
+                      )}
+                      <div className="space-y-1">
+                        <Label className="text-xs">
+                          {p.canaux ? "Unités reçues" : "Quantité reçue"}
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="any"
+                          className="w-28"
+                          value={saisie?.vrac ?? ""}
+                          onChange={e => majRecu(item.id, { vrac: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowActionDialog(false)}>
               Annuler

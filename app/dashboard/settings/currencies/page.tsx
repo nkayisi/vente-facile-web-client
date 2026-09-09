@@ -385,7 +385,7 @@ export default function CurrenciesSettingsPage() {
                     </TableCell>
                     <TableCell>{currency.currency_symbol}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm">
                           {(() => {
                             const rate = parseFloat(currency.exchange_rate);

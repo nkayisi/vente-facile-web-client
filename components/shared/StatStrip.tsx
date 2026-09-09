@@ -32,7 +32,7 @@ export function StatStrip({
         // la première rangée à chaque palier, et un palier oublié laisse soit
         // un trait en trop au bord, soit deux rangées sans séparation.
         "grid grid-cols-2 gap-px overflow-hidden rounded-xl",
-        "border border-gray-200 bg-gray-200",
+        "border border-border bg-border",
         // Six colonnes seulement sur les très grands écrans. Un montant s'écrit
         // en entier : il lui faut de la place, et six cellules sur un portable
         // n'en laissent pas assez. Trois et six divisent tous deux six relevés
@@ -49,6 +49,7 @@ export function StatStrip({
 export function StatStripItem({
   label,
   value,
+  children,
   icon: Icon,
   tone = "neutral",
   hint,
@@ -59,7 +60,14 @@ export function StatStripItem({
    * quand la place manque, c'est la taille du texte qui cède, jamais le nombre
    * de chiffres.
    */
-  value: string;
+  value?: string;
+  /**
+   * Contenu de la valeur, pour ce qu'une chaîne ne peut pas porter : un
+   * `MultiCurrencyTotal` rend une LIGNE PAR DEVISE, et les aplatir en une
+   * chaîne remettrait une somme inter-devises là où le composant existe
+   * précisément pour l'empêcher.
+   */
+  children?: React.ReactNode;
   icon?: LucideIcon;
   /**
    * `alert` et `warn` ne colorent que si la valeur est non nulle : un « 0 en
@@ -69,40 +77,45 @@ export function StatStripItem({
   tone?: "neutral" | "warn" | "alert" | "accent";
   hint?: string;
 }) {
-  const isZero = value.trim() === "0";
+  // Avec `children`, seul l'appelant sait si sa valeur est nulle : c'est lui
+  // qui passe le `tone` en conséquence.
+  const isZero = (value ?? "").trim() === "0";
   const valueTone =
-    (tone === "alert" && !isZero && "text-red-600") ||
-    (tone === "warn" && !isZero && "text-orange-600") ||
-    (tone === "accent" && "text-gray-900") ||
-    "text-gray-900";
+    (tone === "alert" && !isZero && "text-destructive") ||
+    (tone === "warn" && !isZero && "text-warning") ||
+    "text-foreground";
 
   const iconTone =
-    (tone === "alert" && !isZero && "text-red-500") ||
-    (tone === "warn" && !isZero && "text-orange-500") ||
-    (tone === "accent" && "text-emerald-600") ||
-    "text-gray-400";
+    (tone === "alert" && !isZero && "text-destructive") ||
+    (tone === "warn" && !isZero && "text-warning") ||
+    (tone === "accent" && "text-success") ||
+    "text-muted-foreground";
 
   return (
-    <div className="min-w-0 bg-white px-4 py-3.5">
+    <div className="min-w-0 bg-card px-4 py-3.5">
       <div className="flex items-center gap-1.5">
         {Icon && <Icon className={cn("h-3.5 w-3.5 shrink-0", iconTone)} />}
-        <p className="truncate text-xs font-medium text-gray-500" title={hint || label}>
+        <p className="truncate text-xs font-medium text-muted-foreground" title={hint || label}>
           {label}
         </p>
       </div>
       {/* La valeur occupe toute la largeur de la cellule : l'icône est montée
           dans la ligne du libellé pour ne plus lui disputer d'espace, ce qui
           était la première cause des montants rognés. */}
-      <p
-        className={cn(
-          "mt-1 truncate font-semibold leading-tight tabular-nums",
-          statValueSize(value),
-          valueTone
-        )}
-        title={value}
-      >
-        {value}
-      </p>
+      {children ? (
+        <div className="mt-1">{children}</div>
+      ) : (
+        <p
+          className={cn(
+            "mt-1 truncate font-semibold leading-tight tabular-nums",
+            statValueSize(value ?? ""),
+            valueTone
+          )}
+          title={value}
+        >
+          {value}
+        </p>
+      )}
     </div>
   );
 }

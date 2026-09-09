@@ -5,6 +5,9 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SaleReturnDialog } from "@/components/sales/SaleReturnDialog";
+import { ReturnStatusBadge } from "@/components/shared/ReturnStatusBadge";
+import { getSaleReturns, type SaleReturn } from "@/actions/sales.actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,6 +33,7 @@ import {
   DollarSign,
   Percent,
   Star,
+PackageX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatDateTime, formatPoints } from "@/lib/format";
@@ -67,6 +71,10 @@ const STATUS_CONFIG: Record<SaleStatus, { label: string; color: string; icon: an
 };
 
 export default function SaleDetailPage() {
+  const [showReturnDialog, setShowReturnDialog] = useState(false);
+  // Les retours de CETTE vente, lus par le filtre `original_sale` ajouté au
+  // ViewSet : sans lui il aurait fallu tirer toute la table et trier ici.
+  const [saleReturns, setSaleReturns] = useState<SaleReturn[]>([]);
   const { data: session } = useSession();
   const router = useRouter();
   const params = useParams();
@@ -111,10 +119,23 @@ export default function SaleDetailPage() {
         if (organization) {
           const org = organization;
 
-          const saleResult = await getSale(session.accessToken, org.id, saleId);
+          // Les deux partent EN PARALLÈLE : ils ne dépendent pas l'un de
+          // l'autre, et les enchaîner ferait deux allers-retours là où la
+          // latence est le coût dominant.
+          const [saleResult, returnsResult] = await Promise.all([
+            getSale(session.accessToken, org.id, saleId),
+            getSaleReturns(session.accessToken, org.id, {
+              original_sale: saleId,
+            }),
+          ]);
           if (saleResult.success && saleResult.data) {
             setSale(saleResult.data);
           }
+          setSaleReturns(
+            returnsResult.success && returnsResult.data
+              ? returnsResult.data.results
+              : []
+          );
         }
       } catch (error) {
         console.error("Error fetching sale:", error);
@@ -397,7 +418,7 @@ export default function SaleDetailPage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {(sale.status === 'pending' || sale.status === 'partially_paid') && (
             <PermissionGate permission="sales.create">
               <Button
@@ -429,6 +450,19 @@ export default function SaleDetailPage() {
                 ? "Réimprimer le reçu"
                 : "Imprimer le reçu"}
           </Button>
+          {/* Un retour se crée DEPUIS SA VENTE : chaque ligne désigne une
+              ligne de facture, sans quoi le serveur ne sait ni quoi remettre
+              en stock ni combien rembourser. C'est le seul endroit d'où il a
+              un sens - la liste des retours n'a délibérément aucun « Nouveau ».
+              Fermé sur une vente annulée : il n'y a rien à rendre. */}
+          {sale.status !== 'cancelled' && (sale.items?.length ?? 0) > 0 && (
+            <PermissionGate permission="sale_returns.create">
+              <Button variant="outline" onClick={() => setShowReturnDialog(true)}>
+                <PackageX className="h-4 w-4 mr-2" />
+                Retour article
+              </Button>
+            </PermissionGate>
+          )}
           {canCancel && (
             <PermissionGate permission="sales.cancel">
               <Button
@@ -445,7 +479,7 @@ export default function SaleDetailPage() {
       </div>
 
       {/* Details Grid */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Sale Info */}
         <Card>
           <CardHeader>
@@ -661,6 +695,49 @@ export default function SaleDetailPage() {
         </Card>
       </div>
 
+      {/* Les retours de cette vente, rejets compris : une facture doit dire
+          ce qui en est revenu, et vers quelle fiche aller pour le décider. */}
+      {saleReturns.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Retours ({saleReturns.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {saleReturns.map(r => (
+              <Link
+                key={r.id}
+                href={`/dashboard/sales/returns/${r.id}`}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 hover:bg-gray-50"
+              >
+                <div>
+                  <p className="font-medium">{r.reference}</p>
+                  <p className="text-xs text-gray-500">
+                    {formatDateTime(r.return_date)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <ReturnStatusBadge status={r.status} />
+                  <span className="font-mono text-sm">
+                    {formatPrice(r.refund_amount)}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {session?.accessToken && organization?.id && (
+        <SaleReturnDialog
+          sale={sale}
+          open={showReturnDialog}
+          onOpenChange={setShowReturnDialog}
+          accessToken={session.accessToken}
+          organizationId={organization.id}
+          onCreated={(returnId) => router.push(`/dashboard/sales/returns/${returnId}`)}
+        />
+      )}
+
       {/* Items Table */}
       <Card>
         <CardHeader>
@@ -701,6 +778,21 @@ export default function SaleDetailPage() {
                         <div>
                           <p className="font-medium text-gray-900">{item.product_name}</p>
                           <p className="text-xs text-gray-500">{item.product_sku}</p>
+                          {/* Ce qui a DÉJÀ été rendu se lit sur la ligne : c'est
+                              la première chose à voir quand on relit une facture
+                              pour comprendre un écart de stock ou de caisse.
+                              Sans elle, l'écran proposait de rendre une seconde
+                              fois une marchandise déjà reprise. */}
+                          {parseFloat(item.returned_quantity || "0") > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="mt-1 border-warning/40 bg-warning/10 text-warning"
+                            >
+                              {parseFloat(item.returnable_quantity || "0") > 0
+                                ? `${parseFloat(item.returned_quantity!)} rendu${parseFloat(item.returned_quantity!) > 1 ? "s" : ""} sur ${parseFloat(item.quantity)}`
+                                : "Entièrement rendu"}
+                            </Badge>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">

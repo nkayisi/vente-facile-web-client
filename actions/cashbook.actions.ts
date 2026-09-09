@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import axios from "@/lib/auth/api-helper";
 import { getErrorBody } from "@/lib/api/drf-error";
+import {
+  fetchExportFile,
+  type ExportFile,
+  type ExportFormat,
+} from "@/lib/export/fetch-export";
 
 const API_BASE_URL =
   process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
@@ -1086,4 +1091,30 @@ export async function getCustomReport(
       error: getErrorBody(error)?.detail || "Erreur lors de la récupération du rapport personnalisé",
     };
   }
+}
+
+/**
+ * Télécharge un rapport de caisse, en PDF, classeur ou CSV.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ LES QUATRE RAPPORTS ÉTAIENT DESSINÉS DANS LE NAVIGATEUR.                │
+ * │                                                                          │
+ * │ Quatre fonctions jsPDF, leurs styles et leur bandeau tenus en phase à la │
+ * │ main avec ceux du serveur. Et le journalier ne portait que la PAGE       │
+ * │ affichée, sous une synthèse qui annonçait toute la journée.              │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+export async function exportCashReport(
+  accessToken: string,
+  organizationId: string,
+  format: ExportFormat,
+  params: Record<string, string | undefined>
+): Promise<ExportFile> {
+  return fetchExportFile(
+    "/cash-movements/export-report/",
+    accessToken,
+    organizationId,
+    format,
+    params
+  );
 }

@@ -1,6 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  fetchExportFile,
+  type ExportFile,
+  type ExportFormat,
+} from "@/lib/export/fetch-export";
 import { formatApiErrorBody, formatAxiosErrorMessage } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
 
@@ -125,6 +130,17 @@ export interface SaleItem {
   quantity_display?: string;
   package_unit_name?: string | null;
   unit_name?: string | null;
+  /**
+   * Ce qui a DÉJÀ été rendu sur cette ligne, retours rejetés exclus.
+   *
+   * Calculé par le SERVEUR (`returned_quantity_expression`), qui s'en sert
+   * aussi pour refuser un retour de trop : l'écran propose une borne, et c'est
+   * la même définition qui la fait respecter. Un BROUILLON consomme - il est
+   * approuvable - un retour REJETÉ non, la marchandise est encore là.
+   */
+  returned_quantity?: string;
+  /** Ce qu'il RESTE à rendre. Jamais négatif. */
+  returnable_quantity?: string;
   discount_amount: string;
   discount_percentage: string;
   tax_rate: string;
@@ -1089,22 +1105,36 @@ export async function markReceiptPrinted(
 export async function getSaleReturns(
   accessToken: string,
   organizationId: string,
-  filters?: { status?: ReturnStatus; return_type?: ReturnType; search?: string }
-): Promise<ApiResponse<SaleReturn[]>> {
+  filters?: {
+    status?: ReturnStatus;
+    return_type?: ReturnType;
+    search?: string;
+    /** Les retours d'UNE vente : c'est ce que sa fiche vient chercher. */
+    original_sale?: string;
+    page?: number;
+    page_size?: number;
+  }
+): Promise<ApiResponse<PaginatedResponse<SaleReturn>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);
     if (filters?.return_type) params.append("return_type", filters.return_type);
     if (filters?.search) params.append("search", filters.search);
+    if (filters?.original_sale) params.append("original_sale", filters.original_sale);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/sale-returns/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 
-    const data = Array.isArray(response.data)
-      ? response.data
-      : response.data.results || [];
+    // ⚠ `count` et `next` étaient JETÉS, et l'appelant n'avait donc aucun moyen
+    // de savoir qu'il ne tenait qu'une page : la liste s'arrêtait à la première
+    // sans le dire, et son compteur annonçait le nombre de lignes RENDUES.
+    const data: PaginatedResponse<SaleReturn> = Array.isArray(response.data)
+      ? { count: response.data.length, next: null, previous: null, results: response.data }
+      : response.data;
 
     return { success: true, data };
   } catch (error: unknown) {
@@ -1205,22 +1235,32 @@ export async function rejectSaleReturn(
 export async function getQuotations(
   accessToken: string,
   organizationId: string,
-  filters?: { status?: QuotationStatus; customer?: string; search?: string }
-): Promise<ApiResponse<Quotation[]>> {
+  filters?: {
+    status?: QuotationStatus;
+    customer?: string;
+    search?: string;
+    page?: number;
+    page_size?: number;
+  }
+): Promise<ApiResponse<PaginatedResponse<Quotation>>> {
   try {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);
     if (filters?.customer) params.append("customer", filters.customer);
     if (filters?.search) params.append("search", filters.search);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
 
     const response = await axios.get(
       `${API_BASE_URL}/quotations/?${params.toString()}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 
-    const data = Array.isArray(response.data)
-      ? response.data
-      : response.data.results || [];
+    // Même motif que les retours : sans `count`, la page ne sait pas qu'elle
+    // en cache d'autres.
+    const data: PaginatedResponse<Quotation> = Array.isArray(response.data)
+      ? { count: response.data.length, next: null, previous: null, results: response.data }
+      : response.data;
 
     return { success: true, data };
   } catch (error: unknown) {
@@ -1354,4 +1394,43 @@ export async function sendQuotation(
       message: salesErrorMessage(error, "Erreur lors de l'envoi du devis", "error"),
     };
   }
+}
+
+// =============================================================================
+// EXPORT
+// =============================================================================
+
+/**
+ * Exporte le journal des ventes, avec les filtres de la liste.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ LES MÊMES FILTRES QUE L'ÉCRAN, ET SURTOUT PAS SA PAGE.                  │
+ * │                                                                          │
+ * │ `page` et `page_size` ne sont volontairement PAS transmis : le serveur   │
+ * │ exporte le périmètre filtré en entier (`ExportableListMixin`), et lui    │
+ * │ passer la page produirait un fichier qui ne dit pas ce que son titre     │
+ * │ annonce. C'est le défaut corrigé sur les niveaux de stock, où l'export   │
+ * │ ne couvrait pas le même périmètre que l'écran qui l'avait déclenché.     │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Aucune plomberie ici : `fetchExportFile` porte le corps commun à tous les
+ * exports du back-office, et `ExportMenu` s'occupe du téléchargement.
+ */
+export async function exportSales(
+  accessToken: string,
+  organizationId: string,
+  format: ExportFormat,
+  filters: Omit<SaleFilters, "page" | "page_size"> = {}
+): Promise<ExportFile> {
+  return fetchExportFile("/sales/export/", accessToken, organizationId, format, {
+    status: filters.status,
+    sale_type: filters.sale_type,
+    customer: filters.customer,
+    register: filters.register,
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+    search: filters.search,
+    overdue: filters.overdue ? "true" : undefined,
+    ordering: filters.ordering,
+  });
 }

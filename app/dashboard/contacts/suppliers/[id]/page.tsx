@@ -219,7 +219,7 @@ export default function SupplierDetailPage() {
       </div>
 
       {/* Main Content */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left: Details */}
         <div className="lg:col-span-2 space-y-6">
           {/* Contact Info */}
