@@ -486,25 +486,27 @@ export async function updateIncomeCategory(
   }
 }
 
-export async function deleteIncomeCategory(
-  accessToken: string,
-  organizationId: string,
-  categoryId: string
-): Promise<ApiResponse<null>> {
-  try {
-    await axios.delete(
-      `${API_BASE_URL}/income-categories/${categoryId}/`,
-      { headers: getHeaders(accessToken, organizationId) }
-    );
-    revalidatePath("/dashboard/cashbook");
-    return { success: true };
-  } catch (error: unknown) {
-    return {
-      success: false,
-      error: getErrorBody(error)?.detail || "Erreur lors de la suppression",
-    };
-  }
-}
+
+/**
+ * ⚠ IL N'Y A PAS DE `deleteIncomeCategory` NI DE `deleteExpenseCategory`, ET
+ * CE N'EST PAS UN OUBLI.
+ *
+ * Elles ont existé, sans le moindre appelant, et elles ont été retirées plutôt
+ * que laissées en embuscade. Trois raisons qui se cumulent :
+ *
+ *  1. `ExpenseCategory` est `PROTECT`-référencée par `Expense` : supprimer une
+ *     rubrique employée lève `ProtectedError`, donc un 500 - et toute rubrique
+ *     qui vaut la peine d'être gérée est employée.
+ *  2. `IncomeCategory` est `SET_NULL` : la suppression réussit et orpheline
+ *     l'historique EN SILENCE. Les rapports par rubrique changent alors
+ *     rétroactivement.
+ *  3. Aucune des deux tables n'émet de pierre tombale au tirage
+ *     (`apps/sync/pull.py`) : une suppression côté serveur n'atteindrait JAMAIS
+ *     un terminal, où la rubrique resterait proposée à la saisie, pour toujours.
+ *
+ * Le levier est `is_active`, que `update*Category` porte : la rubrique quitte
+ * les formulaires, l'historique la garde.
+ */
 
 // =============================================================================
 // EXPENSE CATEGORIES
@@ -577,25 +579,6 @@ export async function updateExpenseCategory(
   }
 }
 
-export async function deleteExpenseCategory(
-  accessToken: string,
-  organizationId: string,
-  categoryId: string
-): Promise<ApiResponse<null>> {
-  try {
-    await axios.delete(
-      `${API_BASE_URL}/expense-categories/${categoryId}/`,
-      { headers: getHeaders(accessToken, organizationId) }
-    );
-    revalidatePath("/dashboard/cashbook");
-    return { success: true };
-  } catch (error: unknown) {
-    return {
-      success: false,
-      error: getErrorBody(error)?.detail || "Erreur lors de la suppression",
-    };
-  }
-}
 
 // =============================================================================
 // EXPENSES

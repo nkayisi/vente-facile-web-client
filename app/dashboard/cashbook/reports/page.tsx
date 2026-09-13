@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCurrency } from "@/components/providers/currency-provider";
+import { movementTypeLabel } from "@/lib/cashbook/movement-types";
 import {
   } from "@/actions/organization.actions";
 import {
@@ -71,19 +72,6 @@ import {
 import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
 
-const MOVEMENT_TYPE_LABELS: Record<string, string> = {
-  sale: "Vente",
-  sale_return: "Remboursement client",
-  expense: "Dépense",
-  purchase: "Achat fournisseur",
-  supplier_refund: "Remboursement fournisseur",
-  debt_collection: "Recouvrement dette",
-  fund_in: "Apport de fonds",
-  fund_out: "Retrait de fonds",
-  adjustment: "Ajustement",
-  other_in: "Autre entrée",
-  other_out: "Autre sortie",
-};
 
 const MONTH_NAMES = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -476,7 +464,7 @@ export default function CashbookReportsPage() {
                         {dailyReport.by_type.map((item, i) => (
                           <TableRow key={i}>
                             <TableCell className="font-medium">
-                              {MOVEMENT_TYPE_LABELS[item.movement_type] || item.movement_type}
+                              {movementTypeLabel(item.movement_type)}
                             </TableCell>
                             <TableCell className="font-medium text-gray-600">{item.currency}</TableCell>
                             <TableCell>
@@ -552,7 +540,7 @@ export default function CashbookReportsPage() {
                                     : "bg-red-100 text-red-700 hover:bg-red-100"
                                 }
                               >
-                                {MOVEMENT_TYPE_LABELS[m.movement_type] || m.movement_type_display}
+                                {movementTypeLabel(m.movement_type, m.movement_type_display)}
                               </Badge>
                             </TableCell>
                             <TableCell className="max-w-[250px] truncate text-sm">

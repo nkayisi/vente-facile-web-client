@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -14,8 +14,9 @@ import {
   CreditCard,
   Loader2,
   Receipt,
+  ArrowRightLeft,
+  ClipboardList,
   Tag,
-  Settings,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -36,7 +37,6 @@ import {
   payExpense,
   cancelExpense,
   getExpenseCategories,
-  createExpenseCategory,
   getExpenseStats,
   Expense,
   ExpenseCategory,
@@ -44,6 +44,8 @@ import {
   CreateExpenseData,
 } from "@/actions/cashbook.actions";
 import { buildExpenseReceipt, type ExpenseReceiptData } from "@/lib/receipt";
+import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
+import { MultiCurrencyTotal } from "@/components/shared/MultiCurrencyTotal";
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import { usePermissions } from "@/components/auth/permissions-provider";
@@ -119,7 +121,7 @@ export default function ExpensesPage() {
     () => createMoneyHelpers(orgCurrencies, defaultCurrency),
     [orgCurrencies, defaultCurrency]
   );
-  const { money, amountOnly, primaryCode } = moneyHelpers;
+  const { money, primaryCode } = moneyHelpers;
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -129,12 +131,39 @@ export default function ExpensesPage() {
   const pageSize = 20;
 
   // Filters
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [currencyFilter, setCurrencyFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [searchQuery, setSearchQueryRaw] = useState("");
+  const [statusFilter, setStatusFilterRaw] = useState("all");
+  const [categoryFilter, setCategoryFilterRaw] = useState("all");
+  const [currencyFilter, setCurrencyFilterRaw] = useState("all");
+  const [dateFrom, setDateFromRaw] = useState("");
+  const [dateTo, setDateToRaw] = useState("");
+
+  /**
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ CHANGER UN FILTRE REMET À LA PAGE 1.                                 │
+   * │                                                                      │
+   * │ `handleFilterChange` était écrit pour cela et n'avait AUCUN appelant :│
+   * │ les six filtres posaient leur `setState` en direct. Depuis la page 3, │
+   * │ filtrer sur « Payée » demandait donc la page 3 d'un résultat qui n'en │
+   * │ a qu'une, et la page rendait « Aucune dépense trouvée » - un vide qui │
+   * │ se lit comme une absence de données, sur un écran qui en a.           │
+   * │                                                                      │
+   * │ Les six setters passent par ici : câbler la fonction plutôt que de la │
+   * │ supprimer, c'est traiter le défaut qu'elle signalait.                 │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
+  const filtrer =
+    <T,>(setter: (v: T) => void) =>
+    (valeur: T) => {
+      setter(valeur);
+      setCurrentPage(1);
+    };
+  const setSearchQuery = filtrer(setSearchQueryRaw);
+  const setStatusFilter = filtrer(setStatusFilterRaw);
+  const setCategoryFilter = filtrer(setCategoryFilterRaw);
+  const setCurrencyFilter = filtrer(setCurrencyFilterRaw);
+  const setDateFrom = filtrer(setDateFromRaw);
+  const setDateTo = filtrer(setDateToRaw);
 
   // Create expense dialog
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -149,12 +178,6 @@ export default function ExpensesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Create category dialog
-  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
-  const [categoryForm, setCategoryForm] = useState({
-    name: "",
-    description: "",
-    color: "#6B7280",
-  });
 
   // Reject dialog
   const [rejectTarget, setRejectTarget] = useState<Expense | null>(null);
@@ -260,10 +283,6 @@ export default function ExpensesPage() {
   }
 
   // Reset to page 1 when filters change
-  const handleFilterChange = (setter: (value: string) => void, value: string) => {
-    setter(value);
-    setCurrentPage(1);
-  };
 
   const totalPages = Math.ceil(totalCount / pageSize);
 
@@ -334,39 +353,7 @@ export default function ExpensesPage() {
     }
   }
 
-  async function handleCreateCategory() {
-    if (!session?.accessToken || !organization) return;
-    if (!categoryForm.name) {
-      toast.error("Le nom est obligatoire");
-      return;
-    }
 
-    setIsSubmitting(true);
-    try {
-      const res = await createExpenseCategory(
-        session.accessToken,
-        organization.id,
-        categoryForm
-      );
-      if (res.success) {
-        toast.success("Catégorie créée");
-        setShowCategoryDialog(false);
-        setCategoryForm({ name: "", description: "", color: "#6B7280" });
-        // Refresh categories
-        const catRes = await getExpenseCategories(
-          session.accessToken,
-          organization.id
-        );
-        if (catRes.success && catRes.data) setCategories(catRes.data.results);
-      } else {
-        toast.error(res.error || "Erreur");
-      }
-    } catch {
-      toast.error("Erreur");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
 
   async function handleAction(
     action: "submit" | "approve" | "pay",
@@ -476,14 +463,15 @@ export default function ExpensesPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PermissionGate permission="cashbook.manage_categories">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowCategoryDialog(true)}
-            >
-              <Tag className="h-4 w-4 mr-2" />
-              Catégorie
-            </Button>
+            {/* Il ouvrait un dialogue qui ne savait que CRÉER : une rubrique
+                mal orthographiée y restait fausse pour toujours. Il mène
+                désormais à la page qui sait aussi renommer et désactiver. */}
+            <Link href="/dashboard/cashbook/categories">
+              <Button variant="outline" size="sm">
+                <Tag className="h-4 w-4 mr-2" />
+                Catégories
+              </Button>
+            </Link>
           </PermissionGate>
           <PermissionGate permission="cashbook.create_expense">
             <Button
@@ -498,68 +486,51 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Totaux - ventilés par devise (jamais additionnés entre elles) + total
-          converti en devise principale pour la lecture comptable. */}
+      {/* ┌──────────────────────────────────────────────────────────────────┐
+          │ LES TROIS RELEVÉS SONT UN CADRAN, PAS TROIS CARTES.              │
+          │                                                                  │
+          │ Même défaut que sur le livre de caisse : trois `Card` de même    │
+          │ forme que les tuiles cliquables, avec leurs couleurs en dur      │
+          │ (`text-orange-600`, `text-gray-400`) et un `text-lg` figé qui ne │
+          │ passait pas par `statValueSize` - un montant en CDF à sept       │
+          │ chiffres y restait à taille fixe au lieu de céder sur la taille  │
+          │ du texte.                                                        │
+          │                                                                  │
+          │ ⚠ Le cadran ne compte QUE les dépenses approuvées ou payées :    │
+          │ `stats` filtre `status__in=['approved', 'paid']` sans jamais le  │
+          │ dire à l'écran. Un brouillon n'a pas encore fait sortir de       │
+          │ billet, et l'inclure donnerait un total supérieur à ce qui       │
+          │ manque dans le tiroir. La règle est désormais écrite sous le     │
+          │ cadran, parce qu'elle change le sens des trois chiffres.         │
+          └──────────────────────────────────────────────────────────────────┘ */}
       {stats && stats.by_currency?.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card className="py-1">
-            <CardContent className="p-4">
-              <p className="text-sm text-gray-500 mb-2">
-                Total dépensé par devise
-              </p>
-              <div className="space-y-1">
-                {stats.by_currency.map((row) => (
-                  <div
-                    key={row.currency}
-                    className="flex items-baseline justify-between gap-2"
-                  >
-                    <span className="text-xs font-medium text-gray-400">
-                      {row.currency}
-                    </span>
-                    <span className="text-lg font-bold text-orange-600">
-                      {amountOnly(row.total, row.currency)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="py-1">
-            <CardContent className="p-4">
-              <p className="text-sm text-gray-500 mb-2">
-                Équivalent en {stats.currency}
-              </p>
-              <p className="text-2xl font-bold text-gray-900">
-                {money(stats.total_primary, stats.currency)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {stats.count} dépense{stats.count > 1 ? "s" : ""} approuvée
-                {stats.count > 1 ? "s" : ""} ou payée{stats.count > 1 ? "s" : ""}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="py-1">
-            <CardContent className="p-4">
-              <p className="text-sm text-gray-500 mb-2">
-                Nombre de dépenses par devise
-              </p>
-              <div className="space-y-1">
-                {stats.by_currency.map((row) => (
-                  <div
-                    key={row.currency}
-                    className="flex items-baseline justify-between gap-2"
-                  >
-                    <span className="text-xs font-medium text-gray-400">
-                      {row.currency}
-                    </span>
-                    <span className="text-lg font-bold text-gray-900 tabular-nums">
-                      {formatNumber(row.count)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+        <div className="space-y-2">
+          <StatStrip className="lg:grid-cols-3 2xl:grid-cols-3">
+            <StatStripItem label="Total dépensé" icon={Receipt}>
+              <MultiCurrencyTotal
+                rows={stats.by_currency.map((row) => ({
+                  currency: row.currency,
+                  amount: row.total,
+                }))}
+                money={moneyHelpers}
+                color="text-destructive"
+              />
+            </StatStripItem>
+            <StatStripItem
+              label={`Équivalent en ${stats.currency}`}
+              icon={ArrowRightLeft}
+              value={money(stats.total_primary, stats.currency)}
+            />
+            <StatStripItem
+              label="Dépenses engagées"
+              icon={ClipboardList}
+              value={formatNumber(stats.count)}
+            />
+          </StatStrip>
+          <p className="text-xs text-muted-foreground">
+            Le cadran ne compte que les dépenses approuvées ou payées : un
+            brouillon n&apos;a pas encore fait sortir de billet.
+          </p>
         </div>
       )}
 
@@ -880,64 +851,6 @@ export default function ExpensesPage() {
             >
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Créer la dépense
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Create Category Dialog */}
-      <Dialog open={showCategoryDialog} onOpenChange={setShowCategoryDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Nouvelle catégorie de dépense</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Nom *</Label>
-              <Input
-                value={categoryForm.name}
-                onChange={(e) =>
-                  setCategoryForm({ ...categoryForm, name: e.target.value })
-                }
-                placeholder="Ex: Loyer, Transport, Salaires..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Input
-                value={categoryForm.description}
-                onChange={(e) =>
-                  setCategoryForm({ ...categoryForm, description: e.target.value })
-                }
-                placeholder="Description optionnelle"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Couleur</Label>
-              <div className="flex flex-wrap items-center gap-3">
-                <input
-                  type="color"
-                  value={categoryForm.color}
-                  onChange={(e) =>
-                    setCategoryForm({ ...categoryForm, color: e.target.value })
-                  }
-                  className="w-10 h-10 rounded border cursor-pointer"
-                />
-                <span className="text-sm text-gray-500">{categoryForm.color}</span>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCategoryDialog(false)}>
-              Annuler
-            </Button>
-            <Button
-              onClick={handleCreateCategory}
-              disabled={isSubmitting}
-              className="bg-orange-500 hover:bg-orange-600"
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Créer
             </Button>
           </DialogFooter>
         </DialogContent>

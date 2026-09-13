@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
   ArrowDownLeft,
-  ArrowUpRight,
   Wallet,
   TrendingUp,
   TrendingDown,
@@ -16,13 +15,12 @@ import {
   Search,
   MoreHorizontal,
   XCircle,
-  Eye,
-  Filter,
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDateTime } from "@/lib/format";
 import { createMoneyHelpers } from "@/lib/currency";
+import { movementTypeLabel } from "@/lib/cashbook/movement-types";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
   } from "@/actions/organization.actions";
@@ -45,8 +43,9 @@ import {
   CashMovementFilters,
 } from "@/actions/cashbook.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
+import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
+import { MultiCurrencyTotal } from "@/components/shared/MultiCurrencyTotal";
 import { CurrencyAmountInput } from "@/components/shared/CurrencyAmountInput";
-import { usePermissions } from "@/components/auth/permissions-provider";
 import { PermissionGate } from "@/components/auth/permission-gate";
 
 import { Button } from "@/components/ui/button";
@@ -86,23 +85,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const MOVEMENT_TYPE_LABELS: Record<string, string> = {
-  sale: "Vente",
-  sale_return: "Remboursement client",
-  expense: "Dépense",
-  purchase: "Achat fournisseur",
-  supplier_refund: "Remboursement fournisseur",
-  debt_collection: "Recouvrement dette",
-  fund_in: "Apport de fonds",
-  fund_out: "Retrait de fonds",
-  adjustment: "Ajustement",
-  other_in: "Autre entrée",
-  other_out: "Autre sortie",
-};
 
 export default function CashbookPage() {
   const { data: session } = useSession();
-  const { hasPermission } = usePermissions();
   const { currency: defaultCurrency } = useCurrency();
   const { organization } = useOrganization();
   const [isLoading, setIsLoading] = useState(true);
@@ -119,39 +104,26 @@ export default function CashbookPage() {
     () => createMoneyHelpers(orgCurrencies, defaultCurrency),
     [orgCurrencies, defaultCurrency]
   );
-  const { money, amountOnly, primaryCode } = moneyHelpers;
+  const { money, primaryCode } = moneyHelpers;
 
-  // Rend, dans une carte, une ligne « DEVISE : montant » par devise en caisse.
-  // `pick` extrait la valeur voulue (solde, entrées, sorties, net) de chaque devise.
-  const renderCurrencyLines = (
-    pick: (c: CurrencyBalance) => string,
-    opts?: { sign?: string; className?: string; colorBySign?: boolean }
-  ) => {
-    const rows = balance?.by_currency ?? [];
-    if (rows.length === 0) {
-      return <div className="text-xl font-bold">{amountOnly(0, defaultCurrency.code)} {defaultCurrency.code}</div>;
-    }
-    return (
-      <div className="space-y-1">
-        {rows.map((cb) => {
-          const val = pick(cb);
-          const cls = opts?.colorBySign
-            ? parseFloat(val) >= 0 ? "text-green-600" : "text-red-600"
-            : opts?.className ?? "";
-          // Pas de signe sur un montant nul (évite « -0 » / « +0 »).
-          const sign = opts?.sign && (parseFloat(val) || 0) !== 0 ? opts.sign : "";
-          return (
-            <div key={cb.currency} className="flex items-baseline justify-between gap-2">
-              <span className="text-xs font-medium text-gray-400">{cb.currency}</span>
-              <span className={`text-lg font-bold ${cls}`}>
-                {sign}{amountOnly(val, cb.currency)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
+  /**
+   * Les lignes « DEVISE : montant » d'un relevé, via le composant partagé.
+   *
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ CE RENDU ÉTAIT ÉCRIT À LA MAIN, AVEC SES COULEURS EN DUR.            │
+   * │                                                                      │
+   * │ `text-green-600`, `text-red-600`, `text-gray-400` et un `text-lg`    │
+   * │ figé : c'est la quatrième copie d'un composant que le dépôt a extrait │
+   * │ précisément pour ça (`MultiCurrencyTotal`), et la seule qui ne passe  │
+   * │ pas par `statValueSize`. Un montant en CDF à sept chiffres y tombait  │
+   * │ donc à taille fixe, au lieu de céder sur la taille du texte.          │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
+  const currencyRows = (pick: (c: CurrencyBalance) => string, sign?: -1) =>
+    (balance?.by_currency ?? []).map((cb) => ({
+      currency: cb.currency,
+      amount: (sign ?? 1) * (parseFloat(pick(cb)) || 0),
+    }));
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -161,12 +133,37 @@ export default function CashbookPage() {
   const pageSize = 20;
 
   // Filters
-  const [searchQuery, setSearchQuery] = useState("");
-  const [directionFilter, setDirectionFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [currencyFilter, setCurrencyFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [searchQuery, setSearchQueryRaw] = useState("");
+  const [directionFilter, setDirectionFilterRaw] = useState("all");
+  const [typeFilter, setTypeFilterRaw] = useState("all");
+  const [currencyFilter, setCurrencyFilterRaw] = useState("all");
+  const [dateFrom, setDateFromRaw] = useState("");
+  const [dateTo, setDateToRaw] = useState("");
+
+  /**
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ CHANGER UN FILTRE REMET À LA PAGE 1.                                 │
+   * │                                                                      │
+   * │ `handleFilterChange` existait et n'était appelé QUE par le filtre de │
+   * │ devise : les cinq autres posaient leur `setState` en direct. Depuis  │
+   * │ la page 3, filtrer sur « Sorties » demandait donc la page 3 d'un      │
+   * │ résultat qui n'en a qu'une, et la page rendait « Aucun mouvement      │
+   * │ trouvé » - un vide qui se lit comme une absence de données, sur un    │
+   * │ écran qui en a.                                                       │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
+  const filtrer =
+    <T,>(setter: (v: T) => void) =>
+    (valeur: T) => {
+      setter(valeur);
+      setCurrentPage(1);
+    };
+  const setSearchQuery = filtrer(setSearchQueryRaw);
+  const setDirectionFilter = filtrer(setDirectionFilterRaw);
+  const setTypeFilter = filtrer(setTypeFilterRaw);
+  const setCurrencyFilter = filtrer(setCurrencyFilterRaw);
+  const setDateFrom = filtrer(setDateFromRaw);
+  const setDateTo = filtrer(setDateToRaw);
 
   // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -284,11 +281,6 @@ export default function CashbookPage() {
     }
   }
 
-  // Reset to page 1 when filters change
-  const handleFilterChange = (setter: (value: string) => void, value: string) => {
-    setter(value);
-    setCurrentPage(1);
-  };
 
   const totalPages = Math.ceil(totalCount / pageSize);
 
@@ -344,6 +336,19 @@ export default function CashbookPage() {
 
   async function handleCreate() {
     if (!session?.accessToken || !organization) return;
+    // ┌──────────────────────────────────────────────────────────────────────┐
+    // │ « TYPE D'ENTRÉE * » ÉTAIT ÉTOILÉ SANS ÊTRE EXIGÉ.                    │
+    // │                                                                      │
+    // │ Et il ne POUVAIT pas l'être : `IncomeCategoryCreateSerializer`       │
+    // │ n'exposait pas `id`, donc la création en ligne d'un type rendait     │
+    // │ `result.data.id === undefined` et ne resélectionnait rien. Exiger le │
+    // │ champ aurait bloqué le marchand juste après qu'il ait créé son type. │
+    // │ Le serializer rend désormais l'`id` : l'étoile devient vraie.        │
+    // └──────────────────────────────────────────────────────────────────────┘
+    if (!createForm.income_category) {
+      toast.error("Choisissez un type d'entrée");
+      return;
+    }
     if (!createForm.amount || !createForm.description) {
       toast.error("Veuillez remplir tous les champs obligatoires");
       return;
@@ -443,64 +448,42 @@ export default function CashbookPage() {
         </div>
       </div>
 
-      {/* Balance Cards - 4 métriques, chacune ventilée PAR DEVISE (tiroir réel) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="gap-0">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium text-gray-600">
-              Solde de caisse
-            </CardTitle>
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Wallet className="h-5 w-5 text-blue-600" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {renderCurrencyLines((c) => c.balance)}
-          </CardContent>
-        </Card>
-
-        <Card className="gap-0">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium text-gray-600">
-              Entrées du jour
-            </CardTitle>
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <TrendingUp className="h-5 w-5 text-green-600" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {renderCurrencyLines((c) => c.today_in, { sign: "+", className: "text-green-600" })}
-          </CardContent>
-        </Card>
-
-        <Card className="gap-0">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium text-gray-600">
-              Sorties du jour
-            </CardTitle>
-            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-              <TrendingDown className="h-5 w-5 text-red-600" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {renderCurrencyLines((c) => c.today_out, { sign: "-", className: "text-red-600" })}
-          </CardContent>
-        </Card>
-
-        <Card className="gap-0">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium text-gray-600">
-              Net du jour
-            </CardTitle>
-            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-              <ArrowRightLeft className="h-5 w-5 text-purple-600" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {renderCurrencyLines((c) => c.today_net, { colorBySign: true })}
-          </CardContent>
-        </Card>
-      </div>
+      {/* ┌──────────────────────────────────────────────────────────────────┐
+          │ LES QUATRE RELEVÉS SONT UN CADRAN, PAS QUATRE CARTES.            │
+          │                                                                  │
+          │ Ils vivaient dans quatre `Card` : même fond, même ombre, même    │
+          │ rayon que les tuiles cliquables du reste du tableau de bord, et  │
+          │ rien pour dire que ces quatre-là ne réagissent pas au clic.      │
+          │ C'est le défaut « deux registres, deux formes » déjà corrigé sur │
+          │ « Gestion de stock » ; le livre de caisse en était le dernier    │
+          │ porteur. `StatStrip` en fait UN panneau à filets, et ses         │
+          │ pastilles de couleur en dur (`bg-blue-100`…) laissent la place   │
+          │ aux jetons.                                                       │
+          └──────────────────────────────────────────────────────────────────┘ */}
+      <StatStrip className="lg:grid-cols-4 2xl:grid-cols-4">
+        <StatStripItem label="Solde de caisse" icon={Wallet}>
+          <MultiCurrencyTotal rows={currencyRows((c) => c.balance)} money={moneyHelpers} />
+        </StatStripItem>
+        <StatStripItem label="Entrées du jour" icon={TrendingUp}>
+          <MultiCurrencyTotal
+            rows={currencyRows((c) => c.today_in)}
+            money={moneyHelpers}
+            color="text-success"
+          />
+        </StatStripItem>
+        <StatStripItem label="Sorties du jour" icon={TrendingDown}>
+          {/* Le SIGNE est porté par le montant : « -12 500 FC » sous un
+              libellé qui dit déjà « sorties » se lit une fois, pas deux. */}
+          <MultiCurrencyTotal
+            rows={currencyRows((c) => c.today_out, -1)}
+            money={moneyHelpers}
+            color="text-destructive"
+          />
+        </StatStripItem>
+        <StatStripItem label="Net du jour" icon={ArrowRightLeft}>
+          <MultiCurrencyTotal rows={currencyRows((c) => c.today_net)} money={moneyHelpers} />
+        </StatStripItem>
+      </StatStrip>
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -545,7 +528,7 @@ export default function CashbookPage() {
         {orgCurrencies.length > 1 && (
           <Select
             value={currencyFilter}
-            onValueChange={(v) => handleFilterChange(setCurrencyFilter, v)}
+            onValueChange={setCurrencyFilter}
           >
             <SelectTrigger className="w-full sm:w-[140px]">
               <SelectValue placeholder="Devise" />
@@ -627,7 +610,7 @@ export default function CashbookPage() {
                         }
                       >
                         {m.direction === "in" ? "↓" : "↑"}{" "}
-                        {MOVEMENT_TYPE_LABELS[m.movement_type] || m.movement_type_display}
+                        {movementTypeLabel(m.movement_type, m.movement_type_display)}
                       </Badge>
                     </TableCell>
                     <TableCell className="max-w-[200px] truncate text-sm">
