@@ -34,25 +34,57 @@ export function useReceiptChrome(
   register?: { receipt_header?: string | null; receipt_footer?: string | null } | null
 ): ReceiptChromeState {
   const [settings, setSettings] = useState<OrganizationSettings | null>(null);
+  /**
+   * Les réglages ont été DEMANDÉS et la réponse est retombée, réussite ou échec.
+   *
+   * ┌──────────────────────────────────────────────────────────────────────────┐
+   * │ LE PREMIER TICKET SORTAIT AVANT LES RÉGLAGES.                           │
+   * │                                                                          │
+   * │ `chrome` ne dépendait que de l'organisation : il était donc prêt bien    │
+   * │ avant la réponse de `getOrganizationSettings`, et les écrans qui gardent │
+   * │ sur `if (!chrome) return` imprimaient volontiers. Chez un marchand réglé │
+   * │ en 80 mm, le premier reçu du matin sortait en 58, sans son en-tête - et  │
+   * │ le suivant, identique, sortait juste. Rien ne le signalait.              │
+   * │                                                                          │
+   * │ Le drapeau est posé sur les DEUX issues : un réglage indisponible ne     │
+   * │ doit pas empêcher d'imprimer, il doit seulement cesser d'être attendu.   │
+   * └──────────────────────────────────────────────────────────────────────────┘
+   */
+  const [settledFor, setSettledFor] = useState<string | null>(null);
   const [logo, setLogo] = useState<LoadedLogo | null>(null);
 
+  /**
+   * Ce qu'il y a à demander. `null` = rien, donc rien à attendre.
+   *
+   * On retient l'ORGANISATION plutôt qu'un booléen : un drapeau se remettrait
+   * à faux par un `setState` posé dans le corps de l'effet - ce que React
+   * déconseille et que le lint refuse - et, surtout, il resterait à vrai en
+   * changeant d'établissement, donc le premier ticket du suivant sortirait
+   * avec les réglages du précédent.
+   */
+  const aCharger = accessToken && organization?.id ? organization.id : null;
+  const settingsSettled = aCharger === null || settledFor === aCharger;
+
   useEffect(() => {
-    if (!accessToken || !organization?.id) return;
+    if (!accessToken || !aCharger) return;
     let cancelled = false;
 
-    getOrganizationSettings(accessToken, organization.id)
+    getOrganizationSettings(accessToken, aCharger)
       .then((result) => {
-        if (!cancelled && result.success && result.data) setSettings(result.data);
+        if (cancelled) return;
+        if (result.success && result.data) setSettings(result.data);
+        setSettledFor(aCharger);
       })
       .catch(() => {
         // Un réglage indisponible ne doit pas empêcher d'imprimer : le ticket
         // sortira en 58 mm, sans en-tête personnalisé.
+        if (!cancelled) setSettledFor(aCharger);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [accessToken, organization?.id]);
+  }, [accessToken, aCharger]);
 
   const logoUrl = useMemo(() => logoUrlOf(organization), [organization]);
 
@@ -70,12 +102,13 @@ export function useReceiptChrome(
 
   return useMemo(
     () => ({
-      chrome: organization
-        ? buildChrome({ organization, settings, register, logo })
-        : null,
+      chrome:
+        organization && settingsSettled
+          ? buildChrome({ organization, settings, register, logo })
+          : null,
       paperWidth: paperWidthOf(settings),
       settings,
     }),
-    [organization, settings, register, logo]
+    [organization, settings, settingsSettled, register, logo]
   );
 }

@@ -48,8 +48,26 @@ type DrawOp =
       h: number;
     };
 
-/** Gris du pied de ticket. Le reste est en noir pur : c'est du thermique. */
-const MUTED = 130;
+/**
+ * Le pied de ticket, en NOIR comme tout le reste.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ LE GRIS N'EXISTE PAS SUR DU PAPIER THERMIQUE, ET CE PDF Y FINIT.        │
+ * │                                                                          │
+ * │ Le commentaire d'origine le disait presque - « le reste est en noir pur : │
+ * │ c'est du thermique » - puis posait 130, soit 51 % de gris. Une tête n'a  │
+ * │ qu'un état par point : un gris y est TRAMÉ, donc rendu en points         │
+ * │ espacés, ou écarté au seuillage. Appliqué au pied en 7 pt, cela donnait  │
+ * │ la ligne la moins visible du document, et le web était le pire des deux  │
+ * │ surfaces (l'application mobile posait #444, soit 27 %).                  │
+ * │                                                                          │
+ * │ Le drapeau « muted » RESTE dans le modèle partagé : c'est une intention  │
+ * │ légitime, et sur un support monochrome la discrétion se porte par la     │
+ * │ TAILLE - ces lignes sont déjà en 7 pt - jamais par une couleur que       │
+ * │ l'imprimante ne sait pas rendre.                                         │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+const MUTED = 0;
 
 class Layout {
   readonly ops: DrawOp[] = [];
@@ -298,13 +316,17 @@ function drawChip(L: Layout, text: string) {
   const lineH = leading(size);
   const padH = L.t.space.sm;
   const padV = L.t.space.xs * 0.6;
-  const textW = Math.min(L.width(text, size, bold), L.t.contentWidth - padH * 2);
+  // Le texte est REPLIÉ sur la largeur du pavé, pas seulement le pavé borné :
+  // écrit en BLANC, ce qui dépasse du noir devient invisible sur le papier, et
+  // sort en plus de la page. Une pastille illisible vaut une pastille absente.
+  const [ligne] = L.wrap(text, L.t.contentWidth - padH * 2, size, bold);
+  const textW = Math.min(L.width(ligne, size, bold), L.t.contentWidth - padH * 2);
   const w = textW + padH * 2;
   const x = L.center - w / 2;
 
   L.ops.push({ op: "rect", x, y: L.y, w, h: lineH + padV * 2 });
   L.y += padV;
-  L.text(text, { x: L.center, size, bold, align: "center", white: true, advance: lineH });
+  L.text(ligne, { x: L.center, size, bold, align: "center", white: true, advance: lineH });
   L.y += padV;
 }
 
@@ -350,7 +372,27 @@ function drawItems(L: Layout, rows: ItemRow[]) {
         : "";
     const detail = `${row.quantity} × ${row.unitPrice}${discount}`;
 
-    L.textAt(detail, L.left + L.t.indent, legal.size, false, "left", {
+    // ┌────────────────────────────────────────────────────────────────────┐
+    // │ CETTE LIGNE EST UN COUPLE, DONC ELLE SE MESURE.                    │
+    // │                                                                    │
+    // │ Le détail partait à gauche et le total à droite sans que personne  │
+    // │ ne vérifie qu'ils tiennent - exactement le défaut que `drawPair`   │
+    // │ corrige deux cents lignes plus haut, et que le bloc articles avait │
+    // │ conservé. Mesuré sur 58 mm en francs : « 1 000 × 12 500 000        │
+    // │ (-15 %) » face à « 12 500 000 000 » réclame 52,9 mm pour 51        │
+    // │ disponibles, et les deux se chevauchent. Les ventes en gros - gros │
+    // │ volumes, prix à huit chiffres - y tombent les premières.            │
+    // └────────────────────────────────────────────────────────────────────┘
+    const totalW = L.width(row.total, body.size, body.bold);
+    const place = L.t.contentWidth - L.t.indent - totalW - L.t.minGap;
+    const [premiere, ...suite] = L.wrap(
+      detail,
+      Math.max(place, legal.size * 0.5),
+      legal.size,
+      false
+    );
+
+    L.textAt(premiere, L.left + L.t.indent, legal.size, false, "left", {
       baselineSize: body.size,
     });
     L.text(row.total, {
@@ -359,6 +401,15 @@ function drawItems(L: Layout, rows: ItemRow[]) {
       bold: body.bold,
       align: "right",
     });
+    // Le reliquat passe SOUS le total, jamais à côté : le montant ne bouge pas.
+    for (const ligne of suite) {
+      L.text(ligne, {
+        x: L.left + L.t.indent,
+        size: legal.size,
+        bold: false,
+        align: "left",
+      });
+    }
 
     if (row.quantityLabel) {
       L.text(row.quantityLabel, {
@@ -427,6 +478,15 @@ function drawBlock(L: Layout, block: Block) {
       if (w > L.t.contentWidth) {
         w = L.t.contentWidth;
         h = w / ratio;
+      }
+      // Un logo très haut et étroit (rapport 0,2) sortait à 2,4 mm de large :
+      // sur du thermique, c'est une tache. On lui donne un quart de la largeur
+      // utile au minimum, puis on replafonne la hauteur, sinon un logo en
+      // colonne repousserait tout le ticket vers le bas.
+      const PLANCHER = L.t.contentWidth * 0.25;
+      if (w < PLANCHER) {
+        w = PLANCHER;
+        h = Math.min(w / ratio, L.t.logoMaxHeight * 2);
       }
       L.ops.push({
         op: "image",
@@ -507,7 +567,22 @@ function docOptions(paperWidth: number, height: number) {
   return {
     orientation: "portrait" as const,
     unit: "mm" as const,
-    format: [paperWidth, height] as [number, number],
+    // ┌──────────────────────────────────────────────────────────────────────┐
+    // │ jsPDF RÉORDONNE LE FORMAT EN PORTRAIT, EN SILENCE.                  │
+    // │                                                                      │
+    // │ Son constructeur échange largeur et hauteur dès que la largeur       │
+    // │ dépasse la hauteur, pour faire tenir la promesse de « portrait ».    │
+    // │ Un reçu de dépense court sur un rouleau de 80 mm fait environ 70 mm  │
+    // │ de haut : la page devenait 70 × 80, alors que toutes les primitives  │
+    // │ avaient été calculées pour une page large de 80. Les 10 mm de droite │
+    // │ tombaient hors du MediaBox - or TOUT ce qui compte y est aligné à    │
+    // │ droite : le total, le reste à payer, chaque montant.                 │
+    // │                                                                      │
+    // │ On garantit donc une page au moins aussi haute que large. Le pire    │
+    // │ qu'il puisse arriver est quelques millimètres de blanc avant la      │
+    // │ découpe, sur un rouleau qui en réserve déjà six.                     │
+    // └──────────────────────────────────────────────────────────────────────┘
+    format: [paperWidth, Math.max(height, paperWidth)] as [number, number],
     compress: true,
   };
 }

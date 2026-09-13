@@ -56,9 +56,18 @@ export function buildChrome(sources: ChromeSources): ReceiptChrome {
   };
 }
 
-/** Largeur de papier réglée par l'organisation. Repli : 58 mm. */
+/**
+ * Largeur de papier réglée par l'organisation. Repli : 58 mm.
+ *
+ * La comparaison est FAITE SUR UN NOMBRE, jamais sur la valeur brute :
+ * `receipt_paper_width` est un `PositiveIntegerField` SANS `choices` côté
+ * serveur (le « 58 ou 80 » de son aide n'est pas une contrainte). Une valeur
+ * sérialisée en chaîne - ce qu'un changement de sérialiseur suffit à produire -
+ * échouait alors l'égalité stricte et retombait sur 58 en silence, chez un
+ * marchand qui imprime en 80.
+ */
 export function paperWidthOf(settings?: OrganizationSettings | null): PaperWidth {
-  return settings?.receipt_paper_width === 80 ? 80 : 58;
+  return Number(settings?.receipt_paper_width) === 80 ? 80 : 58;
 }
 
 /** URL absolue du logo de l'organisation, prête pour `loadLogo`. */
