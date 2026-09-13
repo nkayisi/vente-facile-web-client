@@ -93,6 +93,10 @@ export function SellingSetupFields({
   const packageWord =
     (pickedPackageLabel ?? packagingUnitLabel ?? "").trim() || "contenant";
   const retailPlural = pluralizeUnit(retailWord, 2);
+  // « Ouvrir des BOITES » plutôt que « Ouvrir un BOITE » : le GENRE d'un nom de
+  // contenant n'est pas dérivable sans lexique, et le nom vient du marchand. Le
+  // pluriel partitif s'accorde avec les deux genres.
+  const packagePlural = pluralizeUnit(packageWord, 2);
 
   // Basculer un produit vendu au détail vers le gros redéfinit le sens du prix
   // de gros déjà saisi : on le signale plutôt que de le réinterpréter en silence.
@@ -246,6 +250,10 @@ export function SellingSetupFields({
           </div>
         )}
 
+        {/* « par X », jamais « d'un X » ni « d'une X » : le GENRE d'un nom
+            d'unité n'est pas dérivable sans lexique, et le nom vient du
+            marchand - « d'une TUBE », « d'un PLAQUETTE ». « par » est
+            invariable et ne s'élide pas. */}
         {/* Un bloc par canal de vente : le marchand lit d'un trait ce que lui
             coûte et ce que lui rapporte la bouteille, puis le carton. */}
         <div className="space-y-3 border-t pt-4">
@@ -254,8 +262,8 @@ export function SellingSetupFields({
               channel="retail"
               title={`Vente au détail · ${retailWord}`}
               currencySymbol={currencySymbol}
-              costLabel={`Prix d'achat d'une ${retailWord}`}
-              sellingLabel={`Prix de vente d'une ${retailWord} *`}
+              costLabel={`Prix d'achat par ${retailWord}`}
+              sellingLabel={`Prix de vente par ${retailWord} *`}
               costPrice={values.cost_price || null}
               sellingPrice={values.selling_price || null}
               onCostChange={(value) => setRetailPrice("cost_price", value)}
@@ -274,8 +282,8 @@ export function SellingSetupFields({
                 factor > 1 ? `1 ${packageWord} = ${factor} ${retailPlural}` : undefined
               }
               currencySymbol={currencySymbol}
-              costLabel={`Prix d'achat d'un ${packageWord}`}
-              sellingLabel={`Prix de vente d'un ${packageWord} *`}
+              costLabel={`Prix d'achat par ${packageWord}`}
+              sellingLabel={`Prix de vente par ${packageWord} *`}
               costPrice={values.package_cost_price ?? null}
               sellingPrice={values.wholesale_price ?? null}
               onCostChange={(value) => setPackagePrice("package_cost_price", value)}
@@ -285,7 +293,9 @@ export function SellingSetupFields({
               sellingErrorKey="wholesale_price"
               footnote={
                 mode === "wholesale_and_retail" && wholesaleUnitPrice
-                  ? `Soit ${formatPrice(wholesaleUnitPrice, currencySymbol)} la ${retailWord} achetée en gros`
+                  // « achetée » s'accorderait lui aussi avec un nom dont on
+                  // ignore le genre : la tournure retenue est invariable.
+                  ? `Soit ${formatPrice(wholesaleUnitPrice, currencySymbol)} par ${retailWord} en achat de gros`
                   : undefined
               }
             />
@@ -296,7 +306,7 @@ export function SellingSetupFields({
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
               <p className="text-sm text-amber-900">
                 Ce prix était enregistré comme prix de gros à la pièce. Vérifiez
-                qu&apos;il correspond bien au prix d&apos;un {packageWord} entier.
+                qu&apos;il correspond bien au prix pour un {packageWord} entier.
               </p>
             </div>
           )}
@@ -306,11 +316,11 @@ export function SellingSetupFields({
           <div className="flex items-center justify-between rounded-lg bg-gray-50 p-4">
             <div className="pr-4">
               <Label htmlFor="allow_auto_unpacking">
-                Ouvrir un {packageWord} automatiquement
+                Ouvrir des {packagePlural} automatiquement
               </Label>
               <p className="text-sm text-gray-500">
-                Quand il ne reste plus de {retailPlural} à l&apos;unité, un{" "}
-                {packageWord} est ouvert tout seul pour servir le client.
+                Quand il ne reste plus de {retailPlural} à l&apos;unité, on ouvre
+                automatiquement un contenant de {packageWord} pour servir le client.
               </p>
             </div>
             <Switch

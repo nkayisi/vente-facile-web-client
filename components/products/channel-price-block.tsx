@@ -10,6 +10,9 @@ import {
 } from "@/components/ui/input-group";
 import { formatPrice } from "@/lib/format";
 import { computeMargin } from "@/lib/pricing";
+// `toFixed` écrit un point décimal anglais, sous un montant que `formatPrice`
+// rend juste à côté à la française.
+import { formatFixedFr } from "@vente-facile/core";
 
 export type PriceChannel = "retail" | "wholesale";
 
@@ -159,7 +162,7 @@ export function ChannelPriceBlock({
         >
           <span className="text-muted-foreground">Marge sur prix de vente</span>
           <span className="font-semibold tabular-nums">
-            {margin.rate.toFixed(1)} %
+            {formatFixedFr(margin.rate, 1)} %
           </span>
           <span className="text-muted-foreground">·</span>
           <span className="tabular-nums">{formatPrice(margin.profit)}</span>

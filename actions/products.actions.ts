@@ -1023,6 +1023,20 @@ export interface ImportResult {
     name: string;
     errors: string[];
   }>;
+  /**
+   * Produits créés sous un code DÉRIVÉ, leur SKU étant déjà porté par un autre
+   * article. Ni une erreur ni un succès muet : le fichier du marchand dit
+   * « COCA-33 » et la base dira « COCA-33-2 ». Le taire lui ferait chercher un
+   * produit qu'il ne retrouverait ni à la recherche, ni à la douchette.
+   *
+   * Facultatif : un backend antérieur à cette règle ne renvoie pas la clé.
+   */
+  renamed?: Array<{
+    row: number;
+    name: string;
+    requested_sku: string;
+    assigned_sku: string;
+  }>;
 }
 
 export interface DuplicateCheckResult {

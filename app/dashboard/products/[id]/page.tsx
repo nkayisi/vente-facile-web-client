@@ -38,6 +38,8 @@ import { getProduct, deleteProduct, Product } from "@/actions/products.actions";
 import { cn } from "@/lib/utils";
 import { ProductThumb } from "@/components/products/product-thumb";
 import { formatUnitQuantity, pluralizeUnit } from "@/lib/units";
+import { computeMargin } from "@/lib/pricing";
+import { formatFixedFr, formatNumberFr } from "@vente-facile/core";
 import { useOrganization } from "@/components/auth/organization-checker";
 
 export default function ProductDetailPage() {
@@ -162,9 +164,31 @@ export default function ProductDetailPage() {
 
   const stockQuantity = product.stock_quantity ?? 0;
   const isLowStock = product.track_inventory && stockQuantity <= product.reorder_point;
-  const costPrice = parseFloat(product.cost_price);
-  const sellingPrice = parseFloat(product.selling_price);
-  const profitMargin = costPrice > 0 ? ((sellingPrice - costPrice) / costPrice) * 100 : 0;
+  /**
+   * Marge sur le PRIX DE VENTE, par `computeMargin` du noyau.
+   *
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ LA FICHE ET SON FORMULAIRE SE CONTREDISAIENT SUR LE MÊME PRODUIT.    │
+   * │                                                                      │
+   * │ Elle calculait `(vente - achat) / achat`, c'est-à-dire un COEFFICIENT │
+   * │ appliqué au coût, et l'appelait « Marge ». Le formulaire de           │
+   * │ modification, lui, écrit « Marge sur prix de vente » et passe par     │
+   * │ `computeMargin`. Mesuré sur un article acheté 10 et vendu 15 : la     │
+   * │ fiche annonçait 50,0 %, l'onglet Prix 33,3 %, et le marchand n'avait  │
+   * │ aucun moyen de savoir lequel croire - ni que les deux répondaient à   │
+   * │ deux questions différentes.                                          │
+   * │                                                                      │
+   * │ La marge sur prix de vente est la convention de toute la plateforme   │
+   * │ (noyau, serveur, terminal) : c'est la part du prix payé par le client │
+   * │ qui reste au marchand, donc celle qui se compare d'un article à       │
+   * │ l'autre. Le libellé le NOMME, faute de quoi le chiffre reste          │
+   * │ ambigu même une fois juste.                                          │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
+  const marge = computeMargin(
+    parseFloat(product.cost_price),
+    parseFloat(product.selling_price)
+  );
 
   // Conditionnement : les libellés viennent du produit, jamais d'un mot figé,
   // pour que la fiche parle la langue du marchand (paquet, carton, casier…).
@@ -338,8 +362,19 @@ export default function ProductDetailPage() {
                   <TrendingUp className="h-5 w-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">Marge</p>
-                  <p className="font-semibold text-green-600">{profitMargin.toFixed(1)}%</p>
+                  <p className="text-xs text-gray-500">Marge sur prix de vente</p>
+                  <p
+                    className={cn(
+                      "font-semibold",
+                      marge === null
+                        ? "text-gray-500"
+                        : marge.isNonPositive
+                          ? "text-destructive"
+                          : "text-green-600"
+                    )}
+                  >
+                    {marge === null ? "-" : `${formatFixedFr(marge.rate, 1)} %`}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -427,8 +462,14 @@ export default function ProductDetailPage() {
                 />
               )}
               <DetailItem label="Taxable" value={product.is_taxable ? "Oui" : "Non"} />
+              {/* Le taux arrive du serveur en « 16.00 » : recopié tel quel, il
+                  écrivait un point décimal anglais sous un montant déjà rendu
+                  « 15 $ » à la française. */}
               {product.is_taxable && (
-                <DetailItem label="Taux TVA" value={`${product.tax_rate}%`} />
+                <DetailItem
+                  label="Taux TVA"
+                  value={`${formatNumberFr(Number(product.tax_rate ?? 0), 2)} %`}
+                />
               )}
               {product.track_inventory && (
                 <>

@@ -334,9 +334,32 @@ export default function ProductsPage() {
 
         if (result.success && result.data) {
             setImportResult(result.data);
+            // Le toast dit la même chose que le panneau : un « importé avec succès »
+            // sur un fichier entièrement refusé enverrait le marchand fermer la
+            // fenêtre avant d'avoir lu le détail des lignes ignorées.
+            const renommes = result.data.renamed?.length ?? 0;
             if (result.data.created > 0) {
-                toast.success(`${result.data.created} produit(s) importé(s) avec succès`);
+                if (result.data.skipped > 0) {
+                    toast.warning(
+                        `${result.data.created} produit(s) importé(s), ${result.data.skipped} ignoré(s)`
+                    );
+                } else if (renommes > 0) {
+                    // Un code dérivé n'est pas un échec, mais le marchand doit le
+                    // savoir AVANT de fermer la fenêtre : c'est là, et là seulement,
+                    // que le rapprochement avec son fichier est encore possible.
+                    toast.warning(
+                        `${result.data.created} produit(s) importé(s), ${renommes} code(s) SKU modifié(s)`
+                    );
+                } else {
+                    toast.success(`${result.data.created} produit(s) importé(s) avec succès`);
+                }
                 fetchProducts();
+            } else {
+                toast.error(
+                    result.data.skipped > 0
+                        ? `Aucun produit importé : ${result.data.skipped} ligne(s) refusée(s)`
+                        : "Aucun produit à importer dans ce fichier"
+                );
             }
         } else {
             const msg = result.message || "Erreur lors de l'importation";
@@ -519,8 +542,15 @@ export default function ProductsPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-balance text-xl lg:text-2xl font-bold text-gray-900">Produits</h1>
+                    {/* « au total » n'est vrai QUE sans filtre : `totalCount` est le
+                        compte du périmètre demandé. Sur une recherche qui rend deux
+                        lignes, l'écran annonçait « 2 produits au total » d'un
+                        établissement qui en compte cent, ce qui se lit comme une
+                        perte de données. */}
                     <p className="text-sm text-gray-500 mt-1">
-                        {totalCount} produit{totalCount > 1 ? "s" : ""} au total
+                        {totalCount} produit{totalCount > 1 ? "s" : ""}{" "}
+                        {hasActiveFilters ? "trouvé" : "au total"}
+                        {hasActiveFilters && totalCount > 1 ? "s" : ""}
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -854,6 +884,13 @@ function ImportDialog({
     onDownloadTemplate: () => void;
     isDownloadingTemplate: boolean;
 }) {
+    // Un import « réussi » qui n'a rien créé, qui a écarté des lignes ou qui a
+    // dû dériver un code demande une lecture, pas une coche verte.
+    const nbRenommes = importResult?.renamed?.length ?? 0;
+    const aBesoinDAttention =
+        !!importResult &&
+        (importResult.created === 0 || importResult.skipped > 0 || nbRenommes > 0);
+
     return (
         <Dialog open={open} onOpenChange={(isOpen) => {
             if (!isOpen) onReset();
@@ -943,25 +980,81 @@ function ImportDialog({
                         /* Import Results */
                         <div className="space-y-4">
                             {importResult.success !== false ? (
-                                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                    <div className="flex items-center gap-2 text-green-700 font-medium mb-2">
-                                        <CheckCircle2 className="h-5 w-5" />
-                                        Importation terminée
+                                /*
+                                 * ┌──────────────────────────────────────────────────────────┐
+                                 * │ « IMPORTATION TERMINÉE », EN VERT, SUR ZÉRO PRODUIT.     │
+                                 * │                                                          │
+                                 * │ Le serveur répond `success: true` dès que le fichier est │
+                                 * │ LISIBLE, même si toutes ses lignes ont été refusées. Le  │
+                                 * │ marchand qui réimporte son fichier - le geste le plus     │
+                                 * │ courant, puisque les SKU existants sont ignorés - lisait  │
+                                 * │ une coche verte et repartait convaincu que son catalogue  │
+                                 * │ était à jour. Le détail des erreurs était bien là, sous   │
+                                 * │ le vert, et on ne lit pas ce qu'un bandeau vert coiffe.   │
+                                 * │                                                          │
+                                 * │ Trois états, parce qu'il y a trois issues : tout est      │
+                                 * │ passé, une partie seulement, ou rien.                     │
+                                 * └──────────────────────────────────────────────────────────┘
+                                 */
+                                <div
+                                    className={cn(
+                                        "rounded-lg border p-4",
+                                        aBesoinDAttention
+                                            ? "border-amber-300 bg-amber-50"
+                                            : "border-green-200 bg-green-50"
+                                    )}
+                                >
+                                    <div
+                                        className={cn(
+                                            "mb-2 flex items-center gap-2 font-medium",
+                                            aBesoinDAttention ? "text-amber-800" : "text-green-700"
+                                        )}
+                                    >
+                                        {aBesoinDAttention ? (
+                                            <AlertTriangle className="h-5 w-5" />
+                                        ) : (
+                                            <CheckCircle2 className="h-5 w-5" />
+                                        )}
+                                        {importResult.created === 0
+                                            ? "Aucun produit importé"
+                                            : importResult.skipped > 0
+                                              ? "Importation partielle"
+                                              : nbRenommes > 0
+                                                ? "Importation terminée, codes à vérifier"
+                                                : "Importation terminée"}
                                     </div>
-                                    <div className="grid grid-cols-3 gap-4 text-center">
+                                    <div
+                                        className={cn(
+                                            "grid gap-4 text-center",
+                                            importResult.updated > 0 ? "grid-cols-3" : "grid-cols-2"
+                                        )}
+                                    >
                                         <div>
                                             <StatValue value={String(importResult.created)} color="text-green-600" />
                                             <p className="text-xs text-gray-600">Créé(s)</p>
                                         </div>
-                                        <div>
-                                            <StatValue value={String(importResult.updated)} color="text-blue-600" />
-                                            <p className="text-xs text-gray-600">Mis à jour</p>
-                                        </div>
+                                        {/* « Mis à jour » n'est affiché que s'il bouge : l'import
+                                            ne modifie aucun produit existant (un SKU déjà pris est
+                                            ignoré), et un compteur figé à 0 laisse croire qu'une
+                                            mise à jour était attendue et a échoué. */}
+                                        {importResult.updated > 0 && (
+                                            <div>
+                                                <StatValue value={String(importResult.updated)} color="text-blue-600" />
+                                                <p className="text-xs text-gray-600">Mis à jour</p>
+                                            </div>
+                                        )}
                                         <div>
                                             <StatValue value={String(importResult.skipped)} color="text-orange-600" />
                                             <p className="text-xs text-gray-600">Ignoré(s)</p>
                                         </div>
                                     </div>
+                                    {importResult.skipped > 0 && (
+                                        <p className="mt-3 text-sm text-amber-900">
+                                            Les lignes ignorées sont détaillées ci-dessous. Un produit
+                                            déjà au catalogue sous le même nom et le même code
+                                            n&apos;est jamais réécrit : modifiez-le depuis sa fiche.
+                                        </p>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -979,6 +1072,51 @@ function ImportDialog({
                                                 )
                                               : "Erreur d'importation"}
                                     </p>
+                                </div>
+                            )}
+
+                            {/*
+                              * CODES MODIFIÉS - une section À PART, ni erreur ni silence.
+                              *
+                              * Ces produits SONT au catalogue : les ranger sous « Erreurs »
+                              * ferait croire à un échec et le marchand les ressaisirait.
+                              * Mais son fichier dit « COCA-33 » et la base dit « COCA-33-2 » :
+                              * ne rien dire lui ferait chercher un article qu'il ne
+                              * retrouverait ni à la recherche, ni à la douchette. On nomme
+                              * donc les DEUX codes, ligne par ligne.
+                              */}
+                            {importResult.renamed && importResult.renamed.length > 0 && (
+                                <div className="overflow-hidden rounded-lg border border-amber-300">
+                                    <div className="border-b border-amber-300 bg-amber-50 px-4 py-2">
+                                        <p className="text-sm font-medium text-amber-900">
+                                            Codes SKU modifiés ({importResult.renamed.length})
+                                        </p>
+                                        <p className="mt-0.5 text-xs text-amber-800">
+                                            Ces produits ont été créés, mais leur code était déjà
+                                            porté par un autre article. Notez les nouveaux codes.
+                                        </p>
+                                    </div>
+                                    <div className="max-h-48 overflow-y-auto">
+                                        {importResult.renamed.map((r, idx) => (
+                                            <div
+                                                key={idx}
+                                                className="border-b px-4 py-2 text-sm last:border-0"
+                                            >
+                                                <p className="font-medium text-gray-700">
+                                                    Ligne {r.row}: {r.name}
+                                                </p>
+                                                <p className="mt-1 text-xs text-gray-600">
+                                                    <span className="tabular-nums line-through">
+                                                        {r.requested_sku}
+                                                    </span>
+                                                    {" → "}
+                                                    <span className="font-semibold tabular-nums text-amber-900">
+                                                        {r.assigned_sku}
+                                                    </span>
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
 

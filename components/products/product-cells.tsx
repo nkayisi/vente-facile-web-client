@@ -71,7 +71,10 @@ export function WholesalePriceCell({ product }: PriceCellProps) {
       </span>
       <span className="text-xs text-muted-foreground">
         {cost !== null && cost > 0 ? `${formatPrice(cost)} · ` : ""}
-        le {packaging.packageWord}
+        {/* « par X », jamais « le X » : le GENRE d'un nom de contenant n'est pas
+            dérivable sans lexique, et le nom vient du marchand - « le BOITE »,
+            « le PLAQUETTE ». La locution « par » est invariable. */}
+        par {packaging.packageWord}
       </span>
     </div>
   );
