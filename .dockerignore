@@ -1,5 +1,10 @@
 # Dependencies
 node_modules/
+# Le magasin pnpm local pese ~1 Go pour 265 000 fichiers. Il est ignore par
+# git mais PAS par docker : sans cette ligne le contexte de build passe de
+# 5 Mo a plus de 870 Mo (mesure), transferes a chaque deploiement pour rien.
+.pnpm-store/
+.playwright-cli/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

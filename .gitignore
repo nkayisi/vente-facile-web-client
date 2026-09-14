@@ -32,7 +32,15 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 # Note : pnpm-lock.yaml est le lockfile officiel du projet (pnpm),
-# il doit rester versionné — ne pas l'ajouter ici.
+# il doit rester versionné : ne pas l'ajouter ici.
+
+# pnpm est le SEUL gestionnaire. Un package-lock.json versionne se perime en
+# silence (le dernier datait de cinq mois et ne portait AUCUNE entree pour
+# `@vente-facile/core`), et un `npm install` sur cette dependance `github:`
+# lance `git ls-remote`, absent de node:20-alpine : le build de production
+# echouait sur `spawn git ENOENT`.
+package-lock.json
+yarn.lock
 
 # env files (can opt-in for committing if needed)
 .env*
