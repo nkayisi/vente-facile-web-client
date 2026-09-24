@@ -7,7 +7,15 @@
   --color-background:               var(--background);
   --color-foreground:               var(--foreground);
   --font-sans:                      var(--font-inter);
-  --font-mono:                      var(--font-mono);
+  /* ⚠ NE JAMAIS écrire `--font-mono: var(--font-mono)` ici.
+     Une propriété personnalisée qui se référence elle-même est INVALIDE au
+     moment du calcul : la variable vaut alors la chaîne vide, en silence.
+     C'est ce que faisait ce fichier, et `font-mono` ne résolvait donc rien.
+     En le recopiant pour `--font-display`, les titres ET les tickets sont
+     sortis en Inter, sans le moindre avertissement. Les piles portent des
+     noms DISTINCTS. */
+  --font-display:                   var(--font-display-stack);
+  --font-mono:                      var(--font-mono-stack);
   --color-sidebar-ring:             var(--sidebar-ring);
   --color-sidebar-border:           var(--sidebar-border);
   --color-sidebar-accent-foreground:var(--sidebar-accent-foreground);
@@ -44,6 +52,29 @@
   --color-popover:                  var(--popover);
   --color-card-foreground:          var(--card-foreground);
   --color-card:                     var(--card);
+  /* ── Jetons de la PAGE MARKETING uniquement ──────────────────────
+     Ils ne sont DÉFINIS que sur `.vf-marketing` (bas de ce fichier), donc
+     `bg-paper` ou `text-encre-faible` ne résolvent rien ailleurs. C'est
+     voulu : le tableau de bord ne doit rien voir de ce lot. */
+  --color-paper:        var(--paper);
+  --color-paper-creux:  var(--paper-creux);
+  --color-ink:          var(--ink);
+  --color-ink-relief:   var(--ink-relief);
+  --color-encre:        var(--encre);
+  --color-encre-faible: var(--encre-faible);
+  --color-encre-ombre:  var(--encre-ombre);
+  --color-trait:        var(--trait);
+  --color-trait-ink:    var(--trait-ink);
+  --color-braise:       var(--braise);
+  --color-braise-texte: var(--braise-texte);
+  --color-braise-ink:   var(--braise-ink);
+  --color-braise-voile: var(--braise-voile);
+  --color-vert:         var(--vert);
+  --color-vert-ink:     var(--vert-ink);
+  --color-ambre:        var(--ambre);
+  --color-ambre-ink:    var(--ambre-ink);
+  --color-refus-ink:    var(--refus-ink);
+
   --radius-sm:  calc(var(--radius) - 4px);
   --radius-md:  calc(var(--radius) - 2px);
   --radius-lg:  var(--radius);
@@ -65,6 +96,15 @@
 ───────────────────────────────────────────────────────────── */
 :root {
   --radius: 0.5rem;
+
+  /* Familles. Hors de la page marketing, on retombe sur les faces système.
+     ⚠ Ces piles NE PEUVENT PAS citer `--font-instrument` ni `--font-plex-mono`
+     ici : ces deux-là sont posées par next/font sur le conteneur marketing,
+     pas sur `:root`. Une substitution `var()` se résout sur l'élément où la
+     déclaration vit ; citée depuis `:root`, elle serait vide, donc invalide,
+     et emporterait toute la pile. La surcharge est dans `.vf-marketing`. */
+  --font-display-stack: ui-sans-serif, system-ui, sans-serif;
+  --font-mono-stack:    ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Page */
   --background:         #f3f4f6;
@@ -195,5 +235,239 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   PAGE MARKETING
+   Portée : le conteneur `.vf-marketing` posé par app/(marketing)/layout.tsx.
+   RIEN ici ne touche `:root` - le tableau de bord ne voit pas ces jetons.
+
+   Registre : papier dominant, coupé par trois bandes encre, comme un rouleau
+   de caisse. L'orange de marque (--primary, #ea580c) ne bouge pas.
+───────────────────────────────────────────────────────────── */
+.vf-marketing {
+  --paper:          #fbfaf8;  /* blanc chaud, proche du papier thermique */
+  --paper-creux:    #f4f1ec;  /* surface enfoncée : cartes, tuiles */
+  --ink:            #161311;  /* noir chaud, sous-ton rouge. PAS du slate froid */
+  --ink-relief:     #211c18;  /* surface posée sur une bande encre */
+  --encre:          #1c1815;  /* texte sur papier */
+  --encre-faible:   #6e635a;  /* texte secondaire, gris CHAUD (5,6:1 sur papier) */
+  /* MESURÉ, pas supposé : #9a8f84 rendait 3,03:1 sur le papier, et ce jeton
+     porte du vrai texte (légendes de 12 px, mentions de tarifs, la ligne de
+     preuve du hero). #7a6f65 rend 4,69:1. L'écart avec --encre-faible se
+     resserre, et c'est la TAILLE qui porte désormais la hiérarchie entre les
+     deux, ce qu'elle faisait déjà. */
+  --encre-ombre:    #7a6f65;
+  --trait:          #e4ded6;  /* filets sur papier */
+  --trait-ink:      #332c26;  /* filets sur encre */
+
+  /* Orange. TROIS valeurs, et il en faut trois :
+     --braise      (#ea580c) ≈ 3,4:1 sur papier → boutons et GRANDS titres seulement
+     --braise-texte(#c2410c) ≈ 4,8:1 sur papier → tout orange en petit corps
+     --braise-ink  (#fb923c) ≈ 8,5:1 sur encre  → orange sur bande sombre
+     Employer --braise pour du texte courant est la faute que ce triplet ferme. */
+  --braise:         #ea580c;
+  --braise-texte:   #c2410c;
+  --braise-ink:     #fb923c;
+  --braise-voile:   #fff1e7;
+
+  /* --vert est réservé à UN seul emploi : l'état « synchronisé ». Une couleur,
+     un sens - la règle déjà tenue dans l'application du comptoir. */
+  --vert:           #15803d;
+  --ambre:          #b45309;
+
+  /* Variantes lisibles sur ENCRE. --vert (#15803d) y tombe à 2,3:1 et
+     --ambre à 3,1:1 : les employer sur une bande sombre ferait disparaitre
+     le seul signal que l'oeil doit attraper sans lire. */
+  --vert-ink:       #4ade80;
+  --ambre-ink:      #fbbf24;
+  --refus-ink:      #f87171;
+
+  /* Les deux faces de la route. Elles sont déclarées ICI parce que
+     `--font-instrument` et `--font-plex-mono` sont posées par next/font sur
+     ce MÊME élément : c'est le seul endroit où la substitution aboutit. */
+  --font-display-stack: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-mono-stack: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  background-color: var(--paper);
+  color: var(--encre);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Échelle typographique ─────────────────────────────────────
+   L'interlettrage DÉPEND de la taille : négatif sur les grands titres (les
+   lettres se lisent trop écartées en grandissant), nul sur le corps, positif
+   sur les petites capitales. Une valeur unique serait fausse quelque part. */
+.vf-marketing .t-display {
+  font-family: var(--font-display-stack);
+  /* Le plafond est MESURÉ : à 5,2rem le titre partait sur quatre lignes à
+     1440 px et criait au lieu de parler. 4rem le ramène à deux lignes dans
+     la colonne de gauche, ce qui est la forme d'un titre, pas d'une affiche. */
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 0.96;
+  text-wrap: balance;
+}
+.vf-marketing .t-h2 {
+  font-family: var(--font-display-stack);
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.vf-marketing .t-h3 {
+  font-family: var(--font-display-stack);
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+.vf-marketing .t-lead {
+  font-size: 1.1875rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.vf-marketing .t-body {
+  font-size: 1rem;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+/* Sur-titre : le seul endroit où l'interlettrage est POSITIF. */
+.vf-marketing .t-eyebrow {
+  font-family: var(--font-mono-stack);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+/* Toute DONNÉE (montant, référence, quantité) passe ici. `tabular-nums` n'est
+   pas décoratif : sans lui un total qui monte fait onduler sa propre colonne. */
+.vf-marketing .t-data {
+  font-family: var(--font-mono-stack);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ── Filet de fondu sous l'en-tête flottant ───────────────────
+   Un bord de défilement plutôt qu'une bordure de 1 px : la barre est
+   translucide, le contenu passe dessous, et c'est le dégradé qui sépare. */
+.vf-marketing .bord-fondu {
+  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent);
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+
+/* ── Perforation ──────────────────────────────────────────────
+   La coupe d'un rouleau de caisse. Sert de bord bas au ticket. */
+.vf-marketing .perforation {
+  --dent: 7px;
+  /* ⚠ DEUX COUCHES, et il en faut deux.
+     Une seule couche festonnée en `repeat-x` ne se répète QUE sur l'axe
+     horizontal : tout ce qui est au-dessus de sa bande de 7 px tombe hors du
+     masque, donc devient transparent. Le ticket sortait entièrement
+     invisible, seule sa dentelure du bas subsistant, et rien dans le code ne
+     le disait. La première couche garde le corps, la seconde découpe le bord. */
+  --masque-corps: linear-gradient(#000, #000);
+  --masque-dents: radial-gradient(var(--dent) at 50% 0, transparent 99%, #000 100%);
+  -webkit-mask-image: var(--masque-corps), var(--masque-dents);
+  mask-image: var(--masque-corps), var(--masque-dents);
+  -webkit-mask-size: 100% calc(100% - var(--dent)), calc(var(--dent) * 2) var(--dent);
+  mask-size: 100% calc(100% - var(--dent)), calc(var(--dent) * 2) var(--dent);
+  -webkit-mask-repeat: no-repeat, repeat-x;
+  mask-repeat: no-repeat, repeat-x;
+  -webkit-mask-position: 0 0, 0 100%;
+  mask-position: 0 0, 0 100%;
+}
+
+/* Toute animation de la page se réduit à un fondu court. Le repli n'est pas
+   « pas d'animation puis un saut » : c'est l'élément déjà en place. */
+@media (prefers-reduced-motion: reduce) {
+  .vf-marketing *,
+  .vf-marketing *::before,
+  .vf-marketing *::after {
+    /* ⚠ LE DÉLAI AUSSI, ET C'EST LUI QUI MANQUAIT. `.entree` porte `backwards` :
+       pendant son `animation-delay`, l'élément prend l'état de DÉPART, donc une
+       opacité nulle. Le hero pose des délais jusqu'à 280 ms en style en ligne,
+       si bien que le titre, l'accroche, les boutons et la démo restaient
+       INVISIBLES presque un tiers de seconde avant d'apparaître d'un coup :
+       très exactement le « pas d'animation puis un saut » que ce bloc dit
+       éviter. La valeur est NÉGATIVE pour que l'animation soit déjà terminée à
+       la première image, quelle que soit sa durée, et `!important` est ce qui
+       l'emporte sur le style en ligne du hero. */
+    animation-delay: -1ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Séquence d'entrée du hero ────────────────────────────────
+   `backwards` n'est pas optionnel : sans lui, l'élément s'affiche puis saute
+   à son état de départ quand le délai expire.
+   Le repli en mouvement réduit est déjà porté par le bloc @media plus haut. */
+@keyframes vf-entree {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.vf-marketing .entree {
+  animation: vf-entree 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* ── Révélation au défilement, sans JavaScript ────────────────
+   L'élément est VISIBLE par défaut : voir la docstring de Reveal. On
+   n'ajoute l'animation que si le navigateur sait la piloter au défilement.
+   Le décalage entre éléments vient de leur position, pas d'un délai. */
+@keyframes vf-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .vf-marketing .reveal {
+      animation: vf-reveal linear both;
+      animation-timeline: view();
+      /* ⚠ Une animation pilotée par le défilement est SCRUBBÉE : elle se
+         rejoue à l'envers quand on remonte. Avec une plage qui finissait à
+         `cover 20%`, MESURÉ : vingt-quatre blocs restaient à une opacité de
+         0,5 à 0,9 alors qu'ils étaient à l'écran, et du texte déjà lu
+         redevenait pâle en revenant en arrière.
+         La plage se termine donc dans l'ENTRÉE, à 30 % : un bloc est
+         entièrement opaque dès qu'il est réellement à l'écran, et il ne
+         s'estompe qu'une fois reparti largement sous la ligne de flottaison.
+         C'est le « révélé une fois » de JavaScript, sans JavaScript. */
+      animation-range: entry 0% entry 30%;
+    }
+  }
+}
+
+/* ⚠ À L'IMPRESSION, UNE ANIMATION DE DÉFILEMENT N'A PAS DE DÉFILEMENT.
+   Les blocs sortiraient à leur opacité de départ, c'est-à-dire PÂLES sur le
+   papier et dans un PDF. Mesuré : vingt-huit blocs à moins de 0,9.
+   La surcharge est explicite et `!important` À DESSEIN : restreindre la règle
+   du dessus à `@media screen` avait l'air plus propre, mais Lightning CSS
+   retransforme la requête et le mot-clé ne survit pas à la compilation. */
+@media print {
+  .vf-marketing .reveal {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
