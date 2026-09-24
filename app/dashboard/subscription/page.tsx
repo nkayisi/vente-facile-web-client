@@ -125,6 +125,38 @@ export default function SubscriptionPage() {
         mode: "new",
       };
     }
+    // ┌────────────────────────────────────────────────────────────────────┐
+    // │ UN ESSAI N'EST PAS UNE PÉRIODE PAYÉE.                             │
+    // │                                                                    │
+    // │ La règle « seul un palier strictement supérieur » vise les         │
+    // │ changements d'offre au milieu d'un mois déjà réglé. Appliquée à un │
+    // │ essai, elle fermait TOUT : le plan d'essai et le premier plan      │
+    // │ payant partagent le palier 1, donc aucun plan n'était supérieur.   │
+    // │ Le bandeau d'avertissement proposait « Passer au payant » et       │
+    // │ menait à une grille dont chaque bouton était grisé.                │
+    // └────────────────────────────────────────────────────────────────────┘
+    const estEssai = subscription?.is_trial === true;
+    const estPayant =
+      parseFloat(plan.price_monthly) > 0 || parseFloat(plan.price_yearly) > 0;
+    if (estEssai && quotas?.period_not_ended) {
+      if (!estPayant) {
+        return {
+          disabled: true,
+          label: "Essai en cours",
+          title: "Votre essai est déjà en cours.",
+          isCurrent,
+          mode: "new",
+        };
+      }
+      return {
+        disabled: false,
+        label: "Passer au payant",
+        title: "Souscrire dès maintenant, sans attendre la fin de l'essai.",
+        isCurrent,
+        mode: "new",
+      };
+    }
+
     if (isCurrent) {
       if (quotas?.period_not_ended) {
         return {
