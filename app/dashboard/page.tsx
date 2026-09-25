@@ -41,6 +41,8 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
+import { usePerimeter } from "@/hooks/use-perimeter";
 
 /**
  * Les libellés NOMMENT la fenêtre glissante.
@@ -115,6 +117,11 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [period, setPeriod] = useState<DashboardPeriod>("month");
+  const perimetre = usePerimeter();
+  const [perimeterValue, setPerimeterValue] = useState<PerimeterValue>({
+    warehouse: null,
+    user: null,
+  });
 
   // Fetch data
   useEffect(() => {
@@ -127,6 +134,14 @@ export default function DashboardPage() {
           session.accessToken,
           organization.id,
           period,
+          // Le périmètre EFFECTIF, jamais le choix brut : un caissier y reçoit
+          // son dépôt et rien d'autre. Le serveur le borne de toute façon,
+          // mais lui envoyer un entrepôt qu'il refusera (400) ferait crier
+          // l'écran pour une règle qu'on connaissait déjà.
+          perimetre.effective({
+            warehouse: perimeterValue.warehouse ?? undefined,
+            user: perimeterValue.user ?? undefined,
+          }),
         );
         if (statsResult.success && statsResult.data) {
           setStats(statsResult.data);
@@ -140,7 +155,7 @@ export default function DashboardPage() {
     };
 
     fetchData();
-  }, [session?.accessToken, organization?.id, period]);
+  }, [session?.accessToken, organization?.id, period, perimetre, perimeterValue]);
 
 
   // Format date for chart
@@ -205,7 +220,8 @@ export default function DashboardPage() {
             {stats?.currency ? ` • en ${stats.currency}` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <PerimeterFilters value={perimeterValue} onChange={setPerimeterValue} />
           {(["day", "week", "month", "year"] as DashboardPeriod[]).map((p) => (
             <Button
               key={p}

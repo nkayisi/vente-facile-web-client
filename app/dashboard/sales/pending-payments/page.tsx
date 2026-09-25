@@ -63,6 +63,8 @@ import {
 } from "@/actions/settings.actions";
 import { Star } from "lucide-react";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
+import { usePerimeter } from "@/hooks/use-perimeter";
 
 /**
  * Arrondi d'une saisie de points au centième.
@@ -157,6 +159,12 @@ export default function PendingPaymentsPage() {
       )
     : 0;
 
+  const perimetre = usePerimeter();
+  const [perimeterValue, setPerimeterValue] = useState<PerimeterValue>({
+    warehouse: null,
+    user: null,
+  });
+
   useEffect(() => {
     const fetchData = async () => {
       if (!session?.accessToken) return;
@@ -173,12 +181,27 @@ export default function PendingPaymentsPage() {
           // Chaque fetch est indépendant : si l'un échoue, on prévient
           // explicitement l'utilisateur et on affiche l'autre - pas de
           // données incomplètes en silence.
+          // Le périmètre EFFECTIF, partagé par les deux appels : deux portées
+          // différentes donneraient deux moitiés de liste qui ne se recouvrent pas.
+          const portee = perimetre.effective({
+            warehouse: perimeterValue.warehouse ?? undefined,
+            user: perimeterValue.user ?? undefined,
+          });
+
           const [partiallyPaidResult, pendingResult, methodsResult, currenciesResult] = await Promise.all([
             // `page_size` explicite : sans lui seules 20 factures par statut
             // remontaient, et les totaux « Total à recevoir » / « Déjà payé »
             // étaient faux au-delà, sans rien qui le signale.
-            getSales(session.accessToken, org.id, { status: "partially_paid", page_size: 200 }),
-            getSales(session.accessToken, org.id, { status: "pending", page_size: 200 }),
+            getSales(session.accessToken, org.id, {
+              status: "partially_paid",
+              page_size: 200,
+              ...portee,
+            }),
+            getSales(session.accessToken, org.id, {
+              status: "pending",
+              page_size: 200,
+              ...portee,
+            }),
             getPaymentMethods(session.accessToken, org.id, { is_active: true }),
             getOrganizationCurrencies(session.accessToken, org.id),
           ]);
@@ -217,7 +240,9 @@ export default function PendingPaymentsPage() {
     };
 
     fetchData();
-  }, [session?.accessToken, organization?.id]);
+    // `perimeterValue` en dépendance : sans lui, changer d'entrepôt ne relance
+    // pas la lecture, et l'écran annonce un filtre qu'il n'a jamais appliqué.
+  }, [session?.accessToken, organization?.id, perimetre, perimeterValue]);
 
 
   const openPaymentDialog = (sale: Sale) => {
@@ -394,10 +419,12 @@ export default function PendingPaymentsPage() {
   const totalPages = Math.ceil(filteredSales.length / pageSize);
   const paginatedSales = filteredSales.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  // Reset page when search changes
+  // Reset page quand un filtre change - le PÉRIMÈTRE en est un.
+  // Sans lui, changer d'entrepôt depuis la page 3 rendait « Aucun résultat »
+  // sur une liste qui en a : un vide qui se lit comme une absence de données.
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, perimeterValue]);
 
   if (isLoading) {
     return (
@@ -424,7 +451,7 @@ export default function PendingPaymentsPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
@@ -434,6 +461,7 @@ export default function PendingPaymentsPage() {
               className="pl-9"
             />
           </div>
+          <PerimeterFilters value={perimeterValue} onChange={setPerimeterValue} />
         </div>
       </div>
 

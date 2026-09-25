@@ -16,6 +16,7 @@
  * ``createXxxSearchHandler`` ici en réutilisant ``createListSearchHandler``.
  */
 import { getBrands, getCategories, getUnits } from "@/actions/products.actions";
+import { getTeam } from "@/actions/users.actions";
 import type {
   Brand,
   Category,
@@ -160,6 +161,47 @@ export function createWarehouseSearchHandler(
     organizationId,
     { is_active: true, ...extraFilters },
   );
+}
+
+/**
+ * Les membres à proposer dans un filtre « Utilisateur ».
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ IL TAPE `/memberships/team/`, PAS `/memberships/`.                      │
+ * │                                                                          │
+ * │ La liste complète exige `users.view`, accordé au seul propriétaire et au │
+ * │ gérant : un MAGASINIER y recevrait 403 au chargement de chaque page,     │
+ * │ alors que la règle lui donne bien le filtre utilisateur. La porte        │
+ * │ dédiée rend exactement le payload de la session du terminal, par le même │
+ * │ constructeur serveur.                                                    │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Le CROISEMENT avec l'entrepôt se fait ici, côté client : le roster porte les
+ * affectations de chacun, et le refaire côté serveur demanderait un paramètre
+ * de plus pour une liste qui tient en mémoire.
+ *
+ * ⚠ UN PROPRIÉTAIRE EST TOUJOURS PROPOSÉ, quel que soit l'entrepôt choisi : il
+ * n'a aucune affectation - c'est ce qui le rend « partout » - et le croiser le
+ * ferait disparaître de sa propre liste.
+ */
+export function createMemberSearchHandler(
+  accessToken: string,
+  organizationId: string,
+  options?: { warehouse?: string },
+): SearchHandler {
+  return async (query: string) => {
+    const result = await getTeam(accessToken, organizationId);
+    if (!result.success || !result.data?.visible) return [];
+    const terme = query.trim().toLowerCase();
+    return result.data.members
+      .filter((m) => {
+        if (options?.warehouse && m.role !== "owner") {
+          if (!m.warehouses.includes(options.warehouse)) return false;
+        }
+        return !terme || m.name.toLowerCase().includes(terme);
+      })
+      .map((m) => ({ value: m.user_id, label: m.name }));
+  };
 }
 
 export function createBranchSearchHandler(

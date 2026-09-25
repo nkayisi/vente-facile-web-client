@@ -1,5 +1,6 @@
 "use client";
 
+import { messageDeRefus } from "@/lib/perimeter-refusal";
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -90,6 +91,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
+import { usePerimeter } from "@/hooks/use-perimeter";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700" },
@@ -204,18 +207,40 @@ export default function ExpensesPage() {
     fetchCurrencies();
   }, [session?.accessToken, organization?.id]);
 
-  useEffect(() => {
-    if (organization && session?.accessToken) {
-      fetchData();
-    }
-  }, [organization, session?.accessToken, statusFilter, categoryFilter, currencyFilter, dateFrom, dateTo]);
+  const perimetre = usePerimeter();
+  const [perimeterValue, setPerimeterValueRaw] = useState<PerimeterValue>({
+    warehouse: null,
+    user: null,
+  });
+  // Le périmètre est un filtre comme les autres : il repasse par `filtrer`.
+  // C'était le SEUL de la page à recevoir le setter brut, si bien que changer
+  // d'entrepôt depuis la page 3 redemandait la page 3 d'un résultat qui n'en a
+  // qu'une - le vide que l'encadré ci-dessus dit avoir corrigé.
+  const setPerimeter = filtrer(setPerimeterValueRaw);
 
+  /**
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ UN SEUL CHARGEUR, ET LA RECHERCHE PASSE PAR LUI.                     │
+   * │                                                                      │
+   * │ Il y en avait deux : `fetchData` appliquait le périmètre, et          │
+   * │ `fetchExpenses` - le chemin de la recherche différée - ne l'appliquait │
+   * │ PAS. Taper un terme élargissait donc la liste pendant que les puces    │
+   * │ continuaient d'annoncer l'entrepôt : « Entrepôt B » au-dessus des      │
+   * │ chiffres de A, le défaut que ce lot existe pour fermer.                │
+   * │                                                                      │
+   * │ Réparer le doublon l'aurait laissé rediverger. On le SUPPRIME, et la   │
+   * │ recherche entre dans les dépendances de l'unique chargeur, différée.  │
+   * │                                                                      │
+   * │ `currentPage` en dépendance : il n'y était pas, si bien que cliquer    │
+   * │ « page 2 » mettait à jour le pagineur et réaffichait les mêmes lignes. │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (organization && session?.accessToken) fetchExpenses();
-    }, 300);
+    if (!organization || !session?.accessToken) return;
+    const timer = setTimeout(fetchData, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [organization, session?.accessToken, searchQuery, statusFilter, categoryFilter, currencyFilter, dateFrom, dateTo, currentPage, perimeterValue]);
+
 
   async function fetchData() {
     if (!session?.accessToken || !organization) return;
@@ -224,6 +249,10 @@ export default function ExpensesPage() {
       const [expensesRes, categoriesRes, statsRes] = await Promise.all([
         getExpenses(session.accessToken, organization.id, {
           status: statusFilter !== "all" ? statusFilter : undefined,
+          ...perimetre.effective({
+            warehouse: perimeterValue.warehouse ?? undefined,
+            user: perimeterValue.user ?? undefined,
+          }),
           category: categoryFilter !== "all" ? categoryFilter : undefined,
           currency: currencyFilter !== "all" ? currencyFilter : undefined,
           date_from: dateFrom || undefined,
@@ -239,6 +268,8 @@ export default function ExpensesPage() {
         }),
       ]);
 
+      const refus = messageDeRefus(expensesRes);
+      if (refus) toast.error(refus);
       if (expensesRes.success && expensesRes.data) {
         setExpenses(expensesRes.data.results);
         setTotalCount(expensesRes.data.count);
@@ -257,32 +288,6 @@ export default function ExpensesPage() {
       setIsLoading(false);
     }
   }
-
-  async function fetchExpenses() {
-    if (!session?.accessToken || !organization) return;
-    try {
-      const res = await getExpenses(session.accessToken, organization.id, {
-        status: statusFilter !== "all" ? statusFilter : undefined,
-        category: categoryFilter !== "all" ? categoryFilter : undefined,
-        currency: currencyFilter !== "all" ? currencyFilter : undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        search: searchQuery || undefined,
-        page: currentPage,
-        page_size: pageSize,
-      });
-      if (res.success && res.data) {
-        setExpenses(res.data.results);
-        setTotalCount(res.data.count);
-        setHasNext(res.data.next !== null);
-        setHasPrevious(res.data.previous !== null);
-      }
-    } catch {
-      // silent
-    }
-  }
-
-  // Reset to page 1 when filters change
 
   const totalPages = Math.ceil(totalCount / pageSize);
 
@@ -545,6 +550,8 @@ export default function ExpensesPage() {
             className="pl-9"
           />
         </div>
+        <PerimeterFilters value={perimeterValue} onChange={setPerimeter} />
+
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-[160px]">
             <SelectValue placeholder="Statut" />

@@ -485,7 +485,8 @@ export type DashboardPeriod = "day" | "week" | "month" | "year";
 export async function getDashboardStats(
   accessToken: string,
   organizationId: string,
-  period: DashboardPeriod = "month"
+  period: DashboardPeriod = "month",
+  perimeter?: { warehouse?: string; user?: string }
 ): Promise<{ success: boolean; data?: DashboardStats; message?: string }> {
   try {
     console.log("[Server Action] Fetching dashboard stats for period:", period);
@@ -493,9 +494,24 @@ export async function getDashboardStats(
     const response = await axios.get(
       `${API_BASE_URL}/organizations/${organizationId}/dashboard/`,
       {
-        params: { period },
+        params: {
+          period,
+          ...(perimeter?.warehouse ? { warehouse: perimeter.warehouse } : {}),
+          ...(perimeter?.user ? { user: perimeter.user } : {}),
+        },
         headers: {
           Authorization: `Bearer ${accessToken}`,
+          // ┌──────────────────────────────────────────────────────────────┐
+          // │ L'EN-TÊTE MANQUAIT, ET C'EST CE QUI LAISSAIT LE TROU OUVERT.│
+          // │                                                              │
+          // │ Sans lui, `_get_membership` rend `None` côté serveur, et un  │
+          // │ périmètre adossé à ce helper rendrait le queryset INTACT -   │
+          // │ tout en faisant passer un test qui, lui, envoie l'en-tête.   │
+          // │ Le serveur résout désormais le membership par l'URL, mais    │
+          // │ l'en-tête reste la bonne pratique : les deux chemins doivent │
+          // │ répondre pareil.                                             │
+          // └──────────────────────────────────────────────────────────────┘
+          "X-Organization-ID": organizationId,
           "Content-Type": "application/json",
         },
       }

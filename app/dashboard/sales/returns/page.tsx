@@ -21,6 +21,8 @@
  * lecteur dans un cul-de-sac.
  */
 
+import { toast } from "sonner";
+import { messageDeRefus } from "@/lib/perimeter-refusal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -49,6 +51,8 @@ import { useCurrency } from "@/components/providers/currency-provider";
 import { createMoneyHelpers } from "@/lib/currency";
 import { formatDate } from "@/lib/format";
 import { getSaleReturns, type ReturnStatus, type SaleReturn } from "@/actions/sales.actions";
+import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
+import { usePerimeter } from "@/hooks/use-perimeter";
 
 /** Les puces de statut, dans l'ordre du cycle de vie. */
 const STATUTS: { valeur: ReturnStatus | "all"; label: string }[] = [
@@ -120,20 +124,32 @@ export default function SaleReturnsPage() {
   // │ celui du filtre actif, et six requêtes pour six pastilles coûteraient  │
   // │ plus que ce qu'elles apprennent. Une puce sans nombre ne ment pas.     │
   // └────────────────────────────────────────────────────────────────────────┘
+  const perimetre = usePerimeter();
+  const [perimeterValue, setPerimeterValue] = useState<PerimeterValue>({
+    warehouse: null,
+    user: null,
+  });
+
   const charger = useCallback(async () => {
     if (!jeton || !organization) return;
     setIsFetching(true);
     const reponse = await getSaleReturns(jeton, organization.id, {
       search: terme || undefined,
+      ...perimetre.effective({
+        warehouse: perimeterValue.warehouse ?? undefined,
+        user: perimeterValue.user ?? undefined,
+      }),
       status: statut === "all" ? undefined : statut,
       page,
       page_size: PAGE_SIZE,
     });
+    const refus = messageDeRefus(reponse);
+    if (refus) toast.error(refus);
     setReturns(reponse.success && reponse.data ? reponse.data.results : []);
     setTotal(reponse.success && reponse.data ? reponse.data.count : 0);
     setIsFetching(false);
     setIsLoading(false);
-  }, [jeton, organization, terme, statut, page]);
+  }, [jeton, organization, terme, statut, page, perimetre, perimeterValue]);
 
   // La garde est AU SITE DE L'EFFET, comme sur l'historique et les
   // règlements : elle évite l'appel avant que l'organisation ne soit là, et
@@ -141,6 +157,19 @@ export default function SaleReturnsPage() {
   useEffect(() => {
     if (organization) charger();
   }, [organization, charger]);
+
+  /**
+   * Changer de périmètre revient à la page 1.
+   *
+   * Le geste, pas un effet : `page` est une dépendance du chargeur, donc sans
+   * cette remise la page 3 d'un filtre est demandée sur le suivant et la liste
+   * rend « Aucun résultat » alors qu'elle en a. Et un `setState` dans un effet
+   * est un rendu de plus - que le lint de ces deux pages refuse, à raison.
+   */
+  const changerPerimetre = (v: PerimeterValue) => {
+    setPerimeterValue(v);
+    setPage(1);
+  };
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -183,6 +212,8 @@ export default function SaleReturnsPage() {
               onChange={(e) => setRecherche(e.target.value)}
             />
           </div>
+
+          <PerimeterFilters value={perimeterValue} onChange={changerPerimetre} />
 
           <div className="flex flex-wrap gap-2">
             {STATUTS.map((s) => (

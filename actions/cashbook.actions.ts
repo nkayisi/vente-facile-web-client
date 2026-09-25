@@ -594,6 +594,8 @@ export interface ExpenseFilters {
   is_recurring?: string;
   page?: number;
   page_size?: number;
+  warehouse?: string;
+  user?: string;
 }
 
 export async function getExpenses(
@@ -604,6 +606,9 @@ export async function getExpenses(
   try {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);
+    if (filters?.warehouse) params.append("warehouse", filters.warehouse);
+    if (filters?.user) params.append("user", filters.user);
+    if (filters?.currency) params.append("currency", filters.currency);
     if (filters?.category) params.append("category", filters.category);
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);
@@ -857,6 +862,8 @@ export interface CashMovementFilters {
   is_cancelled?: string;
   page?: number;
   page_size?: number;
+  warehouse?: string;
+  user?: string;
 }
 
 export async function getCashMovements(
@@ -867,6 +874,12 @@ export async function getCashMovements(
   try {
     const params = new URLSearchParams();
     if (filters?.direction) params.append("direction", filters.direction);
+    if (filters?.warehouse) params.append("warehouse", filters.warehouse);
+    if (filters?.user) params.append("user", filters.user);
+    // ⚠ `currency` était DÉCLARÉ dans le type et jamais ajouté aux paramètres :
+    // le filtre de devise du livre de caisse était inerte depuis son écriture,
+    // et la page le passait pourtant. Même classe de défaut, un cran plus tôt.
+    if (filters?.currency) params.append("currency", filters.currency);
     if (filters?.movement_type) params.append("movement_type", filters.movement_type);
     if (filters?.date_from) params.append("date_from", filters.date_from);
     if (filters?.date_to) params.append("date_to", filters.date_to);

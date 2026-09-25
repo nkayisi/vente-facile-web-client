@@ -13,10 +13,7 @@ import {
 import { useSession } from "next-auth/react";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { getUserPermissions } from "@/actions/permissions.actions";
-import type {
-  UserPermissions,
-  Role,
-} from "@/lib/permissions";
+import type { UserPermissions, Role } from "@/lib/permissions";
 import {
   hasPermission as _hasPermission,
   hasAnyPermission as _hasAnyPermission,

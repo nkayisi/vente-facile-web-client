@@ -1,5 +1,6 @@
 "use client";
 
+import { messageDeRefus } from "@/lib/perimeter-refusal";
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -84,6 +85,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
+import { usePerimeter } from "@/hooks/use-perimeter";
 
 
 export default function CashbookPage() {
@@ -203,12 +206,26 @@ export default function CashbookPage() {
     fetchCurrencies();
   }, [session?.accessToken, organization?.id]);
 
+  const perimetre = usePerimeter();
+  const [perimeterValue, setPerimeterValueRaw] = useState<PerimeterValue>({
+    warehouse: null,
+    user: null,
+  });
+  // Le périmètre est un filtre comme les autres : il repasse par `filtrer`.
+  // C'était le SEUL de la page à recevoir le setter brut, si bien que changer
+  // d'entrepôt depuis la page 3 redemandait la page 3 d'un résultat qui n'en a
+  // qu'une - le vide que l'encadré ci-dessus dit avoir corrigé.
+  const setPerimeter = filtrer(setPerimeterValueRaw);
+
   useEffect(() => {
     if (organization && session?.accessToken) {
       fetchData();
       loadIncomeCategories();
     }
-  }, [organization, session?.accessToken, directionFilter, typeFilter, currencyFilter, dateFrom, dateTo, currentPage]);
+    // `perimeterValue` en dépendance : sans lui, changer d'entrepôt ne
+    // relance pas la lecture, et l'écran annonce un filtre qu'il n'a jamais
+    // appliqué - un filtre inerte est pire qu'un filtre absent.
+  }, [organization, session?.accessToken, directionFilter, typeFilter, currencyFilter, dateFrom, dateTo, currentPage, perimeterValue]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -219,11 +236,16 @@ export default function CashbookPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+
   async function fetchData() {
     if (!session?.accessToken || !organization) return;
     setIsLoading(true);
     try {
       const filters: CashMovementFilters = {
+        ...perimetre.effective({
+          warehouse: perimeterValue.warehouse ?? undefined,
+          user: perimeterValue.user ?? undefined,
+        }),
         direction: directionFilter !== "all" ? directionFilter : undefined,
         movement_type: typeFilter !== "all" ? typeFilter : undefined,
         currency: currencyFilter !== "all" ? currencyFilter : undefined,
@@ -258,6 +280,10 @@ export default function CashbookPage() {
     if (!session?.accessToken || !organization) return;
     try {
       const filters: CashMovementFilters = {
+        ...perimetre.effective({
+          warehouse: perimeterValue.warehouse ?? undefined,
+          user: perimeterValue.user ?? undefined,
+        }),
         direction: directionFilter !== "all" ? directionFilter : undefined,
         movement_type: typeFilter !== "all" ? typeFilter : undefined,
         currency: currencyFilter !== "all" ? currencyFilter : undefined,
@@ -270,6 +296,8 @@ export default function CashbookPage() {
       };
 
       const res = await getCashMovements(session.accessToken, organization.id, filters);
+      const refus = messageDeRefus(res);
+      if (refus) toast.error(refus);
       if (res.success && res.data) {
         setMovements(res.data.results);
         setTotalCount(res.data.count);
@@ -496,6 +524,8 @@ export default function CashbookPage() {
             className="pl-9"
           />
         </div>
+        <PerimeterFilters value={perimeterValue} onChange={setPerimeter} />
+
         <Select value={directionFilter} onValueChange={setDirectionFilter}>
           <SelectTrigger className="w-full sm:w-[160px]">
             <SelectValue placeholder="Direction" />

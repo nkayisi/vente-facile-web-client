@@ -30,6 +30,7 @@
  * la bascule existera.
  */
 
+import { messageDeRefus } from "@/lib/perimeter-refusal";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -89,6 +90,8 @@ import {
 } from "@/components/shared/SaleStatusBadge";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { useCurrency } from "@/components/providers/currency-provider";
+import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
+import { usePerimeter } from "@/hooks/use-perimeter";
 
 const STATUSES: SaleStatus[] = [
   "draft",
@@ -135,11 +138,17 @@ export default function SalesHistoryPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  const perimetre = usePerimeter();
+  const [perimeterValue, setPerimeterValue] = useState<PerimeterValue>({
+    warehouse: null,
+    user: null,
+  });
+
   // Tout changement de filtre remet à la première page : rester en page trois
   // sur un filtre qui n'a que deux pages affiche un tableau vide sans rien dire.
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, selectedStatus, dateFrom, dateTo]);
+  }, [debouncedSearch, selectedStatus, dateFrom, dateTo, perimeterValue]);
 
   /** Les filtres SANS la page : ce sont ceux que l'export doit recevoir. */
   const exportFilters = useMemo<Omit<SaleFilters, "page" | "page_size">>(() => {
@@ -148,8 +157,18 @@ export default function SalesHistoryPage() {
     if (dateFrom) filters.date_from = dateFrom;
     if (dateTo) filters.date_to = dateTo;
     if (debouncedSearch) filters.search = debouncedSearch;
+    // ⚠ LE PÉRIMÈTRE EFFECTIF, dans les filtres d'EXPORT aussi : le document
+    // doit couvrir exactement ce que la liste montre, et c'est l'invariant que
+    // tous les exports de ce dépôt ont dû corriger.
+    Object.assign(
+      filters,
+      perimetre.effective({
+        warehouse: perimeterValue.warehouse ?? undefined,
+        user: perimeterValue.user ?? undefined,
+      })
+    );
     return filters;
-  }, [selectedStatus, dateFrom, dateTo, debouncedSearch]);
+  }, [selectedStatus, dateFrom, dateTo, debouncedSearch, perimetre, perimeterValue]);
 
   const fetchSales = useCallback(async () => {
     if (!session?.accessToken || !organization) return;
@@ -160,6 +179,8 @@ export default function SalesHistoryPage() {
         page: currentPage,
         page_size: PAGE_SIZE,
       });
+      const refus = messageDeRefus(result);
+      if (refus) toast.error(refus);
       if (result.success && result.data) {
         setSales(result.data.results || []);
         setTotalCount(result.data.count || 0);
@@ -280,6 +301,8 @@ export default function SalesHistoryPage() {
             aria-label="Rechercher une vente"
           />
         </div>
+
+        <PerimeterFilters value={perimeterValue} onChange={setPerimeterValue} />
 
         <Select value={selectedStatus} onValueChange={setSelectedStatus}>
           <SelectTrigger className="w-full" aria-label="Filtrer par statut">

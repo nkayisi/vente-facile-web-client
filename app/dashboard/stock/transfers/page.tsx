@@ -1,5 +1,6 @@
 "use client";
 
+import { messageDeRefus } from "@/lib/perimeter-refusal";
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -83,6 +84,8 @@ import {
 } from "@/actions/stock.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
+import { usePerimeter } from "@/hooks/use-perimeter";
 
 const STATUS_CONFIG: Record<TransferStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -231,6 +234,12 @@ export default function TransfersPage() {
   }, [session?.accessToken, organization?.id]);
 
   // Fetch transfers with filters
+  const perimetre = usePerimeter();
+  const [perimeterValue, setPerimeterValue] = useState<PerimeterValue>({
+    warehouse: null,
+    user: null,
+  });
+
   const fetchTransfers = useCallback(async (orgId?: string) => {
     if (!session?.accessToken) return;
     const id = orgId || organization?.id;
@@ -239,6 +248,17 @@ export default function TransfersPage() {
     const filters: any = { page: currentPage, page_size: pageSize };
     if (selectedStatus !== "all") filters.status = selectedStatus;
     if (searchQuery) filters.search = searchQuery;
+    // ENTREPÔT SEUL : ni un transfert ni un ajustement ne se filtre par
+    // utilisateur - ce sont des mouvements de marchandise, pas des journées de
+    // travail. Le serveur applique la sémantique OU sur un transfert (source
+    // OU destination) : le borner sur la seule source cacherait au magasinier
+    // de destination ce qu'il doit réceptionner.
+    {
+      const scope = perimetre.effective({
+        warehouse: perimeterValue.warehouse ?? undefined,
+      });
+      if (scope.warehouse) filters.warehouse = scope.warehouse;
+    }
 
     const result = await getStockTransfers(session.accessToken, id, filters);
     if (result.success && result.data) {
@@ -247,10 +267,27 @@ export default function TransfersPage() {
       setHasNext(result.data.next !== null);
       setHasPrevious(result.data.previous !== null);
     }
-  }, [session?.accessToken, organization?.id, currentPage, pageSize, selectedStatus, searchQuery]);
+    // `perimetre` et l'entrepôt choisi EN DÉPENDANCE : sans eux, changer de
+    // dépôt ne relance pas la requête, et le filtre est inerte - l'écran
+    // annonce un périmètre qu'il n'a jamais appliqué.
+  }, [
+    session?.accessToken, organization?.id, currentPage, pageSize,
+    selectedStatus, searchQuery, perimetre, perimeterValue.warehouse,
+  ]);
 
-  // Reset to page 1 when filters change
-  const handleFilterChange = (setter: (value: string) => void, value: string) => {
+  /**
+   * Changer un filtre remet à la page 1.
+   *
+   * ⚠ Cette fonction était écrite pour cela et n'avait AUCUN appelant : les
+   * trois filtres de la page posaient leur `setState` en direct. Depuis la
+   * page 3, filtrer rendait donc « Aucun résultat » sur un écran qui en a -
+   * un vide qui se lit comme une absence de données. La câbler, c'est traiter
+   * le défaut qu'elle signalait.
+   *
+   * Générique : le périmètre n'est pas une chaîne, et c'est le filtre qu'on
+   * oubliait le plus souvent.
+   */
+  const handleFilterChange = <T,>(setter: (value: T) => void, value: T) => {
     setter(value);
     setCurrentPage(1);
   };
@@ -301,6 +338,8 @@ export default function TransfersPage() {
     let product = products.find(p => p.id === newItem.product);
     if (!product && session?.accessToken && organization) {
       const res = await getProduct(session.accessToken, organization.id, newItem.product);
+      const refus = messageDeRefus(res);
+      if (refus) toast.error(refus);
       if (res.success && res.data) {
         product = res.data;
         setProducts(prev => (prev.some(p => p.id === product!.id) ? prev : [...prev, product!]));
@@ -486,12 +525,18 @@ export default function TransfersPage() {
           <Input
             placeholder="Rechercher par référence..."
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={e => handleFilterChange(setSearchQuery, e.target.value)}
             className="pl-9"
           />
         </div>
 
-        <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+        <PerimeterFilters
+          value={perimeterValue}
+          onChange={v => handleFilterChange(setPerimeterValue, v)}
+          withUser={false}
+        />
+
+        <Select value={selectedStatus} onValueChange={v => handleFilterChange(setSelectedStatus, v)}>
           <SelectTrigger className="max-w-max">
             <Filter className="h-4 w-4 mr-2" />
             <SelectValue placeholder="Statut" />

@@ -145,9 +145,55 @@ export interface ReportFilters {
   date_from?: string;
   date_to?: string;
   group_by?: "day" | "week" | "month";
+  /**
+   * Le PÉRIMÈTRE, commun aux huit onglets.
+   *
+   * ⚠ Le serveur REFUSE (400) un entrepôt hors périmètre plutôt que de
+   * l'ignorer : ignorer en silence rendrait un écran qui affiche « Dépôt B »
+   * au-dessus des chiffres de A, et personne ne pourrait s'en apercevoir.
+   */
+  warehouse?: string;
+  /**
+   * ⚠ À ne pas confondre avec le `user` de `getUserActivityReport`, qui est le
+   * SUJET de cet onglet et n'a pas de « tous ». Celui-ci est un filtre.
+   */
+  user?: string;
   limit?: number;
   page?: number;
   page_size?: number;
+}
+
+/**
+ * Les paramètres de requête d'un rapport, en UN SEUL endroit.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ IL Y AVAIT DIX-SEPT `new URLSearchParams()` RECOPIÉS DANS CE FICHIER.   │
+ * │                                                                          │
+ * │ Ajouter une clé à la main dix-sept fois, c'est garantir qu'un onglet en  │
+ * │ manquera - et un onglet qui ignore le filtre affiché à deux centimètres  │
+ * │ est exactement le défaut que ce lot referme.                             │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+function buildReportParams(
+  // ⚠ `group_by` est élargi : l'onglet « Par utilisateur » accepte `hour`, que
+  // les sept autres n'ont pas. Le typer étroitement ici obligerait son
+  // appelant à recopier le builder, ce que ce builder existe pour éviter.
+  filters?: Omit<ReportFilters, "group_by"> & { group_by?: string },
+  extra?: Record<string, string | number | undefined>
+): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filters?.period) params.append("period", filters.period);
+  if (filters?.date_from) params.append("date_from", filters.date_from);
+  if (filters?.date_to) params.append("date_to", filters.date_to);
+  if (filters?.group_by) params.append("group_by", filters.group_by);
+  if (filters?.warehouse) params.append("warehouse", filters.warehouse);
+  if (filters?.user) params.append("user", filters.user);
+  if (filters?.page) params.append("page", String(filters.page));
+  if (filters?.page_size) params.append("page_size", String(filters.page_size));
+  for (const [cle, valeur] of Object.entries(extra ?? {})) {
+    if (valeur !== undefined && valeur !== "") params.set(cle, String(valeur));
+  }
+  return params;
 }
 
 export interface PaginatedResponse<T> {
@@ -174,10 +220,7 @@ export async function getDashboardSummary(
   filters?: ReportFilters
 ): Promise<ApiResponse<DashboardSummary>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/summary/?${params.toString()}`,
@@ -219,12 +262,9 @@ export async function getUserActivityReport(
   filters?: UserActivityFilters
 ): Promise<ApiResponse<UserActivityReport>> {
   try {
-    const params = new URLSearchParams();
-    params.append("user", userId);
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.group_by) params.append("group_by", filters.group_by);
+    // ⚠ Le `user` de CET onglet est son SUJET, pas un filtre : il écrase donc
+    // celui du périmètre, et c'est voulu - le serveur n'a qu'un paramètre.
+    const params = buildReportParams(filters, { user: userId });
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/user_activity/?${params.toString()}`,
@@ -244,10 +284,7 @@ export async function getSalesStats(
   filters?: ReportFilters
 ): Promise<ApiResponse<SalesStats>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/sales/?${params.toString()}`,
@@ -267,13 +304,7 @@ export async function getSalesByPeriod(
   filters?: ReportFilters
 ): Promise<ApiResponse<PaginatedResponse<SalesByPeriod>>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.group_by) params.append("group_by", filters.group_by);
-    if (filters?.page) params.append("page", String(filters.page));
-    if (filters?.page_size) params.append("page_size", String(filters.page_size));
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/sales_by_period/?${params.toString()}`,
@@ -293,12 +324,7 @@ export async function getSalesByCategory(
   filters?: ReportFilters
 ): Promise<ApiResponse<PaginatedResponse<SalesByCategory>>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.page) params.append("page", String(filters.page));
-    if (filters?.page_size) params.append("page_size", String(filters.page_size));
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/sales_by_category/?${params.toString()}`,
@@ -318,12 +344,7 @@ export async function getSalesByPaymentMethod(
   filters?: ReportFilters
 ): Promise<ApiResponse<PaginatedResponse<SalesByPaymentMethod>>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.page) params.append("page", String(filters.page));
-    if (filters?.page_size) params.append("page_size", String(filters.page_size));
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/sales_by_payment_method/?${params.toString()}`,
@@ -343,12 +364,7 @@ export async function getTopProducts(
   filters?: ReportFilters
 ): Promise<ApiResponse<PaginatedResponse<TopProduct>>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.page) params.append("page", String(filters.page));
-    if (filters?.page_size) params.append("page_size", String(filters.page_size));
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/top_products/?${params.toString()}`,
@@ -368,13 +384,7 @@ export async function getTopCustomers(
   filters?: ReportFilters
 ): Promise<ApiResponse<PaginatedResponse<TopCustomer>>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.page) params.append("page", String(filters.page));
-    if (filters?.page_size) params.append("page_size", String(filters.page_size));
-    if (filters?.limit) params.append("limit", String(filters.limit));
+    const params = buildReportParams(filters, { limit: filters?.limit });
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/top_customers/?${params.toString()}`,
@@ -411,10 +421,7 @@ export async function getCashbookStats(
   filters?: ReportFilters
 ): Promise<ApiResponse<CashbookStats>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/cashbook/?${params.toString()}`,
@@ -434,13 +441,7 @@ export async function getCashFlow(
   filters?: ReportFilters
 ): Promise<ApiResponse<PaginatedResponse<CashFlowByPeriod>>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.group_by) params.append("group_by", filters.group_by);
-    if (filters?.page) params.append("page", String(filters.page));
-    if (filters?.page_size) params.append("page_size", String(filters.page_size));
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/cash_flow/?${params.toString()}`,
@@ -460,10 +461,7 @@ export async function getCustomerStats(
   filters?: ReportFilters
 ): Promise<ApiResponse<CustomerStats>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/customers/?${params.toString()}`,
@@ -640,10 +638,7 @@ export async function getProfitMargins(
   filters?: ReportFilters
 ): Promise<ApiResponse<ProfitMargins>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/profit_margins/?${params.toString()}`,
@@ -663,12 +658,7 @@ export async function getProductProfits(
   filters?: ReportFilters
 ): Promise<ApiResponse<PaginatedResponse<ProductProfit>>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
-    if (filters?.page) params.append("page", String(filters.page));
-    if (filters?.page_size) params.append("page_size", String(filters.page_size));
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/product_profits/?${params.toString()}`,
@@ -728,10 +718,7 @@ export async function getStockDetails(
   filters?: ReportFilters & { status?: "low" | "out" | "available" }
 ): Promise<ApiResponse<PaginatedResponse<StockDetail>>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.status) params.append("status", filters.status);
-    if (filters?.page) params.append("page", String(filters.page));
-    if (filters?.page_size) params.append("page_size", String(filters.page_size));
+    const params = buildReportParams(filters, { status: filters?.status });
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/stock_details/?${params.toString()}`,
@@ -751,10 +738,7 @@ export async function getStockMovementsSummary(
   filters?: ReportFilters
 ): Promise<ApiResponse<StockMovementSummary>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/stock_movements_summary/?${params.toString()}`,
@@ -791,10 +775,7 @@ export async function getProductSupplies(
   filters?: ReportFilters
 ): Promise<ApiResponse<ProductSupplies>> {
   try {
-    const params = new URLSearchParams();
-    if (filters?.period) params.append("period", filters.period);
-    if (filters?.date_from) params.append("date_from", filters.date_from);
-    if (filters?.date_to) params.append("date_to", filters.date_to);
+    const params = buildReportParams(filters);
 
     const response = await axios.get(
       `${API_BASE_URL}/reports/statistics/product_supplies/?${params.toString()}`,

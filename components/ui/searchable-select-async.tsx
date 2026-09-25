@@ -41,6 +41,24 @@ interface SearchableSelectAsyncProps {
   className?: string
   disabled?: boolean
   debounceMs?: number
+  /**
+   * Ce dont la liste DÉPEND, hors de la requête de recherche.
+   *
+   * ┌──────────────────────────────────────────────────────────────────┐
+   * │ SANS LUI, LA LISTE ACCUMULE L'UNION DE TOUT CE QU'ON A VISITÉ.   │
+   * │                                                                  │
+   * │ `hasLoadedInitial` empêche de retirer les options quand le        │
+   * │ `onSearch` change - une nouvelle closure à chaque rendu, sans     │
+   * │ quoi le composant boucherait -, et le chargement initial FUSIONNE │
+   * │ au lieu de remplacer. Résultat : après avoir changé d'entrepôt,   │
+   * │ le sélecteur d'utilisateur proposait encore les membres du        │
+   * │ précédent, et en choisir un rendait 400.                          │
+   * │                                                                  │
+   * │ La clé est donc EXPLICITE : l'appelant nomme ce qui invalide sa   │
+   * │ liste. Une dépendance devinée ferait recharger à chaque rendu.    │
+   * └──────────────────────────────────────────────────────────────────┘
+   */
+  resetKey?: string
 }
 
 export function SearchableSelectAsync({
@@ -55,6 +73,7 @@ export function SearchableSelectAsync({
   className,
   disabled = false,
   debounceMs = 300,
+  resetKey,
 }: SearchableSelectAsyncProps) {
   const [open, setOpen] = React.useState(false)
   const [options, setOptions] = React.useState<AsyncSelectOption[]>(initialOptions)
@@ -74,6 +93,17 @@ export function SearchableSelectAsync({
       })
     }
   }, [initialOptions])
+
+  // La clé a changé : ce qui est affiché ne décrit plus le bon périmètre.
+  // On vide et on ré-arme, plutôt que de laisser l'ancienne liste survivre.
+  const derniereCle = React.useRef(resetKey)
+  React.useEffect(() => {
+    if (derniereCle.current === resetKey) return
+    derniereCle.current = resetKey
+    hasLoadedInitial.current = false
+    setOptions(initialOptions)
+    setSearchQuery("")
+  }, [resetKey, initialOptions])
 
   // Charger les options initiales quand le popover s'ouvre pour la première fois
   React.useEffect(() => {

@@ -108,6 +108,53 @@ function getHeaders(accessToken: string, organizationId: string) {
 /**
  * Récupère la liste des membres de l'organisation
  */
+/** Un membre, tel que la porte d'équipe le rend. */
+export interface TeamMember {
+  user_id: string;
+  name: string;
+  role: string;
+  /** Identifiants nus : les noms viennent de `/warehouses/`. */
+  warehouses: string[];
+}
+
+export interface Team {
+  /**
+   * ⚠ EXPLICITE, jamais déduit d'une liste vide : c'est ce qui distingue
+   * « roster fermé » (un caissier, qui n'en a pas l'usage) de « roster vide ».
+   */
+  visible: boolean;
+  truncated: boolean;
+  members: TeamMember[];
+}
+
+/**
+ * L'équipe pour un filtre « Utilisateur ».
+ *
+ * ⚠ `/memberships/team/` et non `/memberships/` : la liste complète exige
+ * `users.view`, que le MAGASINIER n'a pas, alors que la règle lui donne bien
+ * ce filtre. Cette porte rend exactement le payload de la session du terminal,
+ * construit par la même fonction serveur - deux surfaces, un seul corps.
+ */
+export async function getTeam(
+  accessToken: string,
+  organizationId: string
+): Promise<{ success: boolean; data?: Team; error?: string }> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/memberships/team/`, {
+      headers: getHeaders(accessToken, organizationId),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: formatAxiosErrorMessage(
+        error,
+        "Erreur lors de la récupération de l'équipe"
+      ),
+    };
+  }
+}
+
 export async function getMembers(
   accessToken: string,
   organizationId: string,

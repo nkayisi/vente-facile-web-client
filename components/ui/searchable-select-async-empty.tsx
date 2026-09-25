@@ -50,6 +50,8 @@ interface SearchableSelectAsyncWithEmptyProps {
   className?: string
   disabled?: boolean
   debounceMs?: number
+  /** Voir `SearchableSelectAsync` : ce qui invalide la liste. */
+  resetKey?: string
 }
 
 export function SearchableSelectAsyncWithEmpty({
@@ -64,6 +66,7 @@ export function SearchableSelectAsyncWithEmpty({
   className,
   disabled = false,
   debounceMs = 300,
+  resetKey,
 }: SearchableSelectAsyncWithEmptyProps) {
   // Décorer le handler pour préfixer l'option vide aux résultats serveur.
   const decoratedOnSearch = React.useCallback(
@@ -108,6 +111,7 @@ export function SearchableSelectAsyncWithEmpty({
       className={className}
       disabled={disabled}
       debounceMs={debounceMs}
+      resetKey={resetKey}
     />
   )
 }

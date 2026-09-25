@@ -112,6 +112,8 @@ import { getMembers, type OrganizationMember } from "@/actions/users.actions";
 // └──────────────────────────────────────────────────────────────────────────┘
 import { ExportMenu, type ExportTarget } from "@/components/shared/ExportMenu";
 import { exportStatistics, type ReportTab } from "@/actions/reports.actions";
+import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
+import { usePerimeter } from "@/hooks/use-perimeter";
 import {
   Table,
   TableBody,
@@ -239,12 +241,35 @@ export default function ReportsPage() {
   const [dailyReportMovementsPage, setDailyReportMovementsPage] = useState(1);
 
   // Build filters
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │ LE PÉRIMÈTRE VAUT POUR LES HUIT ONGLETS.                            │
+  // │                                                                      │
+  // │ Il est distinct de `selectedUserId`, qui est le SUJET de l'onglet    │
+  // │ « Par utilisateur » et n'a pas de « tous ». Le serveur les lit sous  │
+  // │ le même nom : c'est donc au client de ne pas les confondre.          │
+  // └──────────────────────────────────────────────────────────────────────┘
+  const perimetre = usePerimeter();
+  const [perimeterValue, setPerimeterValue] = useState<PerimeterValue>({
+    warehouse: null,
+    user: null,
+  });
+
   const getFilters = useCallback((): ReportFilters => {
+    // Le PÉRIMÈTRE entre ici, et nulle part ailleurs : `getFilters` est le seul
+    // constructeur des huit onglets, donc aucun onglet ne peut l'ignorer.
+    const scope = perimetre.effective({
+      warehouse: perimeterValue.warehouse ?? undefined,
+      user: perimeterValue.user ?? undefined,
+    });
     if (period === "custom" && dateFrom && dateTo) {
-      return { date_from: dateFrom, date_to: dateTo, group_by: groupBy };
+      return { date_from: dateFrom, date_to: dateTo, group_by: groupBy, ...scope };
     }
-    return { period: period as ReportFilters["period"], group_by: groupBy };
-  }, [period, dateFrom, dateTo, groupBy]);
+    return {
+      period: period as ReportFilters["period"],
+      group_by: groupBy,
+      ...scope,
+    };
+  }, [period, dateFrom, dateTo, groupBy, perimetre, perimeterValue]);
 
   // Chargement de l'écran, découpé selon ce qui le fait bouger.
   //
@@ -460,7 +485,10 @@ export default function ReportsPage() {
     setProfitsPage(1);
     setProductsPage(1);
     setCustomersPage(1);
-  }, [period, dateFrom, dateTo]);
+    // Le PÉRIMÈTRE est un filtre comme la période : sans lui ici, changer
+    // d'entrepôt refetchait les cinq tableaux paginés À LEUR PAGE COURANTE,
+    // et le marchand lisait « Aucune donnée » sur un rapport qui en a.
+  }, [period, dateFrom, dateTo, perimeterValue]);
 
   // Le bouton « Actualiser » vise l'écran entier, lui : c'est le seul endroit
   // où recharger les douze rapports d'un coup a du sens.
@@ -712,6 +740,11 @@ export default function ReportsPage() {
               <SelectItem value="month">Mois</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Périmètre</Label>
+          <PerimeterFilters value={perimeterValue} onChange={setPerimeterValue} />
         </div>
       </div>
 

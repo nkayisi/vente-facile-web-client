@@ -499,6 +499,10 @@ export interface SaleFilters {
   /** Factures encore dues dont l'échéance (`due_date`) est dépassée. */
   overdue?: boolean;
   ordering?: string;
+  /** Le dépôt de la vente. Le serveur borne déjà par rôle : ceci RESTREINT. */
+  warehouse?: string;
+  /** Le VENDEUR (`sold_by`). Sans `sales.view_all`, la liste est déjà bornée. */
+  user?: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -689,11 +693,20 @@ export async function deleteRegister(
 export async function getRegisterSessions(
   accessToken: string,
   organizationId: string,
-  filters?: { status?: SessionStatus; register?: string; opened_by?: string }
+  filters?: {
+    status?: SessionStatus;
+    register?: string;
+    /** Conservé : le back-office l'emploie déjà. `user` en est l'alias. */
+    opened_by?: string;
+    warehouse?: string;
+    user?: string;
+  }
 ): Promise<ApiResponse<RegisterSession[]>> {
   try {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);
+    if (filters?.warehouse) params.append("warehouse", filters.warehouse);
+    if (filters?.user) params.append("user", filters.user);
     if (filters?.register) params.append("register", filters.register);
     if (filters?.opened_by) params.append("opened_by", filters.opened_by);
 
@@ -905,6 +918,8 @@ export async function getSales(
   try {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);
+    if (filters?.warehouse) params.append("warehouse", filters.warehouse);
+    if (filters?.user) params.append("user", filters.user);
     if (filters?.sale_type) params.append("sale_type", filters.sale_type);
     if (filters?.customer) params.append("customer", filters.customer);
     if (filters?.register) params.append("register", filters.register);
@@ -1111,6 +1126,9 @@ export async function getSaleReturns(
     search?: string;
     /** Les retours d'UNE vente : c'est ce que sa fiche vient chercher. */
     original_sale?: string;
+    /** Hérité de la VENTE d'origine : un retour n'a pas d'entrepôt à lui. */
+    warehouse?: string;
+    user?: string;
     page?: number;
     page_size?: number;
   }
@@ -1118,6 +1136,8 @@ export async function getSaleReturns(
   try {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);
+    if (filters?.warehouse) params.append("warehouse", filters.warehouse);
+    if (filters?.user) params.append("user", filters.user);
     if (filters?.return_type) params.append("return_type", filters.return_type);
     if (filters?.search) params.append("search", filters.search);
     if (filters?.original_sale) params.append("original_sale", filters.original_sale);
@@ -1239,6 +1259,12 @@ export async function getQuotations(
     status?: QuotationStatus;
     customer?: string;
     search?: string;
+    /**
+     * L'AUTEUR du devis. Pas d'`warehouse` : `Quotation` n'en porte aucun, ni
+     * au serveur ni en base locale, et le dériver de la vente convertie ferait
+     * disparaître tous les devis non convertis dès qu'un dépôt est choisi.
+     */
+    user?: string;
     page?: number;
     page_size?: number;
   }
@@ -1246,6 +1272,8 @@ export async function getQuotations(
   try {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);
+    // ⚠ Pas de `warehouse` : un devis n'est rattaché à aucun entrepôt.
+    if (filters?.user) params.append("user", filters.user);
     if (filters?.customer) params.append("customer", filters.customer);
     if (filters?.search) params.append("search", filters.search);
     if (filters?.page) params.append("page", String(filters.page));
