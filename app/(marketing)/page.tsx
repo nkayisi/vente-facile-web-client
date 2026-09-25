@@ -5,7 +5,9 @@ import { CapabilityGrid } from "@/components/marketing/capability-grid";
 import { CurrencyBand } from "@/components/marketing/currency-band";
 import { Faq } from "@/components/marketing/faq";
 import { Hero } from "@/components/marketing/hero";
+import { HowItWorks } from "@/components/marketing/how-it-works";
 import { PackagingBand } from "@/components/marketing/packaging-band";
+import { ProductShot } from "@/components/marketing/product-shot";
 import { Pricing } from "@/components/marketing/pricing";
 import { PricingSkeleton } from "@/components/marketing/pricing-skeleton";
 import { Recognitions } from "@/components/marketing/recognitions";
@@ -36,11 +38,17 @@ export default async function LandingPage() {
 
       <main>
         <Hero />
+        {/* La capture suit le hero : la démo dit ce que ça FAIT, la capture ce
+            à quoi ça RESSEMBLE. Les deux preuves, dans cet ordre. */}
+        <ProductShot />
         <Recognitions />
         <PackagingBand />
         <CurrencyBand />
         <CapabilityGrid />
         <TerminalBand />
+        {/* Le chemin d'entrée AVANT le prix : on explique ce qu'il faut faire,
+            puis ce que ça coûte. */}
+        <HowItWorks />
 
         {/* Sans cette frontière, tout le hero attendrait la réponse du backend
             pour s'afficher. La section tarifs est la SEULE qui en dépend. */}

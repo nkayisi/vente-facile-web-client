@@ -177,21 +177,161 @@ export const DEVISES = {
   note: "Le règlement de 2\u00a0250,00\u00a0$ solde la facture de 6\u00a0300\u00a0000\u00a0FC, au taux figé le jour de la vente et non au cours du jour. Les deux colonnes décrivent le même encaissement, et aucun écran ne les additionne.",
 } as const;
 
+/**
+ * Les huit modules, chacun avec trois PRÉCISIONS.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ ⚠ CHACUNE DES VINGT-QUATRE PUCES TOMBE SOUS LA RÈGLE DE CE FICHIER.     │
+ * │                                                                          │
+ * │ Elles sont tirées d'écrans qui existent, jamais d'un vocabulaire de      │
+ * │ brochure : « suivi par lots et numéros de série », « conformité SOC 2 », │
+ * │ « synchronisation temps réel » sont exactement le genre de ligne que la  │
+ * │ version précédente affichait et que personne ne pouvait montrer.         │
+ * │                                                                          │
+ * │ ⚠ TROIS PUCES COURTES, PAS TROIS PHRASES. La section a gagné des cartes │
+ * │ mais garde l'argument de densité : ce qu'elle doit communiquer reste     │
+ * │ l'ÉTENDUE, et huit paragraphes la noieraient.                            │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
 export const CAPACITES = {
   eyebrow: "L'ensemble",
   titre: "Et tout ce qui va avec.",
   accroche:
     "Un seul outil, du comptoir au dépôt. Chaque ligne ci-dessous est un écran qui existe aujourd'hui.",
   items: [
-    { label: "Point de vente", ligne: "Remises, fidélité, vente à crédit, mise en attente d'un panier, retours." },
-    { label: "Stock", ligne: "Plusieurs dépôts, transferts, ajustements, déconditionnement, mouvements tracés." },
-    { label: "Inventaire", ligne: "Sessions par catégorie ou par produit, feuille de comptage, écarts par canal." },
-    { label: "Clients", ligne: "Crédit tenu par devise, balance âgée, relance depuis la fiche." },
-    { label: "Caisse", ligne: "Mouvements par devise, dépenses, clôture Z avec comptage du tiroir." },
-    { label: "Devis et retours", ligne: "Devis daté, conversion en vente, retour rattaché à sa ligne de facture." },
-    { label: "Rapports", ligne: "Huit vues, export PDF, Excel ou CSV, sur la période que vous choisissez." },
-    { label: "Équipe", ligne: "Rôles, permission par action, journal d'activité, appareils enrôlés." },
+    {
+      icone: "panier",
+      label: "Point de vente",
+      ligne: "Encaisser au comptoir, avec ou sans réseau.",
+      details: [
+        "Remise par ligne ou sur le total, plafonnée",
+        "Panier mis en attente, repris plus tard",
+        "Vente à crédit, points de fidélité déduits",
+      ],
+    },
+    {
+      icone: "colis",
+      label: "Stock",
+      ligne: "Plusieurs dépôts, et ce qui circule entre eux.",
+      details: [
+        "Transferts et ajustements, en deux temps",
+        "Déconditionnement : ouvrir un casier",
+        "Chaque mouvement garde son avant et son après",
+      ],
+    },
+    {
+      icone: "presse-papier",
+      label: "Inventaire",
+      ligne: "Compter le rayon, et n'appliquer qu'après.",
+      details: [
+        "Session totale, par catégorie ou par article",
+        "Feuille de comptage utilisable au dépôt",
+        "Écart ventilé entre gros et détail",
+      ],
+    },
+    {
+      icone: "clients",
+      label: "Clients",
+      ligne: "Le crédit, tenu dans la monnaie de la facture.",
+      details: [
+        "Plafond par client, opposé à la vente",
+        "Balance âgée : 0-30, 30-60, 60-90, 90+",
+        "Numéro appelable depuis la fiche",
+      ],
+    },
+    {
+      icone: "caisse",
+      label: "Caisse",
+      ligne: "Le tiroir, devise par devise.",
+      details: [
+        "Entrées, sorties et dépenses catégorisées",
+        "Clôture Z avec comptage du tiroir",
+        "Reçu de dépense imprimé sur place",
+      ],
+    },
+    {
+      icone: "document",
+      label: "Devis et retours",
+      ligne: "Ce qui précède la vente, et ce qui la défait.",
+      details: [
+        "Devis daté, converti en vente en un geste",
+        "Retour rattaché à sa ligne de facture",
+        "Rien ne bouge avant une approbation",
+      ],
+    },
+    {
+      icone: "graphique",
+      label: "Rapports",
+      ligne: "Huit vues, sur la période que vous choisissez.",
+      details: [
+        "Ventes, produits, clients, stock, bénéfices",
+        "Export PDF, Excel ou CSV",
+        "Le même document depuis le web ou le terminal",
+      ],
+    },
+    {
+      icone: "bouclier",
+      label: "Équipe",
+      ligne: "Qui peut faire quoi, et qui a fait quoi.",
+      details: [
+        "Quatre rôles, et une permission par action",
+        "Périmètre par dépôt et par utilisateur",
+        "Appareils enrôlés, révocables à distance",
+      ],
+    },
   ],
+} as const;
+
+/**
+ * Ce qui se passe après « Ouvrir un compte ».
+ *
+ * La page ne le disait nulle part : elle décrivait le produit, son prix et ses
+ * limites, et laissait le lecteur deviner le chemin. Trois étapes, et non
+ * quatre comme l'ancienne version - c'est aussi le nombre de vues de la
+ * présentation du terminal, et les deux surfaces racontent la même entrée.
+ */
+export const DEMARRAGE = {
+  eyebrow: "Démarrer",
+  titre: "Trois étapes, et vous vendez.",
+  accroche:
+    "Aucune installation sur un serveur, aucun technicien. Le back-office s'ouvre dans un navigateur, l'application se télécharge sur le terminal.",
+  etapes: [
+    {
+      numero: "01",
+      titre: "Ouvrez votre compte",
+      corps:
+        "Deux minutes, sans carte bancaire. L'essai dure quatorze jours et donne accès à tout.",
+    },
+    {
+      numero: "02",
+      titre: "Montez votre catalogue",
+      corps:
+        "Article par article, ou par import Excel. Les erreurs du fichier sont rendues ligne par ligne, pour que vous corrigiez plutôt que de recommencer.",
+    },
+    {
+      numero: "03",
+      titre: "Ouvrez la caisse",
+      corps:
+        "Installez l'application sur le terminal, comptez votre fonds, vendez. Ce qui est encaissé hors ligne remonte dès que le réseau revient.",
+    },
+  ],
+} as const;
+
+/**
+ * La capture de l'application, en bande sous le hero.
+ *
+ * ⚠ LE DOMAINE EST LE VRAI. La version précédente écrivait
+ * « app.ventefacile.com », qui n'existe pas. C'est la seule page que
+ * `robots.index` autorise à être indexée, et la règle en tête de ce fichier
+ * vaut aussi pour une barre d'adresse dessinée.
+ */
+export const CAPTURE = {
+  eyebrow: "Le back-office",
+  titre: "Et le même établissement, vu du bureau.",
+  accroche:
+    "Ce que le terminal encaisse, le back-office l'agrège : chiffre d'affaires, marge, créances, valeur du stock. Sur ordinateur comme sur téléphone.",
+  url: "vente-facile.net/dashboard/reports",
+  alt: "Le back-office de Vente Facile, sur la page Rapports et statistiques : chiffre d'affaires, panier moyen, solde de caisse et créances clients, puis le détail des produits vendus.",
 } as const;
 
 export const TERMINAL = {
