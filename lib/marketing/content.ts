@@ -340,12 +340,32 @@ export const DEMARRAGE = {
  * vaut aussi pour une barre d'adresse dessinée.
  */
 export const CAPTURE = {
-  eyebrow: "Le back-office",
-  titre: "Et le même établissement, vu du bureau.",
+  eyebrow: "Bureau et comptoir",
+  titre: "Le même établissement, sur tous vos écrans.",
   accroche:
-    "Ce que le terminal encaisse, le back-office l'agrège : chiffre d'affaires, marge, créances, valeur du stock. Sur ordinateur comme sur téléphone.",
-  url: "vente-facile.net/dashboard/reports",
-  alt: "Le back-office de Vente Facile, sur la page Rapports et statistiques : chiffre d'affaires, panier moyen, solde de caisse et créances clients, puis le détail des produits vendus.",
+    "Le back-office s'ouvre dans un navigateur, l'application sur le terminal de caisse. Les deux lisent le même établissement : ci-dessous, ce sont les mêmes chiffres, le même jour.",
+
+  url: "vente-facile.net/dashboard",
+  altWeb:
+    "Le tableau de bord de Vente Facile dans un navigateur : ventes totales, nombre de clients, unités vendues, bénéfice brut, l'évolution des ventes et les encaissements par devise.",
+
+  mobileTitre: "Sur le terminal",
+  mobileNote:
+    "L'application suit le thème du terminal, ou celui que vous lui imposez.",
+  mobiles: [
+    {
+      cle: "clair",
+      src: "/app-preview/mobile-light.png",
+      legende: "Thème clair",
+      alt: "Le même tableau de bord dans l'application Android, en thème clair, avec ses onglets Accueil, Caisse, POS, Stock et Paramètres.",
+    },
+    {
+      cle: "sombre",
+      src: "/app-preview/mobile-dark.png",
+      legende: "Thème sombre",
+      alt: "Le même tableau de bord dans l'application Android, en thème sombre.",
+    },
+  ],
 } as const;
 
 export const TERMINAL = {
