@@ -74,21 +74,46 @@ export function SiteHeader({ isAuthenticated, isStaff }: Props) {
         />
       )}
 
-      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
+      {/* ⚠ La barre grandit AVEC la disposition de bureau (`md`), pas avant :
+          c'est au même palier que la navigation apparaît et que le bouton
+          hamburger disparaît. Les `pt-28 sm:pt-36` du hero et de l'en-tête de
+          page dégagent 144 points, donc les 80 de la barre passent largement. */}
+      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8 md:h-20">
         <Link
           href="/"
-          className="flex items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-braise focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+          className="flex items-center gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-braise focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
         >
+          {/*
+            ⚠ `logo-compact.png` ET NON `logo.png`, ET C'EST MESURÉ.
+
+            Le fichier d'origine fait 500 x 500 pour une encre de 263 x 373 :
+            elle n'occupait que 53 % de la largeur et 75 % de la hauteur. Avec
+            `object-contain`, le dessin sortait donc à environ 24 points dans une
+            boîte de 32, d'où un logo qui paraissait minuscule sans qu'on sache
+            pourquoi. Le recadrage carré porte l'encre à 98 % de la hauteur.
+
+            ⚠ Le fichier est RENOMMÉ, il n'est pas remplacé. L'optimiseur
+            d'images de Next met en cache PAR URL : écraser `logo.png` aurait
+            continué de servir l'ancien rendu, au navigateur comme au CDN. Le
+            dépôt a déjà payé ce piège sur la capture du back-office.
+
+            ⚠ LE TEXTE À CÔTÉ RESTE, et ce n'est pas une redondance. Ce logo est
+            un verrouillage complet : il porte DÉJÀ les mots « Vente Facile » et
+            « Cdir info » dans son dessin. À la taille d'une barre de navigation
+            ils sont illisibles (six points de haut), et il faudrait environ 180
+            points de large pour qu'ils se lisent. La marque est donc écrite à
+            côté, dans la face d'affichage, où elle se lit.
+          */}
           <Image
-            src="/logo.png"
+            src="/logo-compact.png"
             alt=""
-            width={32}
-            height={32}
-            className="size-8 object-contain"
+            width={44}
+            height={44}
+            className="size-10 object-contain md:size-11"
             priority
           />
           <span
-            className="text-[0.9375rem] font-semibold tracking-tight text-encre"
+            className="text-[1.0625rem] font-semibold tracking-tight text-encre md:text-[1.1875rem]"
             style={{ fontFamily: "var(--font-display-stack)" }}
           >
             Vente Facile
