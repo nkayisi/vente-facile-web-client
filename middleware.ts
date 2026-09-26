@@ -1,25 +1,41 @@
 import { auth } from "@/lib/auth";
 import { getDefaultRedirectPath } from "@/lib/auth/redirect";
+import { CHEMINS_PUBLICS } from "@/lib/seo/pages-publiques";
 import { NextResponse } from "next/server";
 
-// Routes publiques (accessibles sans authentification)
-const PUBLIC_ROUTES = ["/", "/auth/login", "/auth/register", "/auth/forgot-password"];
+/**
+ * Routes publiques (accessibles sans authentification).
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ LA LISTE EST DÉRIVÉE DU REGISTRE, ELLE N'EST PLUS ÉCRITE À LA MAIN.      │
+ * │                                                                          │
+ * │ `isPublicRoute` compare en ÉGALITÉ EXACTE, et la règle 1 ci-dessous      │
+ * │ renvoie vers /auth/login TOUTE route qui n'est pas dans cette liste. Une │
+ * │ page publique oubliée ici éjecterait donc vers la connexion tout         │
+ * │ visiteur porteur d'un cookie de session périmé. Le défaut ne se voit     │
+ * │ qu'avec un tel cookie : jamais pendant le développement, seulement chez  │
+ * │ un vrai visiteur revenu des semaines plus tard.                          │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+const PUBLIC_ROUTES = [
+  ...CHEMINS_PUBLICS,
+  "/auth/login",
+  "/auth/register",
+  "/auth/forgot-password",
+];
 
 // Routes d'authentification (rediriger vers dashboard si déjà connecté)
 const AUTH_ROUTES = ["/auth/login", "/auth/register"];
 
-// Routes protégées (nécessitent une authentification)
-const PROTECTED_ROUTE_PREFIXES = [
-  "/dashboard",
-  "/admin",
-  "/payment",
-  "/products",
-  "/sales",
-  "/customers",
-  "/settings",
-  "/stock",
-  "/reports",
-];
+/**
+ * Routes protégées (nécessitent une authentification).
+ *
+ * ⚠ Six préfixes MORTS ont été retirés (`/products`, `/sales`, `/customers`,
+ * `/settings`, `/stock`, `/reports`) : aucun ne correspond à une route de
+ * premier niveau, ces pages vivant toutes sous `/dashboard/`. Ils ne
+ * protégeaient rien et laissaient croire le contraire.
+ */
+const PROTECTED_ROUTE_PREFIXES = ["/dashboard", "/admin", "/payment"];
 
 export default auth((req) => {
   try {
@@ -88,13 +104,17 @@ export default auth((req) => {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
+     * Tout, sauf :
+     * - api, _next/static, _next/image
+     * - les fichiers de convention des métadonnées : opengraph-image,
+     *   apple-icon, icon
+     * - toute URL portant une extension d'actif
+     *
+     * ⚠ `.txt`, `.xml` et `.webmanifest` sont NOUVEAUX dans cette liste.
+     * Sans eux, chaque lecture de /robots.txt ou /sitemap.xml par un robot
+     * faisait décoder un jeton next-auth pour rien. `.ico` remplace au passage
+     * la mention nominative de favicon.ico.
      */
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.jpeg$|.*\\.gif$|.*\\.svg$).*)",
+    "/((?!api|_next/static|_next/image|opengraph-image|apple-icon|icon|.*\\.(?:png|jpg|jpeg|gif|svg|ico|txt|xml|webmanifest)$).*)",
   ],
 };

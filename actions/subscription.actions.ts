@@ -2,7 +2,6 @@
 
 import { formatAxiosErrorMessage } from "@/lib/api/drf-error";
 import axios from "@/lib/auth/api-helper";
-import axiosPlain from "axios";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -187,15 +186,47 @@ interface ApiResponse<T> {
 // Public API (no auth)
 // ============================================================================
 
+/**
+ * Combien de temps la grille de tarifs est servie depuis le cache.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ CINQ MINUTES, ET PAS UNE HEURE. LE MOTIF EST L'ÉCHEC, PAS LE SUCCÈS.     │
+ * │                                                                          │
+ * │ Le cache de données de Next range la réponse telle qu'elle vient, y       │
+ * │ compris une réponse d'erreur : un backend indisponible une seconde ferait │
+ * │ afficher « les tarifs ne se chargent pas » pendant toute la durée du      │
+ * │ cache, bien après son rétablissement. Cinq minutes suffisent à retirer    │
+ * │ l'aller-retour de presque toutes les visites, et bornent le dégât.        │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+const SECONDES_CACHE_PLANS = 300;
+
+/**
+ * ⚠ `fetch` ET NON AXIOS, et c'est tout l'objet du changement. Le cache de
+ * données de Next s'accroche à `fetch`, qu'il remplace ; un appel axios le
+ * contourne, et la page d'accueil attendait donc le backend à CHAQUE visite.
+ * Elle est rendue à la requête (elle résout la session), ce qui l'empêche
+ * d'être mise en cache en entier, mais rien n'oblige à redemander les tarifs.
+ */
 export async function getPublicPlans(): Promise<ApiResponse<PublicPlan[]>> {
   try {
-    const response = await axiosPlain.get(`${API_BASE_URL}/plans/public/`);
-    return { success: true, data: response.data };
-  } catch (error: unknown) {
-    return {
-      success: false,
-      error: formatAxiosErrorMessage(error, "Erreur lors du chargement des plans"),
-    };
+    const reponse = await fetch(`${API_BASE_URL}/plans/public/`, {
+      headers: { Accept: "application/json" },
+      next: { revalidate: SECONDES_CACHE_PLANS },
+    });
+
+    if (!reponse.ok) {
+      return {
+        success: false,
+        error: `Erreur lors du chargement des plans (${reponse.status})`,
+      };
+    }
+
+    return { success: true, data: (await reponse.json()) as PublicPlan[] };
+  } catch {
+    // La section des tarifs traite `success: false` en affichant son message
+    // d'indisponibilité : un backend arrêté ne casse jamais la page.
+    return { success: false, error: "Erreur lors du chargement des plans" };
   }
 }
 

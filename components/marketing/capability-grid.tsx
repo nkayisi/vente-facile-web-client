@@ -33,7 +33,12 @@ import { Reveal } from "./reveal";
  * │ l'étendue qu'on vient montrer.                                           │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
-const GLYPHES: Record<string, LucideIcon> = {
+/**
+ * Exporté pour /fonctionnalites, qui rend les mêmes huit modules en détail.
+ * Une seconde table finirait par diverger de celle-ci, et un module y
+ * changerait d'icône d'une page à l'autre sans que rien ne le signale.
+ */
+export const GLYPHES: Record<string, LucideIcon> = {
   panier: ShoppingCart,
   colis: Package,
   "presse-papier": ClipboardList,

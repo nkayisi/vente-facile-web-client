@@ -41,7 +41,12 @@ export function SiteFooter() {
           </div>
         </Reveal>
 
-        <div className="mt-20 grid gap-10 border-t border-trait-ink pt-12 sm:grid-cols-2 lg:grid-cols-4">
+        {/* ⚠ CINQ COLONNES, PAS QUATRE. Le bloc de marque en occupe DEUX
+            (`lg:col-span-2`) : avec une grille de quatre, la troisième rubrique
+            de liens passait à la ligne toute seule, sous un rang vide de trois
+            colonnes. Cinq laisse 2 + 1 + 1 + 1, donc les quatre sections sur une
+            seule ligne. Ajouter une rubrique demandera de repasser à six. */}
+        <div className="mt-20 grid gap-10 border-t border-trait-ink pt-12 sm:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             {/* ⚠ PAS DE LOGO ICI, ET C'EST UNE RÈGLE.
                 Le fond derrière le logo doit TOUJOURS être celui de la page

@@ -5,9 +5,15 @@ import { TARIFS as T } from "@/lib/marketing/content";
  * squelette plus court que son contenu décale la page à l'arrivée des
  * données, ce qui est exactement ce que le squelette existe pour éviter.
  */
+/**
+ * ⚠ PAS d'`id="tarifs"` sur la section : `Pricing` le porte. Les deux
+ * cohabitent dans la charge utile servie le temps du flux, et deux éléments de
+ * même identifiant sont du HTML invalide. Le `<h2>`, lui, RESTE : il évite le
+ * décalage de mise en page quand le vrai contenu arrive.
+ */
 export function PricingSkeleton() {
   return (
-    <section id="tarifs" className="scroll-mt-20 px-5 py-20 sm:px-8 sm:py-28">
+    <section className="scroll-mt-20 px-5 py-20 sm:px-8 sm:py-28">
       <div className="mx-auto max-w-6xl">
         <p className="t-eyebrow text-braise-texte">{T.eyebrow}</p>
         <h2 className="t-h2 mt-5 text-encre">{T.titre}</h2>

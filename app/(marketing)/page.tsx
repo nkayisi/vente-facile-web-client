@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 
-import { getPublicPlans } from "@/actions/subscription.actions";
 import { CapabilityGrid } from "@/components/marketing/capability-grid";
 import { CurrencyBand } from "@/components/marketing/currency-band";
 import { Faq } from "@/components/marketing/faq";
@@ -8,13 +7,23 @@ import { Hero } from "@/components/marketing/hero";
 import { HowItWorks } from "@/components/marketing/how-it-works";
 import { PackagingBand } from "@/components/marketing/packaging-band";
 import { ProductShot } from "@/components/marketing/product-shot";
-import { Pricing } from "@/components/marketing/pricing";
 import { PricingSkeleton } from "@/components/marketing/pricing-skeleton";
 import { Recognitions } from "@/components/marketing/recognitions";
+import { SectionTarifs } from "@/components/marketing/section-tarifs";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { TerminalBand } from "@/components/marketing/terminal-band";
 import { auth } from "@/lib/auth";
+import { DonneesStructurees } from "@/components/seo/donnees-structurees";
+import { metadonneesDePage } from "@/lib/seo/metadonnees";
+import { schemaFaq } from "@/lib/seo/schema";
+
+/**
+ * Le titre, la description et le CANONICAL de l'accueil vivaient dans le layout
+ * du groupe. Ils en sont descendus : depuis le layout, ils contaminaient toute
+ * page ajoutée à côté (voir l'encadré de `lib/seo/metadonnees.ts`).
+ */
+export const metadata = metadonneesDePage("/");
 
 /**
  * COMPOSANT SERVEUR.
@@ -57,21 +66,14 @@ export default async function LandingPage() {
         </Suspense>
 
         <Faq />
+
+        {/* Les six mêmes questions que la section ci-dessus : le balisage les
+            LIT, il ne les recopie pas. Un balisage qui annoncerait une réponse
+            que la page n'affiche plus est ce que Google sanctionne. */}
+        <DonneesStructurees donnees={schemaFaq()} />
       </main>
 
       <SiteFooter />
     </>
   );
-}
-
-async function SectionTarifs({ isAuthenticated }: { isAuthenticated: boolean }) {
-  const reponse = await getPublicPlans();
-  // `getPublicPlans` rattrape ses propres erreurs et rend `success: false` :
-  // un backend arrêté donne une section vide qui parle, jamais une page cassée.
-  const plans =
-    reponse.success && reponse.data
-      ? [...reponse.data].sort((a, b) => a.sort_order - b.sort_order)
-      : [];
-
-  return <Pricing plans={plans} isAuthenticated={isAuthenticated} />;
 }

@@ -14,10 +14,24 @@
  * referait exactement le défaut qu'on corrige.
  */
 
+/**
+ * ⚠ TROIS PAGES RÉELLES, PLUS AUCUNE ANCRE.
+ *
+ * `SiteHeader` est monté sur TOUTES les pages publiques, et une ancre nue comme
+ * « #comptoir » résout, depuis /tarifs, en « /tarifs#comptoir » : la cible
+ * n'existe pas, le lien ne fait rien, et rien ne le signale. Le passage à des
+ * pages ferme ce piège par construction, et donne à chaque page du site trois
+ * liens internes vers des URL indexables, ce qu'une ancre ne vaut pas.
+ *
+ * « Fonctionnalités » plutôt que « Tarifs » : la droite de la barre porte déjà
+ * « Ouvrir un compte », donc l'intention d'achat est servie. Ce qui manque à
+ * quelqu'un qui arrive sur les mentions légales, c'est de savoir CE QUE FAIT le
+ * produit. Les tarifs restent au pied de page et sur l'accueil.
+ */
 export const NAV = [
-  { href: "#comptoir", label: "Produit" },
-  { href: "#tarifs", label: "Tarifs" },
-  { href: "#questions", label: "Questions" },
+  { href: "/", label: "Accueil" },
+  { href: "/fonctionnalites", label: "Fonctionnalités" },
+  { href: "/contact", label: "Nous joindre" },
 ] as const;
 
 export const HERO = {
@@ -427,9 +441,10 @@ export const PIED = {
     {
       titre: "Produit",
       liens: [
-        { href: "#comptoir", label: "Ce que ça fait" },
-        { href: "#tarifs", label: "Tarifs" },
-        { href: "#questions", label: "Questions" },
+        { href: "/fonctionnalites", label: "Fonctionnalités" },
+        { href: "/caisse-hors-ligne", label: "La caisse hors ligne" },
+        { href: "/tarifs", label: "Tarifs" },
+        { href: "/#questions", label: "Questions" },
       ],
     },
     {
@@ -438,6 +453,14 @@ export const PIED = {
         { href: "/auth/register", label: "Créer un compte" },
         { href: "/auth/login", label: "Connexion" },
         { href: "/auth/forgot-password", label: "Mot de passe oublié" },
+      ],
+    },
+    {
+      titre: "Entreprise",
+      liens: [
+        { href: "/contact", label: "Nous joindre" },
+        { href: "/mentions-legales", label: "Mentions légales" },
+        { href: "/politique-de-confidentialite", label: "Confidentialité" },
       ],
     },
   ],

@@ -21,7 +21,12 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      <ReactQueryDevtools initialIsOpen={false} />
+      {/* ⚠ GARDÉ PAR L'ENVIRONNEMENT. Sans cette condition, les devtools
+          partaient dans le bundle de PRODUCTION, page d'accueil publique
+          comprise, pour un outil que seul un développeur ouvre. */}
+      {process.env.NODE_ENV !== "production" && (
+        <ReactQueryDevtools initialIsOpen={false} />
+      )}
     </QueryClientProvider>
   );
 }

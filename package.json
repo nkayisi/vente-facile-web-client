@@ -11,7 +11,8 @@
     "check:server-actions": "node scripts/check-use-server.mjs",
     "generate:api-types": "openapi-typescript ./Vente\\ Facile\\ API.yaml -o ./types/api/schema.d.ts",
     "generate:api-types:live": "openapi-typescript http://localhost:8000/api/schema/ -o ./types/api/schema.d.ts",
-    "check:permissions": "node scripts/check-permissions.mjs"
+    "check:permissions": "node scripts/check-permissions.mjs",
+    "check:seo": "node scripts/check-seo.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

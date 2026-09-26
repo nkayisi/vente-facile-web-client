@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
 
+import { DonneesStructurees } from "@/components/seo/donnees-structurees";
+import { schemaOrganisation, schemaSiteWeb } from "@/lib/seo/schema";
+
 /**
  * Les deux faces d'affichage ne sont chargées QUE sur cette route : le tableau
  * de bord garde Inter seule et ne paie rien pour elles.
@@ -26,36 +29,30 @@ const plexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
 });
 
-const TITRE = "Vente Facile · La caisse qui n'attend pas le réseau";
-const DESCRIPTION =
-  "Caisse, stock et crédit client pour les commerces de la RDC. Vendez en francs et en dollars, comptez en casiers et en bouteilles, imprimez le ticket même hors ligne.";
-
+/**
+ * ⚠ CE LAYOUT NE PORTE QUE CE QUI EST COMMUN À TOUTES LES PAGES PUBLIQUES.
+ *
+ * Il portait jusqu'ici le titre, la description, `alternates.canonical: "/"` et
+ * `openGraph.url: "/"` de la page d'accueil. Les métadonnées Next se FUSIONNENT
+ * du layout vers la page : chaque page ajoutée dans ce groupe aurait donc hérité
+ * du canonical de l'ACCUEIL, c'est-à-dire aurait déclaré à Google « je suis un
+ * doublon, ne m'indexe pas ». Les pages auraient été écrites, déployées, et
+ * jamais indexées, sans qu'aucune erreur ne le signale.
+ *
+ * Ce qui est propre à une page vit désormais dans cette page, par
+ * `metadonneesDePage()` (voir `lib/seo/metadonnees.ts`).
+ *
+ * `robots` RESTE ici : le layout racine met toute l'application en `noindex`,
+ * ce qui est juste pour un back-office. Ce groupe est la surface publique, et
+ * c'est lui qui lève l'interdiction, pour toutes ses pages d'un coup.
+ */
 export const metadata: Metadata = {
   /**
-   * ⚠ `absolute`, ET SURTOUT PAS UNE CHAÎNE NUE. Le layout racine déclare
-   * `template: "%s | Vente Facile"`, et un `title` de chaîne dans un segment
-   * ENFANT augmente le gabarit du parent : l'onglet et chaque résultat de
-   * recherche sortaient « … qui n'attend pas le réseau | Vente Facile », la
-   * marque deux fois en soixante-six caractères. C'est la seule page que
-   * `robots.index` autorise à être indexée.
-   */
-  title: { absolute: TITRE },
-  description: DESCRIPTION,
-  alternates: { canonical: "/" },
-  openGraph: {
-    type: "website",
-    locale: "fr_CD",
-    url: "/",
-    siteName: "Vente Facile",
-    title: TITRE,
-    description: DESCRIPTION,
-  },
-  twitter: { card: "summary_large_image", title: TITRE, description: DESCRIPTION },
-  /**
-   * Le layout racine pose `index: false` sur toute l'application, ce qui est
-   * juste pour un back-office. Cette page-ci est la seule page publique : elle
-   * dit « Ouvrir un compte » et encaisse par Mobile Money derrière. On lève
-   * l'interdiction ICI et nulle part ailleurs.
+   * ⚠ PAS d'`openGraph` ici, et ce n'est pas un oubli. Une page qui déclare son
+   * `openGraph` REMPLACE celui de son layout au lieu de le compléter (mesuré :
+   * les métadonnées se fusionnent par champ de premier niveau). Un objet posé
+   * ici serait donc effacé par chaque page, et donnerait l'illusion d'une
+   * valeur par défaut qui n'en est pas une. Tout vit dans `metadonneesDePage()`.
    */
   robots: {
     index: true,
@@ -69,6 +66,9 @@ export default function MarketingLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className={`vf-marketing ${instrument.variable} ${plexMono.variable}`}>
+      {/* L'identité de l'éditeur, une fois pour toutes les pages publiques. */}
+      <DonneesStructurees donnees={schemaOrganisation()} />
+      <DonneesStructurees donnees={schemaSiteWeb()} />
       {children}
     </div>
   );
