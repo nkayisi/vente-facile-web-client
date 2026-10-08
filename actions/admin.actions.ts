@@ -1,7 +1,7 @@
 "use server";
 
 import axios from "axios";
-import { getErrorBody } from "@/lib/api/drf-error";
+import { formatAxiosErrorMessage, getErrorBody } from "@/lib/api/drf-error";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8005/api/v1";
 
@@ -669,5 +669,81 @@ export async function createAdminSubscription(
       || Object.values(getErrorBody(error) || {}).flat().join(", ")
       || "Erreur lors de la création de l'abonnement";
     return { success: false, message: detail };
+  }
+}
+
+// =============================================================================
+// PORTE DE MISE A JOUR MOBILE
+// =============================================================================
+
+export interface AppRelease {
+  android_minimum_version: string;
+  android_current_version: string;
+  android_store_url: string;
+  android_update_message: string;
+  ios_minimum_version: string;
+  ios_current_version: string;
+  ios_store_url: string;
+  ios_update_message: string;
+}
+
+/**
+ * Lit la porte de mise à jour du terminal mobile.
+ *
+ * ⚠ Un seuil posé ici rend INUTILISABLE tout terminal dont la version est
+ * inférieure. C'est le seul réglage de la plateforme dont une erreur ne se
+ * répare pas depuis un terminal : la seule sortie est de revenir ici et de
+ * vider le champ.
+ */
+export async function getAppRelease(
+  accessToken: string
+): Promise<{ success: boolean; data?: AppRelease; message?: string }> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/platform-admin/app-release/`, {
+      headers: getHeaders(accessToken),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: formatAxiosErrorMessage(
+        error,
+        "Erreur lors du chargement de la porte de mise à jour"
+      ),
+    };
+  }
+}
+
+/**
+ * Corrige la porte de mise à jour.
+ *
+ * ⚠ `errors` porte la carte des erreurs PAR CHAMP, et l'appelant doit s'en
+ * servir : les trois règles du serveur (forme du numéro, seuil qui ne dépasse
+ * pas la version du magasin, seuil qui mène quelque part) désignent chacune un
+ * champ précis. Les aplatir en un seul message ferait chercher lequel des huit
+ * est en cause.
+ */
+export async function updateAppRelease(
+  accessToken: string,
+  data: Partial<AppRelease>
+): Promise<{
+  success: boolean;
+  data?: AppRelease;
+  message?: string;
+  errors?: Record<string, unknown>;
+}> {
+  try {
+    const response = await axios.patch(
+      `${API_BASE_URL}/platform-admin/app-release/`,
+      data,
+      { headers: getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: formatAxiosErrorMessage(error, "Erreur lors de l'enregistrement"),
+      errors: getErrorBody(error),
+    };
   }
 }

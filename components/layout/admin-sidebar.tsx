@@ -10,6 +10,7 @@ import {
   Users,
   CreditCard,
   Receipt,
+  Smartphone,
   X,
   ArrowLeft,
   LogOut,
@@ -23,6 +24,7 @@ const adminMenuItems = [
   { title: "Utilisateurs", href: "/admin/users", icon: Users },
   { title: "Plans", href: "/admin/plans", icon: CreditCard },
   { title: "Abonnements", href: "/admin/subscriptions", icon: Receipt },
+  { title: "Application mobile", href: "/admin/application", icon: Smartphone },
 ];
 
 interface AdminSidebarProps {
