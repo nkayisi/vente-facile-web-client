@@ -113,6 +113,13 @@ import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import { useOrganization } from "@/components/auth/organization-checker";
 import type { Organization } from "@/actions/organization.actions";
+import { createMoneyHelpers } from "@/lib/currency";
+import {
+  CLE_DEVISE_AFFICHAGE,
+  deviseAffichageValide,
+  devisesAffichables,
+  prixAffiche,
+} from "@/lib/pos/affichage-devise";
 
 /**
  * Défaut serveur, et RIEN DE PLUS.
@@ -897,6 +904,47 @@ export default function POSPage() {
     coreLoyaltyDiscount(calculateTotal(), usePoints ? pointsToUse : 0, loyaltyProgram);
   const calculateNetTotal = () => r2(calculateTotal() - calculateLoyaltyDiscount());
 
+  // ┌────────────────────────────────────────────────────────────────────────┐
+  // │ LA DEVISE D'AFFICHAGE, ET CE N'EST PAS LA DEVISE DE FACTURATION.      │
+  // │                                                                        │
+  // │ T10 du retour de test : un marchand dont le catalogue est tenu en      │
+  // │ dollars doit pouvoir annoncer un prix en francs sans calculer de tête. │
+  // │ La facture reste en principale, le ticket n'est pas touché, et la      │
+  // │ carte montre les DEUX chiffres.                                        │
+  // │                                                                        │
+  // │ `aidesMonnaie` et non `currencies` : la seconde est la table           │
+  // │ d'ARITHMÉTIQUE du panier, celle-ci l'aide d'AFFICHAGE, et elle seule   │
+  // │ porte la liste des devises et la parité lisible.                       │
+  // └────────────────────────────────────────────────────────────────────────┘
+  const aidesMonnaie = useMemo(
+    () =>
+      createMoneyHelpers(orgCurrencies, {
+        code: defaultCurrency.code,
+        name: defaultCurrency.name,
+        symbol: defaultCurrency.symbol,
+        decimal_places: defaultCurrency.decimal_places,
+      }),
+    [orgCurrencies, defaultCurrency]
+  );
+  const [deviseAffichageBrute, setDeviseAffichageBrute] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      setDeviseAffichageBrute(localStorage.getItem(CLE_DEVISE_AFFICHAGE));
+    } catch {
+      // Un navigateur en navigation privée peut refuser : on s'en passe.
+    }
+  }, []);
+  const deviseAffichage = deviseAffichageValide(deviseAffichageBrute, aidesMonnaie);
+  const devisesPossibles = devisesAffichables(aidesMonnaie);
+  const choisirDeviseAffichage = (code: string) => {
+    setDeviseAffichageBrute(code);
+    try {
+      localStorage.setItem(CLE_DEVISE_AFFICHAGE, code);
+    } catch {
+      // Le choix vaut pour la session en cours : c'est un confort, pas une donnée.
+    }
+  };
+
   const getPrimaryCurrency = () => orgCurrencies.find(c => c.is_primary);
   const primaryCode = () => currencies.primary;
   const rateOf = (code: string) => currencies.rateOf(code);
@@ -1591,6 +1639,31 @@ export default function POSPage() {
               className="pl-10 h-12 text-lg bg-white"
             />
           </div>
+          {/*
+            ⚠ UN CHOIX UNIQUE N'EST PAS UN CHOIX : la rangée ne paraît que sur
+            un établissement réellement multi-devise. Et elle dit « Afficher en »
+            plutôt que « Devise » : ce n'est PAS la devise de facturation, et le
+            confondre ferait croire qu'on change ce qui sortira sur le ticket.
+          */}
+          {devisesPossibles.length > 1 && (
+            <div className="hidden shrink-0 items-center gap-1 sm:flex">
+              <span className="text-xs text-gray-500">Afficher en</span>
+              {devisesPossibles.map((code) => (
+                <Button
+                  key={code}
+                  type="button"
+                  size="sm"
+                  variant={code === deviseAffichage ? "default" : "outline"}
+                  className="h-12 px-3"
+                  onClick={() => choisirDeviseAffichage(code)}
+                  aria-label={`Afficher les prix en ${code}`}
+                >
+                  {code}
+                </Button>
+              ))}
+            </div>
+          )}
+
           {/* Close Session Button - Desktop only */}
           <div className="hidden lg:block">
             <Button
@@ -1679,6 +1752,17 @@ export default function POSPage() {
                   !isPackageOnlyProduct && packagingFactorOf(product) && wholesalePrice > 0
                     ? `${formatPrice(wholesalePrice)} / ${packageLabel}`
                     : null;
+                // ⚠ LE PRIX CONVERTI SUIT LE PRIX FACTURÉ, il ne le remplace
+                // pas. La facture reste libellée en devise principale :
+                // montrer le converti seul ferait croire que le ticket
+                // sortira ainsi. T10 du retour de test.
+                const convertedPriceLabel = prixAffiche(
+                  isPackageOnlyProduct
+                    ? wholesalePrice
+                    : parseFloat(product.selling_price || "0"),
+                  deviseAffichage,
+                  aidesMonnaie
+                ).converti;
 
                 const cardVisual = (
                   <CardContent className="flex h-full min-h-[88px] gap-2.5 p-2.5">
@@ -1754,6 +1838,11 @@ export default function POSPage() {
                           {secondaryPriceLabel && (
                             <p className="text-[10px] leading-tight tabular-nums text-slate-500">
                               {secondaryPriceLabel}
+                            </p>
+                          )}
+                          {convertedPriceLabel && (
+                            <p className="text-[10px] leading-tight tabular-nums text-slate-500">
+                              {convertedPriceLabel}
                             </p>
                           )}
                         </div>
