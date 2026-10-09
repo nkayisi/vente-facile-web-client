@@ -22,25 +22,26 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import {
+  Activity,
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
   BarChart3,
-  TrendingUp,
-  TrendingDown,
+  Building2,
+  Calendar,
+  Clock,
+  CreditCard,
   DollarSign,
-  ShoppingCart,
+  Download,
+  Loader2,
   Package,
+  PieChart,
+  RefreshCw,
+  ShoppingCart,
+  TrendingDown,
+  TrendingUp,
   Users,
   Wallet,
-  AlertTriangle,
-  Calendar,
-  Loader2,
-  ArrowUpRight,
-  ArrowDownRight,
-  RefreshCw,
-  Download,
-  PieChart,
-  Activity,
-  CreditCard,
-  Clock,
 } from "lucide-react";
 import {
   BarChart,
@@ -125,6 +126,7 @@ import {
 import { DataPagination } from "@/components/shared/DataPagination";
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { PERIOD_OPTIONS } from "@/lib/reports/periods";
 
 /**
  * Les huit onglets, dans leur ordre d'affichage.
@@ -169,17 +171,6 @@ const ONGLET_LABELS = Object.fromEntries(
  * l'ajout des fenêtres glissantes - les seules qui s'emboîtent quel que soit
  * le quantième, comme au tableau de bord.
  */
-const PERIOD_OPTIONS = [
-  { value: "last_7_days", label: "7 derniers jours" },
-  { value: "last_30_days", label: "30 derniers jours" },
-  { value: "last_12_months", label: "12 derniers mois" },
-  { value: "today", label: "Aujourd'hui" },
-  { value: "week", label: "Cette semaine" },
-  { value: "month", label: "Ce mois" },
-  { value: "quarter", label: "Ce trimestre" },
-  { value: "year", label: "Cette année" },
-  { value: "custom", label: "Personnalisé" },
-];
 
 const COLORS = ["#f97316", "#3b82f6", "#22c55e", "#eab308", "#8b5cf6", "#ec4899", "#14b8a6", "#f43f5e"];
 
@@ -685,6 +676,18 @@ export default function ReportsPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
             Actualiser
           </Button>
+
+          {/* Le rapport VENTILÉ par entrepôt est une rubrique à part, comme les
+              créances : les huit onglets ci-dessous se FILTRENT par dépôt, ils
+              n'en rendent jamais plusieurs à la fois. Le lien est ici plutôt
+              qu'en carreau faute de chiffre unique à y mettre - un total par
+              entrepôt n'en est pas un. */}
+          <Link href="/dashboard/reports/by-warehouse">
+            <Button variant="outline" size="sm">
+              <Building2 className="mr-2 h-4 w-4" />
+              Par entrepôt
+            </Button>
+          </Link>
         </div>
       </div>
 

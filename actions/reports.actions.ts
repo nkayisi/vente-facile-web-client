@@ -542,6 +542,59 @@ export async function getReceivablesReport(
 }
 
 // =============================================================================
+// RAPPORT FINANCIER PAR ENTREPÔT
+// =============================================================================
+
+export interface WarehouseReportRow {
+  warehouse_id: string;
+  warehouse_name: string;
+  warehouse_code: string;
+  sales_count: number;
+  sales_total: string;
+  expenses_count: number;
+  expenses_total: string;
+  cash_in: string;
+  cash_out: string;
+  cash_net: string;
+  stock_value: string;
+  result: string;
+}
+
+export interface WarehouseReport {
+  currency: string;
+  period: { start: string; end: string };
+  warehouses: WarehouseReportRow[];
+  /**
+   * ⚠ LE TOTAL PEUT DÉPASSER LA SOMME DES LIGNES, et ce n'est pas une erreur.
+   *
+   * Une vente sans entrepôt, une charge d'établissement, un apport sans tiroir
+   * n'entrent dans aucune ligne : les imputer à un dépôt gonflerait celui-là,
+   * les imputer à tous ferait dépasser le total. L'écran DIT l'écart plutôt
+   * que de laisser le lecteur refaire l'addition.
+   */
+  total: Omit<WarehouseReportRow, "warehouse_id" | "warehouse_name" | "warehouse_code">;
+}
+
+export async function getWarehouseReport(
+  accessToken: string,
+  organizationId: string,
+  filters?: ReportFilters
+): Promise<ApiResponse<WarehouseReport>> {
+  try {
+    const params = buildReportParams(filters);
+    const response = await axios.get(
+      `${API_BASE_URL}/reports/statistics/by-warehouse/?${params.toString()}`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error("[Reports] Get warehouse report error:", getErrorBody(error) || (error as Error)?.message);
+    return { success: false, message: "Erreur lors de la récupération du rapport par entrepôt" };
+  }
+}
+
+// =============================================================================
 // RAPPORT JOURNALIER DE CAISSE
 // =============================================================================
 
@@ -814,7 +867,8 @@ export type ReportTab =
    * rubrique. Elles passent par le même registre pour porter la même marque
    * que les huit autres documents, et le terminal reçoit le même fichier.
    */
-  | "receivables";
+  | "receivables"
+  | "by-warehouse";
 
 export interface ReportExportFilters extends Omit<ReportFilters, "limit" | "page" | "page_size"> {
   /** L'employé, pour le seul onglet « Par utilisateur ». */
