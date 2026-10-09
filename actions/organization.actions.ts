@@ -532,3 +532,65 @@ export async function getDashboardStats(
     };
   }
 }
+
+// =============================================================================
+// REMISE À ZÉRO D'UN ESSAI
+// =============================================================================
+
+export interface TrialResetResult {
+  dry_run: boolean;
+  /** Ce qui a été (ou serait) effacé, par modèle : `{"sales.Sale": 12}`. */
+  deleted: Record<string, number>;
+  total: number;
+  /** Ce qui RESTE, déclaré par le serveur : c'est la moitié du contrat. */
+  kept: string[];
+}
+
+/**
+ * Efface les OPÉRATIONS d'un établissement d'essai, et garde sa configuration.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ TROIS VERROUS CÔTÉ SERVEUR, ET L'ÉCRAN N'EN REMPLACE AUCUN.             │
+ * │                                                                          │
+ * │ Propriétaire seul, abonnement en essai, et la `confirmation` doit être   │
+ * │ le NOM de l'établissement. Un refus est un 400 qui NOMME ce qu'il        │
+ * │ attend : l'écran le rend tel quel plutôt que de le retraduire.           │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * `dryRun` rend les mêmes comptes SANS rien effacer, et sans exiger la
+ * confirmation : c'est ce qu'on montre avant de la demander.
+ */
+export async function resetTrialData(
+  accessToken: string,
+  organizationId: string,
+  options: { confirmation?: string; dryRun?: boolean } = {}
+): Promise<{ success: boolean; message?: string; data?: TrialResetResult }> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/organizations/${organizationId}/reset-trial/`,
+      {
+        confirmation: options.confirmation ?? "",
+        dry_run: Boolean(options.dryRun),
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "X-Organization-ID": organizationId,
+        },
+      }
+    );
+
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    // Le message du serveur PRIME : il nomme le nom à saisir, ou dit pourquoi
+    // l'essai est requis. Le remplacer par une phrase générique retirerait la
+    // seule information utile.
+    const corps = getErrorBody(error) as { detail?: string } | undefined;
+    console.error("[Organization] Reset trial error:", corps || (error as Error)?.message);
+    return {
+      success: false,
+      message: corps?.detail ?? "La remise à zéro n'a pas pu être effectuée",
+    };
+  }
+}

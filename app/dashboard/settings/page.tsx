@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { updateOrganization, getOrganization, Organization } from "@/actions/organization.actions";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { usePermissions } from "@/components/auth/permissions-provider";
+import { TrialResetCard } from "@/components/settings/TrialResetCard";
 import {
   updateOrganizationSchema,
   UpdateOrganizationFormData,
@@ -380,6 +381,10 @@ export default function GeneralSettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* La remise à zéro d'un essai : elle ne PARAÎT que sur un essai, le
+          composant s'en charge. T8 du retour de test, demandé deux fois. */}
+      <TrialResetCard />
     </div>
   );
 }
