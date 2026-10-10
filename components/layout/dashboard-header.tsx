@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, Bell, Settings, LogOut, User, ChevronDown, Menu } from "lucide-react";
+import { Settings, LogOut, User, ChevronDown, Menu } from "lucide-react";
 import Link from "next/link";
 import { getUserProfile } from "@/actions/auth.actions";
 import { getMediaUrl } from "@/lib/format";
@@ -75,11 +75,11 @@ export function DashboardHeader({ onMenuClick }: DashboardHeaderProps) {
         {/* Right Section */}
         <div className="flex items-center gap-2 lg:gap-4">
 
-          {/* Notifications */}
-          {/* <Button variant="ghost" size="icon" className="text-gray-600 relative">
-            <Bell className="h-5 w-5" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full"></span>
-          </Button> */}
+          {/* ⚠ ELLE ÉTAIT COMMENTÉE ICI, faute d'avoir quoi que ce soit à
+              montrer : `apps/notifications` portait cinq modèles et aucune
+              vue. La pastille porte désormais un DÉCOMPTE plutôt qu'un point :
+              « il y a quelque chose » n'aide pas à décider si on ouvre. */}
+          <NotificationBell />
 
           {/* User Menu */}
           <DropdownMenu>
