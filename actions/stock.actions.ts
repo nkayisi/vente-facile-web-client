@@ -1339,3 +1339,201 @@ export async function exportStockSupplies(
     }
   );
 }
+
+// =============================================================================
+// RÉQUISITIONS DE PRODUITS
+// =============================================================================
+//
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │ UNE RÉQUISITION N'EST PAS UNE COMMANDE D'ACHAT.                         │
+// │                                                                          │
+// │ `PurchaseOrder.supplier` est obligatoire côté serveur, alors qu'une      │
+// │ réquisition dit « il nous manque ceci » sans qu'on sache encore chez qui │
+// │ l'acheter - c'est même souvent la question qu'on se pose en la lisant.   │
+// │ Elle n'achète rien et ne bouge aucun stock, même approuvée.              │
+// └──────────────────────────────────────────────────────────────────────────┘
+
+export interface RequisitionItem {
+  id: string;
+  product: string;
+  product_name?: string;
+  product_sku?: string | null;
+  unit_name?: string | null;
+  quantity_requested: string;
+  /** Le stock AU MOMENT de la demande. Figé : il dit pourquoi on a demandé. */
+  stock_at_request: string;
+  reorder_point_at_request: string;
+  notes?: string;
+}
+
+export interface Requisition {
+  id: string;
+  reference: string;
+  warehouse: string;
+  warehouse_name?: string;
+  status: "draft" | "submitted" | "approved" | "rejected" | "cancelled";
+  status_display?: string;
+  notes?: string;
+  requested_by?: string | null;
+  requested_by_name?: string;
+  requested_at: string;
+  decided_by?: string | null;
+  decided_by_name?: string;
+  decided_at?: string | null;
+  decision_notes?: string;
+  items: RequisitionItem[];
+}
+
+/** Une ligne que le serveur propose : déjà sous son seuil. */
+export interface RequisitionProposal {
+  product: string;
+  product_name: string;
+  product_sku: string | null;
+  unit_name: string | null;
+  stock: number;
+  reorder_point: number;
+  /** Ce qu'il faudrait acheter pour remonter AU seuil. Une PROPOSITION. */
+  suggested: number;
+}
+
+export interface RequisitionFilters {
+  status?: string;
+  warehouse?: string;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export async function getRequisitions(
+  accessToken: string,
+  organizationId: string,
+  filters?: RequisitionFilters
+): Promise<ApiResponse<PaginatedResponse<Requisition>>> {
+  try {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.warehouse) params.append("warehouse", filters.warehouse);
+    if (filters?.search) params.append("search", filters.search);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.page_size) params.append("page_size", String(filters.page_size));
+
+    const response = await axios.get(
+      `${API_BASE_URL}/requisitions/?${params.toString()}`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error("[stock] Get requisitions error:", getErrorBody(error) || (error as Error)?.message);
+    return { success: false, message: "Erreur lors de la récupération des réquisitions" };
+  }
+}
+
+export async function getRequisition(
+  accessToken: string,
+  organizationId: string,
+  id: string
+): Promise<ApiResponse<Requisition>> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/requisitions/${id}/`, {
+      headers: getHeaders(accessToken, organizationId),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error("[stock] Get requisition error:", getErrorBody(error) || (error as Error)?.message);
+    return { success: false, message: "Erreur lors de la récupération de la réquisition" };
+  }
+}
+
+/**
+ * Les articles déjà sous leur seuil, prêts à être réquisitionnés.
+ *
+ * `rupture` s'en tient aux rayons VIDES : c'est ce qu'on emporte au marché
+ * quand on n'a pas le temps de tout racheter.
+ */
+export async function getRequisitionProposal(
+  accessToken: string,
+  organizationId: string,
+  warehouse: string,
+  rupture = false
+): Promise<ApiResponse<{ warehouse: string; warehouse_name: string; items: RequisitionProposal[] }>> {
+  try {
+    const params = new URLSearchParams({ warehouse });
+    if (rupture) params.append("rupture", "true");
+    const response = await axios.get(
+      `${API_BASE_URL}/requisitions/proposer/?${params.toString()}`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    const body = getErrorBody(error);
+    console.error("[stock] Get requisition proposal error:", body || (error as Error)?.message);
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors du calcul de la proposition") };
+  }
+}
+
+/**
+ * Crée une réquisition en BROUILLON.
+ *
+ * ⚠ LE STOCK ET LE SEUIL NE S'ENVOIENT PAS. Le serveur les relève lui-même à
+ * la création : les laisser saisir permettrait d'écrire une pénurie qui
+ * n'existe pas, sur un document qui sert à engager de l'argent.
+ */
+export async function createRequisition(
+  accessToken: string,
+  organizationId: string,
+  data: {
+    warehouse: string;
+    notes?: string;
+    items: { product: string; quantity_requested: string; notes?: string }[];
+  }
+): Promise<ApiResponse<Requisition>> {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/requisitions/`, data, {
+      headers: getHeaders(accessToken, organizationId),
+    });
+    revalidatePath("/dashboard/stock/requisitions");
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    const body = getErrorBody(error);
+    console.error("[stock] Create requisition error:", body || (error as Error)?.message);
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la création de la réquisition"), errors: body };
+  }
+}
+
+/**
+ * Fait avancer une réquisition.
+ *
+ * Un refus y est DÉTERMINISTE (« déjà soumise », « déjà décidée ») : le
+ * serveur rend 400 avec son motif, pas une erreur passagère à réessayer.
+ */
+export async function transitionRequisition(
+  accessToken: string,
+  organizationId: string,
+  id: string,
+  action: "submit" | "cancel" | "approve" | "reject",
+  notes?: string
+): Promise<ApiResponse<Requisition>> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/requisitions/${id}/${action}/`,
+      { notes: notes ?? "" },
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+    revalidatePath("/dashboard/stock/requisitions");
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    const body = getErrorBody(error);
+    console.error("[stock] Transition requisition error:", body || (error as Error)?.message);
+    return { success: false, message: formatAxiosErrorMessage(error, "L'opération n'a pas pu être effectuée"), errors: body };
+  }
+}
+
+/** Le bordereau, mis en page par le serveur comme tous les documents A4. */
+export async function exportRequisition(
+  accessToken: string,
+  organizationId: string,
+  id: string,
+  format: ExportFormat
+): Promise<ExportFile> {
+  return fetchExportFile(`/requisitions/${id}/export/`, accessToken, organizationId, format);
+}
