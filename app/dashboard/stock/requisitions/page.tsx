@@ -81,6 +81,26 @@ export default function RequisitionsPage() {
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [entrepots, setEntrepots] = useState<Warehouse[]>([]);
   const [recherche, setRecherche] = useState("");
+  /**
+   * La recherche DIFFÉRÉE, et c'est elle que `charger` lit.
+   *
+   * ┌──────────────────────────────────────────────────────────────────────────┐
+   * │ UNE REQUÊTE PAR FRAPPE, ET LA PLUS LENTE POUVAIT GAGNER.                │
+   * │                                                                          │
+   * │ `recherche` était une dépendance directe de `charger`, que l'effet       │
+   * │ relance à chaque changement d'identité : taper « savon » émettait CINQ   │
+   * │ `GET /requisitions/`, et comme rien ne les séquence, une réponse         │
+   * │ précoce plus lente pouvait arriver EN DERNIER et rendre les résultats de │
+   * │ « sa » sous la requête « savon ».                                        │
+   * │                                                                          │
+   * │ Cette page avait déjà traité le défaut VOISIN - son drapeau de premier   │
+   * │ chargement, qui empêche le champ de se démonter - mais pas celui-ci.     │
+   * └──────────────────────────────────────────────────────────────────────────┘
+   *
+   * Les deux pages sœurs établissent la convention à 350 ms :
+   * `stock/movements/page.tsx` et `sales/history/page.tsx`.
+   */
+  const [rechercheDifferee, setRechercheDifferee] = useState("");
   const [statut, setStatut] = useState<string>("all");
 
   const [page, setPage] = useState(1);
@@ -121,7 +141,7 @@ export default function RequisitionsPage() {
     try {
       const [liste, depots] = await Promise.all([
         getRequisitions(jeton, organization.id, {
-          search: recherche || undefined,
+          search: rechercheDifferee || undefined,
           status: statut === "all" ? undefined : statut,
           warehouse: effectif.warehouse ?? undefined,
           page,
@@ -156,7 +176,17 @@ export default function RequisitionsPage() {
        */
       setChargement(false);
     }
-  }, [jeton, organization, recherche, statut, effectif.warehouse, page, entrepots.length]);
+  }, [
+    jeton, organization, rechercheDifferee, statut, effectif.warehouse, page,
+    entrepots.length,
+  ]);
+
+  // La frappe retombée, la requête part. Le nettoyage annule la précédente :
+  // c'est lui qui garantit qu'il n'en part qu'UNE.
+  useEffect(() => {
+    const minuteur = setTimeout(() => setRechercheDifferee(recherche.trim()), 350);
+    return () => clearTimeout(minuteur);
+  }, [recherche]);
 
   useEffect(() => {
     if (organization) {
