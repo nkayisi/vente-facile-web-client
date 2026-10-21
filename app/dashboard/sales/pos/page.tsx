@@ -76,7 +76,12 @@ import { cn } from "@/lib/utils";
 import { StatValue } from "@/components/shared/StatValue";
 import { ProductThumb } from "@/components/products/product-thumb";
 import { PackagedSelection, QuantityPicker } from "@/components/sales/quantity-picker";
-import { ChannelAvailability, remainingChannels } from "@/lib/packaging";
+import {
+  ChannelAvailability,
+  remainingChannels,
+  roundQuantity,
+  MIN_QUANTITY,
+} from "@/lib/packaging";
 import {
   MONEY_EPS,
   r2,
@@ -94,6 +99,7 @@ import {
   loyaltyDiscount as coreLoyaltyDiscount,
   evaluateCredit as coreEvaluateCredit,
   buildSalePayload,
+  totauxParDevise,
   addableBase as coreAddableBase,
   addableChannels as coreAddableChannels,
   addableLoose as coreAddableLoose,
@@ -161,6 +167,17 @@ interface CartItem {
   packageQuantity: number;
   unit_price: number;
   discount_percentage: number;
+  /**
+   * Devise dans laquelle le prix de CETTE ligne est annoncé au client.
+   *
+   * ⚠ `unit_price` RESTE EN DEVISE PRINCIPALE, comme le noyau le documente :
+   * ce champ ne dit QUE la monnaie d'annonce, et la conversion a lieu à
+   * l'affichage et à l'envoi. Lui faire porter la devise déplacerait la
+   * conversion dans les CONTRÔLES - plafond de crédit, valeur des points.
+   *
+   * Absente : la ligne suit la facture, ce que toute vente a fait jusqu'ici.
+   */
+  priceCurrency?: string;
 }
 
 /** Contenu d'un conditionnement, ou `null` si le produit se vend à l'unité. */
@@ -254,6 +271,8 @@ function CartLineQuantityEditor({
   sealedAvailable,
   onUnpack,
   maxDiscountPercent,
+  currencyCodes,
+  invoiceCurrency,
   onConfirm,
   onRemove,
   onStep,
@@ -267,6 +286,9 @@ function CartLineQuantityEditor({
   sealedAvailable: number | null;
   onUnpack?: (packages: number) => Promise<void>;
   maxDiscountPercent: number;
+  /** Devises de l'établissement, pour annoncer une ligne dans l'une d'elles. */
+  currencyCodes: string[];
+  invoiceCurrency: string;
   onConfirm: (selection: PackagedSelection) => void;
   onRemove: () => void;
   onStep: (delta: number) => void;
@@ -300,6 +322,9 @@ function CartLineQuantityEditor({
         onUnpack={onUnpack}
         discountPercent={item.discount_percentage}
         maxDiscountPercent={maxDiscountPercent}
+        currencyCodes={currencyCodes}
+        invoiceCurrency={invoiceCurrency}
+        initialCurrency={item.priceCurrency}
         onConfirm={onConfirm}
         onRemove={onRemove}
         submitLabel="Mettre à jour"
@@ -642,11 +667,15 @@ export default function POSPage() {
    */
   const addToCart = (product: Product, selection: PackagedSelection) => {
     const factor = packagingFactorOf(product);
-    const packages = factor ? Math.max(0, Math.floor(selection.packages)) : 0;
-    const loose = Math.max(0, Math.floor(selection.loose));
+    // ⚠ `Math.floor` TRONQUAIT, et le seuil était à 1 : « 0,5 kg de farine »
+    // était refusé alors que le serveur l'accepte depuis toujours
+    // (`DecimalField(15, 3)` + `MinValueValidator(0.001)`). On quantise, comme
+    // le serveur qui travaille en `Decimal`.
+    const packages = factor ? Math.max(0, roundQuantity(selection.packages)) : 0;
+    const loose = Math.max(0, roundQuantity(selection.loose));
     const qty = factor ? packages * factor + loose : loose;
 
-    if (qty < 1) {
+    if (qty < MIN_QUANTITY) {
       toast.error("Quantité invalide");
       return;
     }
@@ -706,6 +735,8 @@ export default function POSPage() {
           packageQuantity: packages,
           unit_price: parseFloat(product.selling_price || "0"),
           discount_percentage: 0,
+          // La devise d'ANNONCE. Absente : la ligne suit la facture.
+          ...(selection.priceCurrency ? { priceCurrency: selection.priceCurrency } : {}),
         },
       ]);
     }
@@ -725,11 +756,15 @@ export default function POSPage() {
     if (!item) return;
 
     const factor = packagingFactorOf(item.product);
-    const packages = factor ? Math.max(0, Math.floor(selection.packages)) : 0;
-    const loose = Math.max(0, Math.floor(selection.loose));
+    // ⚠ `Math.floor` TRONQUAIT, et le seuil était à 1 : « 0,5 kg de farine »
+    // était refusé alors que le serveur l'accepte depuis toujours
+    // (`DecimalField(15, 3)` + `MinValueValidator(0.001)`). On quantise, comme
+    // le serveur qui travaille en `Decimal`.
+    const packages = factor ? Math.max(0, roundQuantity(selection.packages)) : 0;
+    const loose = Math.max(0, roundQuantity(selection.loose));
     const nextQuantity = factor ? packages * factor + loose : loose;
 
-    if (nextQuantity < 1) {
+    if (nextQuantity < MIN_QUANTITY) {
       toast.error("La ligne doit contenir au moins une unité");
       return;
     }
@@ -754,6 +789,7 @@ export default function POSPage() {
       ...item,
       packageQuantity: packages,
       quantity: nextQuantity,
+      priceCurrency: selection.priceCurrency,
       discount_percentage:
         selection.discountPercentage === undefined
           ? item.discount_percentage
@@ -869,6 +905,19 @@ export default function POSPage() {
   // ~90 sites d'appel de cette page ; elles ne portent plus aucune règle.
 
   /** Table de devises de l'organisation, refaite seulement quand elle change. */
+  /**
+   * Les devises dans lesquelles un prix peut être ANNONCÉ, principale en tête.
+   *
+   * ⚠ Ce sont celles de l'établissement : annoncer dans une monnaie qu'il ne
+   * tient pas n'aurait aucun taux à appliquer, et le serveur refuserait.
+   */
+  const currencyCodes = useMemo(() => {
+    const autres = orgCurrencies
+      .map(c => c.currency_code)
+      .filter(c => c && c !== defaultCurrency.code);
+    return [defaultCurrency.code, ...[...new Set(autres)].sort()];
+  }, [orgCurrencies, defaultCurrency]);
+
   const currencies = useMemo(
     () => createCurrencyTable(orgCurrencies, defaultCurrency),
     [orgCurrencies, defaultCurrency],
@@ -966,6 +1015,20 @@ export default function POSPage() {
   };
   // Devise de la vente (facture).
   const saleCurrency = () => invoiceCurrency || primaryCode();
+
+  /**
+   * Les sous-totaux ANNONCÉS, par devise. Une seule entrée quand tout partage
+   * la devise de facture, et le bloc disparaît alors.
+   */
+  const ventilationDuPanier = useMemo(
+    () =>
+      totauxParDevise({
+        lines: cart.map(i => ({ ...i, productId: i.product.id })) as BasketLine[],
+        currencies,
+        invoiceCurrency: invoiceCurrency || defaultCurrency.code,
+      }),
+    [cart, currencies, invoiceCurrency, defaultCurrency]
+  );
   /**
    * Total de la facture exprimé dans la devise de la vente.
    *
@@ -1902,6 +1965,8 @@ export default function POSPage() {
                         looseAvailable={addableLoose(product)}
                         sealedAvailable={addableSealed(product)}
                         onUnpack={unpackHandlerFor(product)}
+                        currencyCodes={currencyCodes}
+                        invoiceCurrency={invoiceCurrency}
                         onConfirm={(selection) => addToCart(product, selection)}
                       >
                         <button
@@ -2067,6 +2132,8 @@ export default function POSPage() {
                         sealedAvailable={addableSealed(item.product, true)}
                         onUnpack={unpackHandlerFor(item.product)}
                         maxDiscountPercent={maxSaleDiscountPercent}
+                        currencyCodes={currencyCodes}
+                        invoiceCurrency={invoiceCurrency}
                         onConfirm={(selection) => setCartLineSelection(index, selection)}
                         onRemove={() => removeFromCart(index)}
                         onStep={(delta) => updateQuantity(index, delta)}
@@ -2244,6 +2311,8 @@ export default function POSPage() {
                       sealedAvailable={addableSealed(item.product, true)}
                       onUnpack={unpackHandlerFor(item.product)}
                       maxDiscountPercent={maxSaleDiscountPercent}
+                      currencyCodes={currencyCodes}
+                      invoiceCurrency={invoiceCurrency}
                       onConfirm={(selection) => setCartLineSelection(index, selection)}
                       onRemove={() => removeFromCart(index)}
                       onStep={(delta) => updateQuantity(index, delta)}
@@ -2276,6 +2345,33 @@ export default function POSPage() {
               className="h-8 tabular-nums"
             />
           </div>
+
+          {/* ┌──────────────────────────────────────────────────────────┐
+              │ CE QUI A ÉTÉ ANNONCÉ, DEVISE PAR DEVISE.                 │
+              │                                                          │
+              │ Ces chiffres sont ceux que le caissier a dits au client, │
+              │ et ceux qui sortiront sur le ticket. Leur SOMME n'existe │
+              │ dans aucune monnaie : c'est « Total » plus bas qui donne │
+              │ la facture, en convertissant chaque ligne au taux de sa  │
+              │ devise.                                                   │
+              │                                                          │
+              │ Le bloc ne paraît QUE sur une vente réellement mixte.    │
+              └──────────────────────────────────────────────────────────┘ */}
+          {ventilationDuPanier.length > 1 && (
+            <div className="mb-1 rounded-md bg-slate-50 px-2 py-1.5">
+              <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                Annoncé au client
+              </p>
+              {ventilationDuPanier.map(v => (
+                <div key={v.currency} className="flex justify-between text-xs text-slate-700">
+                  <span>{v.currency}</span>
+                  <span className="tabular-nums">
+                    {currencies.money(v.total, v.currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Totals */}
           <div className="space-y-0.5 text-xs leading-tight">

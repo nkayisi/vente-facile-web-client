@@ -106,9 +106,25 @@ export interface PaymentMethod {
   icon: string;
 }
 
+/** Un sous-total de vente, dans UNE devise d'annonce. */
+export interface SaleCurrencyTotal {
+  currency: string;
+  subtotal: string;
+  tax_amount: string;
+  discount_amount: string;
+  total: string;
+  exchange_rate: string;
+}
+
 export interface SaleItem {
   id: string;
   product: string;
+  /**
+   * Devise dans laquelle le prix de cette ligne a été annoncé au client.
+   * Vide : celle de la facture, ce que toute vente a fait jusqu'ici.
+   */
+  price_currency?: string;
+  price_exchange_rate?: string;
   product_name: string;
   product_sku: string;
   variant: string | null;
@@ -182,6 +198,15 @@ export interface Payment {
 export interface Sale {
   id: string;
   reference: string;
+  /**
+   * Les sous-totaux par devise d'annonce, rendus sur le DÉTAIL seulement.
+   *
+   * ⚠ ILS NE S'ADDITIONNENT PAS : `total` reste celui de la facture, somme
+   * convertie au taux figé de chaque ligne. Les deux coexistent parce qu'ils
+   * ne répondent pas à la même question - l'un est ce qui a été dit au
+   * client, l'autre ce qu'il doit.
+   */
+  currency_totals?: SaleCurrencyTotal[];
   session: string | null;
   register: string | null;
   register_name: string | null;

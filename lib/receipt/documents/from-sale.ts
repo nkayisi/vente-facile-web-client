@@ -38,6 +38,9 @@ export function saleReceiptFromSale(
     unitPrice: num(item.unit_price),
     discountPercentage: num(item.discount_percentage),
     total: num(item.total),
+    // La devise dans laquelle CE prix a été annoncé. Le serveur la rend sur
+    // la ligne ; absente, elle suit la facture et rien ne change au papier.
+    currency: item.price_currency || undefined,
   }));
 
   return {
@@ -63,6 +66,13 @@ export function saleReceiptFromSale(
     loyaltyRedemptionAmount: num(sale.loyalty_redemption_amount),
     total: num(sale.total),
     currency: sale.currency,
+    // Les sous-totaux ANNONCÉS, tels que le serveur les a figés avec leurs
+    // taux. On ne les recalcule pas : un ticket est le pire endroit pour
+    // refaire une arithmétique de vente.
+    currencyTotals: (sale.currency_totals ?? []).map((c) => ({
+      currency: c.currency,
+      total: num(c.total),
+    })),
 
     payments: (sale.payments ?? []).map((p) => ({
       method: p.payment_method_name,

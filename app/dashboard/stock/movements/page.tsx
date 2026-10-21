@@ -1111,7 +1111,7 @@ export default function MovementsPage() {
                           );
                         }}
                         min="0"
-                        step="1"
+                        step="any"
                         placeholder="0"
                       />
                     </div>
@@ -1150,7 +1150,7 @@ export default function MovementsPage() {
                           package_quantity: e.target.value ? parseFloat(e.target.value) : undefined,
                         })}
                         min="0"
-                        step="1"
+                        step="any"
                         placeholder="0"
                       />
                     </div>

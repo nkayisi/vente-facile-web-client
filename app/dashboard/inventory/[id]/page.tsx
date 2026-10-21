@@ -826,7 +826,7 @@ export default function InventoryDetailPage() {
                                 <Input
                                   type="number"
                                   min="0"
-                                  step="1"
+                                  step="any"
                                   className="w-16 text-right"
                                   placeholder="0"
                                   value={
@@ -842,7 +842,7 @@ export default function InventoryDetailPage() {
                                 <Input
                                   type="number"
                                   min="0"
-                                  step="1"
+                                  step="any"
                                   className="w-16 text-right"
                                   placeholder="0"
                                   value={
@@ -859,7 +859,7 @@ export default function InventoryDetailPage() {
                               <Input
                                 type="number"
                                 min="0"
-                                step="1"
+                                step="any"
                                 className="w-24 text-right ml-auto"
                                 placeholder="0"
                                 value={edited?.quantity ?? (count.is_counted ? parseFloat(count.quantity_counted).toString() : "")}

@@ -24,9 +24,28 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { formatNumber, formatPrice } from "@/lib/format";
-import { getPackaging, splitPackaged } from "@/lib/packaging";
+import {
+  getPackaging,
+  splitPackaged,
+  roundQuantity,
+  QUANTITY_DECIMALS,
+  QUANTITY_INTEGER_DIGITS,
+} from "@/lib/packaging";
 import { pluralizeUnit } from "@/lib/units";
 import { cn } from "@/lib/utils";
+
+/**
+ * Une quantité telle qu'elle se RÉÉDITE dans un champ : virgule décimale, et
+ * surtout AUCUN groupement des milliers.
+ *
+ * `formatQuantity` du paquet groupe par espace fine insécable, ce qui est juste
+ * pour un montant affiché et faux dans un `<input>` : le caractère se retrouve
+ * dans la valeur, le curseur le traverse, et une réédition au clavier donne un
+ * nombre que `parseFloat` ne relit pas.
+ */
+function frSaisie(n: number): string {
+  return String(n).replace(".", ",");
+}
 
 /** Saisie brute d'une ligne : conditionnements entiers + unités de détail. */
 export interface PackagedSelection {
@@ -37,6 +56,11 @@ export interface PackagedSelection {
    * expose le champ, c'est à dire en édition depuis le panier.
    */
   discountPercentage?: number;
+  /**
+   * Devise dans laquelle ce prix est annoncé au client. Absente : celle de la
+   * facture, ce que toute vente a fait jusqu'ici.
+   */
+  priceCurrency?: string;
 }
 
 type Channel = "package" | "retail";
@@ -100,6 +124,17 @@ export interface QuantityPickerProps {
    */
   discountPercent?: number;
   maxDiscountPercent?: number;
+  /**
+   * Devises dans lesquelles ce prix peut être ANNONCÉ.
+   *
+   * À un seul élément : aucun choix à faire, et la rangée disparaît - un
+   * sélecteur à une seule entrée n'est pas un choix, c'est du bruit.
+   */
+  currencyCodes?: string[];
+  /** Celle de la facture : le défaut, et la première de la rangée. */
+  invoiceCurrency?: string;
+  /** Devise déjà choisie, pour rouvrir une ligne en édition. */
+  initialCurrency?: string;
   /** Retrait de la ligne, proposé quand la quantité retombe à zéro. */
   onRemove?: () => void;
 }
@@ -118,6 +153,9 @@ export function QuantityPicker({
   submitLabel = "Ajouter au panier",
   discountPercent,
   maxDiscountPercent = 50,
+  currencyCodes = [],
+  invoiceCurrency,
+  initialCurrency,
   onRemove,
 }: QuantityPickerProps) {
   const compact = useIsCompact();
@@ -133,6 +171,9 @@ export function QuantityPicker({
       submitLabel={submitLabel}
       discountPercent={discountPercent}
       maxDiscountPercent={maxDiscountPercent}
+      currencyCodes={currencyCodes}
+      invoiceCurrency={invoiceCurrency}
+      initialCurrency={initialCurrency}
       onRemove={
         onRemove
           ? () => {
@@ -208,6 +249,9 @@ function QuantityPickerBody({
   submitLabel,
   discountPercent,
   maxDiscountPercent,
+  currencyCodes = [],
+  invoiceCurrency,
+  initialCurrency,
   onConfirm,
   onCancel,
   onRemove,
@@ -221,6 +265,9 @@ function QuantityPickerBody({
   submitLabel: string;
   discountPercent?: number;
   maxDiscountPercent: number;
+  currencyCodes?: string[];
+  invoiceCurrency?: string;
+  initialCurrency?: string;
   onConfirm: (selection: PackagedSelection) => void;
   onCancel: () => void;
   onRemove?: () => void;
@@ -355,20 +402,50 @@ function QuantityPickerBody({
     packagesToOpenManually > 0 &&
     (sealedAvailable === null || packagesToOpenManually <= sealedAvailable);
 
+  // La devise d'ANNONCE de cette ligne. `undefined` = elle suit la facture.
+  const [priceCurrency, setPriceCurrency] = useState<string | undefined>(
+    initialCurrency
+  );
+
   const currentValue = channel === "package" ? packages : loose;
 
+  /**
+   * ⚠ `Math.floor` TRONQUAIT. Les boutons + / - restent entiers (on incrémente
+   * d'une unité), mais arrondir ici effaçait une décimale saisie au clavier :
+   * taper « 0,5 » puis cliquer « + » rendait 1 au lieu de 1,5.
+   */
   const applyValue = (next: number) => {
-    const clean = Math.max(0, Math.floor(Number.isFinite(next) ? next : 0));
+    const clean = Math.max(0, roundQuantity(Number.isFinite(next) ? next : 0));
     if (channel === "package") setPackages(clean);
     else setLoose(clean);
-    setDraft(clean ? String(clean) : "");
+    setDraft(clean ? frSaisie(clean) : "");
   };
 
+  /**
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ `replace(/[^\d]/g, "")` SUPPRIMAIT LA VIRGULE À LA FRAPPE.           │
+   * │                                                                      │
+   * │ Taper « 0,5 » donnait « 05 », que `parseInt` lisait 5 : le caissier  │
+   * │ voulait un demi-kilo et vendait cinq kilos. Et le back-office avait   │
+   * │ DÉJÀ résolu le cas pour le stock, dans le même dépôt                 │
+   * │ (`packaged-quantity-input.tsx` : `parseFloat(v.replace(",", "."))`   │
+   * │ avec `step="any"`) - seul son POS ne l'appliquait pas.                │
+   * │                                                                      │
+   * │ Les bornes sont celles du serveur, et elles viennent du paquet        │
+   * │ partagé : douze chiffres entiers, trois décimales.                   │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
   const handleDraft = (raw: string) => {
-    const digits = raw.replace(/[^\d]/g, "");
-    setDraft(digits);
-    const parsed = parseInt(digits, 10);
-    const value = Number.isFinite(parsed) ? parsed : 0;
+    // Un seul séparateur, le premier rencontré ; le reste des caractères non
+    // numériques tombe. On garde la VIRGULE à l'écran, c'est ce qui se tape.
+    const nettoye = raw.replace(/[^\d.,]/g, "").replace(/\./g, ",");
+    const [entier = "", ...reste] = nettoye.split(",");
+    const borne =
+      entier.slice(0, QUANTITY_INTEGER_DIGITS) +
+      (reste.length ? "," + reste.join("").slice(0, QUANTITY_DECIMALS) : "");
+
+    setDraft(borne);
+    const value = roundQuantity(parseFloat(borne.replace(",", ".")) || 0);
     if (channel === "package") setPackages(value);
     else setLoose(value);
   };
@@ -377,7 +454,7 @@ function QuantityPickerBody({
     if (next === channel) return;
     setChannel(next);
     const value = next === "package" ? packages : loose;
-    setDraft(value ? String(value) : "");
+    setDraft(value ? frSaisie(value) : "");
     window.setTimeout(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -406,6 +483,7 @@ function QuantityPickerBody({
       packages: packaging ? packages : 0,
       loose,
       ...(showDiscount ? { discountPercentage: discount } : {}),
+      ...(priceCurrency ? { priceCurrency } : {}),
     });
   };
 
@@ -527,6 +605,44 @@ function QuantityPickerBody({
         </p>
       )}
 
+      {/* ┌────────────────────────────────────────────────────────────────┐
+          │ LA DEVISE D'ANNONCE DE CETTE LIGNE.                            │
+          │                                                                │
+          │ Un marchand dont le catalogue est tenu en dollars annonce      │
+          │ certains articles en francs. C'est le chiffre qu'il dira au    │
+          │ client, et celui qui sortira sur le ticket.                    │
+          │                                                                │
+          │ La rangée ne paraît QUE s'il y a un choix à faire.             │
+          └────────────────────────────────────────────────────────────────┘ */}
+      {currencyCodes.length > 1 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+            Annoncer en
+          </span>
+          {currencyCodes.map(code => {
+            const actif = (priceCurrency ?? invoiceCurrency) === code;
+            return (
+              <button
+                key={code}
+                type="button"
+                onClick={() =>
+                  setPriceCurrency(code === invoiceCurrency ? undefined : code)
+                }
+                aria-pressed={actif}
+                className={cn(
+                  "h-7 rounded-full border px-2.5 text-[11px] font-semibold transition-colors",
+                  actif
+                    ? "border-orange-500 bg-orange-50 text-orange-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                {code}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       {/* Compteur : cible 44 px minimum de chaque côté du nombre */}
       <div className="flex items-stretch gap-2">
         <Button
@@ -542,7 +658,7 @@ function QuantityPickerBody({
         <input
           ref={inputRef}
           type="text"
-          inputMode="numeric"
+          inputMode="decimal"
           autoComplete="off"
           value={draft}
           placeholder="0"

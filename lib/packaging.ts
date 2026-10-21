@@ -17,6 +17,15 @@ export {
   formatPackagedDifference,
   toBaseQuantity,
   remainingChannels,
+  // Quantités décimales : la règle vit dans le paquet, pas ici. Trois
+  // décimales et douze chiffres entiers, soit `decimal_places` et
+  // `max_digits` de tout champ de quantité du serveur.
+  roundQuantity,
+  formatQuantity,
+  MIN_QUANTITY,
+  MAX_QUANTITY,
+  QUANTITY_DECIMALS,
+  QUANTITY_INTEGER_DIGITS,
 } from "@vente-facile/core";
 
 export type {

@@ -32,6 +32,10 @@ export {
   loyaltyDiscount,
   evaluateCredit,
   buildSalePayload,
+  // Ventilation par devise d'annonce : les sous-totaux que le client lit, et
+  // qui ne s'additionnent JAMAIS - c'est `saleCurrencyTotals` qui donne le
+  // total de la facture.
+  totauxParDevise,
   addableBase,
   addableChannels,
   addableLoose,
