@@ -61,7 +61,7 @@ import {
   Area,
 } from "recharts";
 import { toast } from "sonner";
-import { formatPrice, formatNumber, formatDate, formatDateTime } from "@/lib/format";
+import { formatPrice, formatNumber, formatDecimal, formatDate, formatDateTime } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import {
   getDashboardSummary,
@@ -538,14 +538,14 @@ export default function ReportsPage() {
       return (
         <span className="flex items-center text-green-600 text-sm">
           <ArrowUpRight className="h-4 w-4" />
-          +{num.toFixed(1)}%
+          +{formatDecimal(num, 1)}%
         </span>
       );
     } else if (num < 0) {
       return (
         <span className="flex items-center text-red-600 text-sm">
           <ArrowDownRight className="h-4 w-4" />
-          {num.toFixed(1)}%
+          {formatDecimal(num, 1)}%
         </span>
       );
     }
@@ -958,11 +958,11 @@ export default function ReportsPage() {
                         <TableCell className="text-right font-semibold">
                           <span className="block">
                             {product.quantity_display?.trim() ||
-                              `${product.quantity_sold} unités`}
+                              `${formatDecimal(product.quantity_sold)} unités`}
                           </span>
                           {product.packaging_factor != null && (
                             <span className="text-xs font-normal text-gray-500">
-                              {product.quantity_sold} au total
+                              {formatDecimal(product.quantity_sold)} au total
                             </span>
                           )}
                         </TableCell>
@@ -1032,7 +1032,7 @@ export default function ReportsPage() {
                     salesByCategory.map((cat) => (
                       <TableRow key={cat.category_id || 'uncategorized'}>
                         <TableCell className="font-medium">{cat.category_name || 'Sans catégorie'}</TableCell>
-                        <TableCell className="text-right">{cat.quantity_sold} unités</TableCell>
+                        <TableCell className="text-right">{formatDecimal(cat.quantity_sold)} unités</TableCell>
                         <TableCell className="text-right font-semibold text-blue-600">
                           {formatPrice(parseFloat(cat.total_revenue))}
                         </TableCell>
@@ -1199,7 +1199,7 @@ export default function ReportsPage() {
                     {topProducts.map((product) => {
                       const stockInfo = stockDetails.find(s => s.product_id === product.product_id);
                       const currentStock = stockInfo ? parseFloat(stockInfo.current_stock) : 0;
-                      const startingStock = currentStock + product.quantity_sold;
+                      const startingStock = currentStock + parseFloat(product.quantity_sold);
                       const stockValue = stockInfo ? parseFloat(stockInfo.stock_value) : 0;
                       const supply = productSupplies[product.product_id];
                       const isPackaged = stockInfo?.packaging_factor != null;
@@ -1211,19 +1211,19 @@ export default function ReportsPage() {
                               <p className="text-xs text-gray-500">{product.product_sku}</p>
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">{startingStock.toFixed(0)}</TableCell>
+                          <TableCell className="text-right">{formatDecimal(startingStock)}</TableCell>
                           <TableCell className="text-right text-purple-600">
                             {supply && supply.quantity > 0
-                              ? supply.display?.trim() || supply.quantity.toFixed(0)
+                              ? supply.display?.trim() || formatDecimal(supply.quantity)
                               : '-'}
                           </TableCell>
                           <TableCell className="text-right font-semibold text-orange-600">
                             <span className="block">
-                              {product.quantity_display?.trim() || product.quantity_sold}
+                              {product.quantity_display?.trim() || formatDecimal(product.quantity_sold)}
                             </span>
                             {product.packaging_factor != null && (
                               <span className="text-xs font-normal text-gray-500">
-                                {product.quantity_sold} au total
+                                {formatDecimal(product.quantity_sold)} au total
                               </span>
                             )}
                           </TableCell>
@@ -1232,11 +1232,11 @@ export default function ReportsPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <span className="block">
-                              {stockInfo?.stock_display?.trim() || currentStock.toFixed(0)}
+                              {stockInfo?.stock_display?.trim() || formatDecimal(currentStock)}
                             </span>
                             {isPackaged && (
                               <span className="text-xs font-normal text-gray-500">
-                                {currentStock.toFixed(0)} au total
+                                {formatDecimal(currentStock)} au total
                               </span>
                             )}
                           </TableCell>
@@ -1660,22 +1660,22 @@ export default function ReportsPage() {
                   <div className="text-center p-3 bg-green-50 rounded-lg">
                     <ArrowDown className="h-5 w-5 mx-auto text-green-600 mb-1" />
                     <p className="text-xs text-gray-500">Entrées totales</p>
-                    <p className="text-lg font-semibold text-green-600">{parseFloat(stockMovementsSummary.total_in).toFixed(0)}</p>
+                    <p className="text-lg font-semibold text-green-600">{formatDecimal(stockMovementsSummary.total_in)}</p>
                   </div>
                   <div className="text-center p-3 bg-red-50 rounded-lg">
                     <ArrowUp className="h-5 w-5 mx-auto text-red-600 mb-1" />
                     <p className="text-xs text-gray-500">Sorties totales</p>
-                    <p className="text-lg font-semibold text-red-600">{parseFloat(stockMovementsSummary.total_out).toFixed(0)}</p>
+                    <p className="text-lg font-semibold text-red-600">{formatDecimal(stockMovementsSummary.total_out)}</p>
                   </div>
                   <div className="text-center p-3 bg-orange-50 rounded-lg">
                     <ShoppingCart className="h-5 w-5 mx-auto text-orange-600 mb-1" />
                     <p className="text-xs text-gray-500">Ventes</p>
-                    <p className="text-lg font-semibold text-orange-600">{parseFloat(stockMovementsSummary.sales_out).toFixed(0)}</p>
+                    <p className="text-lg font-semibold text-orange-600">{formatDecimal(stockMovementsSummary.sales_out)}</p>
                   </div>
                   <div className="text-center p-3 bg-blue-50 rounded-lg">
                     <Minus className="h-5 w-5 mx-auto text-blue-600 mb-1" />
                     <p className="text-xs text-gray-500">Retours</p>
-                    <p className="text-lg font-semibold text-blue-600">{parseFloat(stockMovementsSummary.returns_in).toFixed(0)}</p>
+                    <p className="text-lg font-semibold text-blue-600">{formatDecimal(stockMovementsSummary.returns_in)}</p>
                   </div>
                 </div>
               </CardContent>
@@ -1720,7 +1720,7 @@ export default function ReportsPage() {
                       <TableCell className="text-sm">{s.category_name || "-"}</TableCell>
                       <TableCell className="text-right font-medium">
                         <span className="block">
-                          {s.stock_display?.trim() || parseFloat(s.current_stock).toFixed(0)}
+                          {s.stock_display?.trim() || formatDecimal(s.current_stock)}
                         </span>
                         {/* Le total en unités n'a de sens à rappeler que pour un
                             produit vendu par contenant. Il se lisait auparavant
@@ -1728,12 +1728,12 @@ export default function ReportsPage() {
                             pour « 3 casiers » tout ronds. */}
                         {s.packaging_factor != null && (
                           <span className="text-xs font-normal text-gray-500">
-                            {parseFloat(s.current_stock).toFixed(0)} au total
+                            {formatDecimal(s.current_stock)} au total
                           </span>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {s.available_display?.trim() || parseFloat(s.available_stock).toFixed(0)}
+                        {s.available_display?.trim() || formatDecimal(s.available_stock)}
                       </TableCell>
                       <TableCell className="text-right">{formatPrice(parseFloat(s.stock_value))}</TableCell>
                       <TableCell>
@@ -1851,11 +1851,11 @@ export default function ReportsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <span className="block">
-                            {p.quantity_display?.trim() || p.quantity_sold}
+                            {p.quantity_display?.trim() || formatDecimal(p.quantity_sold)}
                           </span>
                           {p.packaging_factor != null && (
                             <span className="text-xs text-gray-500">
-                              {p.quantity_sold} au total
+                              {formatDecimal(p.quantity_sold)} au total
                             </span>
                           )}
                         </TableCell>

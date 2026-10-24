@@ -33,7 +33,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { formatPrice, formatNumber } from "@/lib/format";
+import { formatPrice, formatDecimal, formatNumber } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { useOrganization } from "@/components/auth/organization-checker";
 import {
@@ -429,13 +429,13 @@ export default function WarehouseDetailPage() {
                         <td className="px-4 py-3 text-right">
                           <span className="font-medium">
                             {stock.stock_display?.trim() ||
-                              parseFloat(stock.quantity).toFixed(0)}
+                              formatDecimal(stock.quantity)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className="font-medium text-green-600">
                             {stock.available_display?.trim() ||
-                              parseFloat(stock.available_quantity).toFixed(0)}
+                              formatDecimal(stock.available_quantity)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">

@@ -36,7 +36,7 @@ import {
 PackageX,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatDateTime, formatPoints } from "@/lib/format";
+import { formatPrice, formatDecimal, formatDateTime, formatPoints } from "@/lib/format";
 import { PermissionGate } from "@/components/auth/permission-gate";
 import {
   getSale,
@@ -804,11 +804,11 @@ export default function SaleDetailPage() {
                             reste dessous pour le rapprochement de stock. */}
                         <span className="block font-medium">
                           {item.quantity_display?.trim() ||
-                            parseFloat(item.quantity).toFixed(0)}
+                            formatDecimal(item.quantity)}
                         </span>
                         {item.packaging_factor ? (
                           <span className="text-xs text-gray-500">
-                            {parseFloat(item.quantity).toFixed(0)} au total
+                            {formatDecimal(item.quantity)} au total
                           </span>
                         ) : null}
                       </td>

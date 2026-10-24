@@ -29,7 +29,7 @@ import {
   List,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatNumber } from "@/lib/format";
+import { formatPrice, formatDecimal, formatNumber } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
 import { DataPagination } from "@/components/shared/DataPagination";
@@ -413,19 +413,19 @@ export default function StocksPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="font-medium">
-                          {stock.stock_display || parseFloat(stock.quantity).toFixed(0)}
+                          {stock.stock_display || formatDecimal(stock.quantity)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="text-gray-500">
                           {stock.reserved_display?.trim() ||
-                            parseFloat(stock.reserved_quantity).toFixed(0)}
+                            formatDecimal(stock.reserved_quantity)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="font-medium text-green-600">
                           {stock.available_display?.trim() ||
-                            parseFloat(stock.available_quantity).toFixed(0)}
+                            formatDecimal(stock.available_quantity)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -489,7 +489,7 @@ export default function StocksPage() {
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
                         <StatValue
-                          value={stock.stock_display || parseFloat(stock.quantity).toFixed(0)}
+                          value={stock.stock_display || formatDecimal(stock.quantity)}
                         />
                         <p className="text-xs text-gray-500">Total</p>
                       </div>
@@ -497,7 +497,7 @@ export default function StocksPage() {
                         <StatValue
                           value={
                             stock.reserved_display?.trim() ||
-                            parseFloat(stock.reserved_quantity).toFixed(0)
+                            formatDecimal(stock.reserved_quantity)
                           }
                           color="text-orange-600"
                         />
@@ -507,7 +507,7 @@ export default function StocksPage() {
                         <StatValue
                           value={
                             stock.available_display?.trim() ||
-                            parseFloat(stock.available_quantity).toFixed(0)
+                            formatDecimal(stock.available_quantity)
                           }
                           color="text-green-600"
                         />

@@ -52,7 +52,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { PermissionGate } from "@/components/auth/permission-gate";
-import { formatPrice, formatNumber, formatDateTime } from "@/lib/format";
+import { formatPrice, formatDecimal, formatNumber, formatDateTime } from "@/lib/format";
 import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
 import { ActionTile } from "@/components/shared/ActionTile";
 import {
@@ -609,7 +609,7 @@ export default function StockPage() {
                             <p className="text-xs text-gray-500">{item.warehouse_name}</p>
                           </div>
                           <span className="font-semibold text-orange-600 text-sm ml-2 text-right">
-                            {item.stock_display?.trim() || parseFloat(item.quantity).toFixed(0)}
+                            {item.stock_display?.trim() || formatDecimal(item.quantity)}
                           </span>
                         </div>
                       ))}
@@ -724,7 +724,7 @@ export default function StockPage() {
                               }`}
                           >
                             {qty > 0 ? "+" : qty < 0 ? "-" : ""}
-                            {movement.quantity_display?.trim() || Math.abs(qty).toFixed(0)}
+                            {movement.quantity_display?.trim() || formatDecimal(Math.abs(qty))}
                           </p>
                           <p className="text-xs text-gray-400">
                             {formatDateTime(movement.created_at)}

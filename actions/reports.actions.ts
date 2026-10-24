@@ -81,7 +81,8 @@ export interface SalesByCategory {
   category_id: string | null;
   category_name: string;
   total_revenue: string;
-  quantity_sold: number;
+  /** `DecimalField` serveur, donc une CHAÎNE. Voir `TopProduct.quantity_sold`. */
+  quantity_sold: string;
   percentage: string;
 }
 
@@ -97,7 +98,20 @@ export interface TopProduct {
   product_id: string;
   product_name: string;
   product_sku: string;
-  quantity_sold: number;
+  /**
+   * ⚠ UNE CHAÎNE, ET CE N'EST PAS UN DÉTAIL DE TYPAGE.
+   *
+   * Le champ était un `IntegerField` ; il est passé en `DecimalField(15, 3)`
+   * côté serveur pour cesser de tronquer une vente de 0,5 kg à « 0 ». DRF
+   * sérialise un décimal en CHAÎNE (`COERCE_DECIMAL_TO_STRING`, laissé à son
+   * défaut parce que toute la plateforme lit les décimaux ainsi), si bien que
+   * `5` est devenu `"5.000"`.
+   *
+   * Le déclarer `number` ne faisait pas qu'être inexact : `stock + quantity_sold`
+   * CONCATÉNAIT, et le `.toFixed()` qui suivait plantait la page entière. On
+   * coerce donc au point de calcul, jamais en faisant mentir le type.
+   */
+  quantity_sold: string;
   /**
    * Quantité vendue dans les termes de la vente : « 10 casiers + 5 bouteilles ».
    * Somme des contenants réellement facturés, jamais une division du total.

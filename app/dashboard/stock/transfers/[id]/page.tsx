@@ -31,7 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { formatPrice, formatDateTime } from "@/lib/format";
+import { formatPrice, formatDecimal, formatDateTime } from "@/lib/format";
 import { useOrganization } from "@/components/auth/organization-checker";
 import {
   getStockTransfer,
@@ -548,20 +548,20 @@ export default function TransferDetailPage() {
                               vend par contenant, rendu par le serveur. */}
                           <span className="font-medium text-sm">
                             {item.requested_display ||
-                              parseFloat(item.quantity_requested).toFixed(0)}
+                              formatDecimal(item.quantity_requested)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className="text-sm text-blue-600 font-medium">
                             {item.quantity_shipped
-                              ? parseFloat(item.quantity_shipped).toFixed(0)
+                              ? formatDecimal(item.quantity_shipped)
                               : "-"}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className="text-sm text-green-600 font-medium">
                             {item.quantity_received
-                              ? parseFloat(item.quantity_received).toFixed(0)
+                              ? formatDecimal(item.quantity_received)
                               : "-"}
                           </span>
                         </td>
