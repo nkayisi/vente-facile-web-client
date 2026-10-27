@@ -2,8 +2,36 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 import { HOTE_WWW, URL_SITE } from "./lib/seo/site";
+import { LIMITE_CORPS_ACTION } from "./lib/uploads";
 
 const nextConfig: NextConfig = {
+  /**
+   * La borne du corps d'une server action.
+   *
+   * ┌──────────────────────────────────────────────────────────────────────────┐
+   * │ SANS ELLE, NEXT BORNE À 1 Mo ET LA PHOTO D'UN PRODUIT NE PASSAIT PAS.    │
+   * │                                                                          │
+   * │ La photo passe par `uploadProductImage`, une server action : le fichier  │
+   * │ voyage donc dans le corps de la requête vers le serveur Next, que le     │
+   * │ défaut de 1 Mo refusait. Le produit était créé (son payload est du JSON  │
+   * │ de quelques centaines d'octets), puis l'envoi de la photo levait, et le  │
+   * │ marchand lisait « Body exceeded 1 MB limit » sur un écran de crash.      │
+   * └──────────────────────────────────────────────────────────────────────────┘
+   *
+   * ⚠ LA VALEUR EST DÉRIVÉE DE CE QUE LE CHAMP PHOTO ACCEPTE, elle n'est pas
+   * choisie ici : voir [lib/uploads.ts](lib/uploads.ts). La recopier rouvrirait
+   * la contradiction que ce correctif ferme.
+   *
+   * ⚠ `serverActions` est encore sous `experimental` en Next 16.1 - vérifié
+   * dans `next/dist/server/config-shared.d.ts` de la version installée, et non
+   * de mémoire.
+   */
+  experimental: {
+    serverActions: {
+      bodySizeLimit: LIMITE_CORPS_ACTION,
+    },
+  },
+
   /**
    * `www` vers l'apex, en 308 permanent.
    *

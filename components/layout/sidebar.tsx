@@ -63,6 +63,16 @@ const menuItems = [
     permission: "inventory.view",
   },
   {
+    // Lot 13. Le droit de LECTURE, et non `purchases.create` : un magasinier
+    // réceptionne sans pouvoir commander, et une entrée de menu absente
+    // enseigne que la fonction n'existe pas.
+    label: "Achats",
+    icon: ShoppingBag,
+    href: "/dashboard/purchases",
+    badge: null,
+    permission: "purchases.view",
+  },
+  {
     label: "Livre de caisse",
     icon: Wallet,
     href: "/dashboard/cashbook",

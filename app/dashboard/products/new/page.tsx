@@ -164,20 +164,44 @@ export default function NewProductPage() {
     const result = await createProduct(session.accessToken, organization.id, payload);
 
     if (result.success && result.data) {
-      // La photo suit la création. Si son envoi échoue, le produit existe bien :
-      // on ne bloque pas le marchand, il pourra la reprendre depuis la fiche.
+      /**
+       * La photo suit la création. Si son envoi échoue, le produit existe bien :
+       * on ne bloque pas le marchand, il pourra la reprendre depuis la fiche.
+       *
+       * ┌────────────────────────────────────────────────────────────────────┐
+       * │ LE `catch` N'EST PAS DE L'HYGIÈNE : IL PORTE TOUTE LA PROMESSE     │
+       * │ ÉCRITE JUSTE AU-DESSUS.                                            │
+       * │                                                                    │
+       * │ Une server action peut échouer AVANT d'entrer dans son corps -     │
+       * │ corps de requête trop gros, 413 d'un proxy inverse, coupure. Son   │
+       * │ `try/catch` interne ne rend alors AUCUN `{ success: false }` :     │
+       * │ l'`await` rejette. Sans ce `catch`, le rejet emportait le          │
+       * │ `router.push` ET le toast, laissait le bouton figé sur son état de │
+       * │ chargement, et affichait un écran de crash - sur un produit déjà   │
+       * │ créé, que le marchand croyait alors perdu.                         │
+       * └────────────────────────────────────────────────────────────────────┘
+       */
+      let echecPhoto = false;
       if (image) {
-        const upload = await uploadProductImage(
-          session.accessToken,
-          organization.id,
-          result.data.id,
-          image
-        );
-        if (!upload.success) {
-          toast.warning("Produit créé, mais la photo n'a pas pu être enregistrée", {
-            description: "Vous pouvez l'ajouter depuis la fiche du produit.",
-          });
+        try {
+          const upload = await uploadProductImage(
+            session.accessToken,
+            organization.id,
+            result.data.id,
+            image
+          );
+          echecPhoto = !upload.success;
+        } catch (erreur) {
+          // Jamais silencieux : un jet ici désigne un défaut de serveur ou de
+          // proxy, et cette ligne en est la seule trace.
+          console.error("[Produits] Envoi de la photo :", erreur);
+          echecPhoto = true;
         }
+      }
+      if (echecPhoto) {
+        toast.warning("Produit créé, mais la photo n'a pas pu être enregistrée", {
+          description: "Vous pouvez l'ajouter depuis la fiche du produit.",
+        });
       }
       router.push(`/dashboard/products/${result.data.id}`);
     } else {
@@ -399,9 +423,10 @@ export default function NewProductPage() {
                       id="min_stock_level"
                       type="number"
                       min="0"
+                      step="any"
                       value={formData.min_stock_level}
                       onChange={(e) =>
-                        handleChange("min_stock_level", parseInt(e.target.value) || 0)
+                        handleChange("min_stock_level", parseFloat(e.target.value.replace(",", ".")) || 0)
                       }
                     />
                   </div>
@@ -411,9 +436,10 @@ export default function NewProductPage() {
                       id="reorder_point"
                       type="number"
                       min="0"
+                      step="any"
                       value={formData.reorder_point}
                       onChange={(e) =>
-                        handleChange("reorder_point", parseInt(e.target.value) || 0)
+                        handleChange("reorder_point", parseFloat(e.target.value.replace(",", ".")) || 0)
                       }
                     />
                   </div>
@@ -423,9 +449,10 @@ export default function NewProductPage() {
                       id="reorder_quantity"
                       type="number"
                       min="0"
+                      step="any"
                       value={formData.reorder_quantity}
                       onChange={(e) =>
-                        handleChange("reorder_quantity", parseInt(e.target.value) || 0)
+                        handleChange("reorder_quantity", parseFloat(e.target.value.replace(",", ".")) || 0)
                       }
                     />
                   </div>

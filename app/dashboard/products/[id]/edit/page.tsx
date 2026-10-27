@@ -118,9 +118,10 @@ export default function EditProductPage() {
           track_inventory: product.track_inventory,
           allow_negative_stock: product.allow_negative_stock,
           has_expiry_date: product.has_expiry_date,
-          min_stock_level: product.min_stock_level,
-          reorder_point: product.reorder_point,
-          reorder_quantity: product.reorder_quantity,
+          // Le serveur rend des chaînes, le formulaire travaille en nombres.
+          min_stock_level: parseFloat(product.min_stock_level) || 0,
+          reorder_point: parseFloat(product.reorder_point) || 0,
+          reorder_quantity: parseFloat(product.reorder_quantity) || 0,
           is_active: product.is_active,
           is_featured: product.is_featured,
         });
@@ -192,20 +193,39 @@ export default function EditProductPage() {
     });
 
     if (result.success) {
-      // La photo suit la mise à jour, en multipart. Un échec ici ne doit pas
-      // faire croire que la modification n'a pas été enregistrée.
+      /**
+       * La photo suit la mise à jour, en multipart. Un échec ici ne doit pas
+       * faire croire que la modification n'a pas été enregistrée.
+       *
+       * ⚠ Le `catch` porte cette promesse, exactement comme sur la page de
+       * création : une server action dont le corps dépasse la borne, ou qu'un
+       * proxy refuse en 413, rejette AVANT d'entrer dans son corps - donc sans
+       * rendre le `{ success: false }` que la ligne suivante attend. Sans lui,
+       * le rejet emportait la redirection, le toast et `setIsLoading(false)`.
+       */
+      let echecPhoto: string | null = null;
       if (image) {
-        const upload = await uploadProductImage(
-          session.accessToken,
-          organization.id,
-          productId,
-          image
-        );
-        if (!upload.success) {
-          toast.warning("Modifications enregistrées, mais pas la photo", {
-            description: upload.message,
-          });
+        try {
+          const upload = await uploadProductImage(
+            session.accessToken,
+            organization.id,
+            productId,
+            image
+          );
+          if (!upload.success) {
+            echecPhoto = upload.message ?? "Vous pouvez la reprendre depuis la fiche.";
+          }
+        } catch (erreur) {
+          // Jamais silencieux : un jet ici désigne un défaut de serveur ou de
+          // proxy, et cette ligne en est la seule trace.
+          console.error("[Produits] Envoi de la photo :", erreur);
+          echecPhoto = "Vous pouvez la reprendre depuis la fiche.";
         }
+      }
+      if (echecPhoto) {
+        toast.warning("Modifications enregistrées, mais pas la photo", {
+          description: echecPhoto,
+        });
       }
       router.push(`/dashboard/products/${productId}`);
     } else {
@@ -571,8 +591,9 @@ export default function EditProductPage() {
                         id="min_stock_level"
                         type="number"
                         min="0"
+                        step="any"
                         value={formData.min_stock_level ?? 0}
-                        onChange={(e) => handleChange("min_stock_level", parseInt(e.target.value) || 0)}
+                        onChange={(e) => handleChange("min_stock_level", parseFloat(e.target.value.replace(",", ".")) || 0)}
                       />
                     </div>
                     <div className="space-y-2">
@@ -581,8 +602,9 @@ export default function EditProductPage() {
                         id="reorder_point"
                         type="number"
                         min="0"
+                        step="any"
                         value={formData.reorder_point ?? 0}
-                        onChange={(e) => handleChange("reorder_point", parseInt(e.target.value) || 0)}
+                        onChange={(e) => handleChange("reorder_point", parseFloat(e.target.value.replace(",", ".")) || 0)}
                       />
                       <p className="text-xs text-gray-500">Alerte quand le stock atteint ce niveau</p>
                     </div>
@@ -594,8 +616,9 @@ export default function EditProductPage() {
                       id="reorder_quantity"
                       type="number"
                       min="0"
+                      step="any"
                       value={formData.reorder_quantity ?? 0}
-                      onChange={(e) => handleChange("reorder_quantity", parseInt(e.target.value) || 0)}
+                      onChange={(e) => handleChange("reorder_quantity", parseFloat(e.target.value.replace(",", ".")) || 0)}
                     />
                     <p className="text-xs text-gray-500">Quantité suggérée lors du réapprovisionnement</p>
                   </div>

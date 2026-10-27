@@ -29,7 +29,7 @@ import {
   List,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatDecimal, formatNumber } from "@/lib/format";
+import { formatPrice, formatDecimal } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
 import { DataPagination } from "@/components/shared/DataPagination";
@@ -319,7 +319,7 @@ export default function StocksPage() {
         />
         <StatStripItem
           label="Unités au total"
-          value={formatNumber(
+          value={formatDecimal(
             filteredStocks.reduce((sum, s) => sum + parseFloat(s.quantity), 0)
           )}
           icon={Boxes}

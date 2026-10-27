@@ -44,10 +44,13 @@ export const createProductSchema = z.object({
     .default(0),
   is_taxable: z.boolean().default(true),
   track_inventory: z.boolean().default(true),
-  min_stock_level: z.number().int().min(0).default(0),
-  max_stock_level: z.number().int().min(0).optional(),
-  reorder_point: z.number().int().min(0).default(0),
-  reorder_quantity: z.number().int().min(0).default(0),
+  // ⚠ `.int()` RETIRÉ : un seuil de stock est une quantité, et un commerce qui
+  // pèse sa farine veut pouvoir alerter à 2,5 kg. Le plancher à zéro reste :
+  // un seuil nul veut dire « pas d'alerte ».
+  min_stock_level: z.number().min(0).default(0),
+  max_stock_level: z.number().min(0).optional(),
+  reorder_point: z.number().min(0).default(0),
+  reorder_quantity: z.number().min(0).default(0),
   allow_negative_stock: z.boolean().default(false),
   batch_tracking: z.boolean().default(false),
   expiry_tracking: z.boolean().default(false),

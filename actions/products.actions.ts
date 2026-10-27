@@ -122,10 +122,22 @@ export interface Product {
   track_inventory: boolean;
   allow_negative_stock: boolean;
   has_expiry_date: boolean;
-  min_stock_level: number;
-  max_stock_level?: number | null;
-  reorder_point: number;
-  reorder_quantity: number;
+  /**
+   * Les quatre seuils de stock, en CHAÎNE.
+   *
+   * ⚠ Ce sont des `DecimalField(max_digits=15, decimal_places=3)` depuis que
+   * « alerter sous 2,5 kg » est possible : DRF les sérialise donc en chaîne,
+   * comme tous les décimaux de la plateforme. Le type resté `number` ne
+   * l'aurait signalé nulle part, et `stock <= product.reorder_point` aurait
+   * comparé un nombre à du texte.
+   *
+   * Le payload d'ÉCRITURE, lui, reste en nombres : DRF les coerce très bien
+   * en entrée. C'est `UpdateProductData` juste en dessous.
+   */
+  min_stock_level: string;
+  max_stock_level?: string | null;
+  reorder_point: string;
+  reorder_quantity: string;
   weight?: string | null;
   dimensions?: Record<string, number>;
   image?: string | null;

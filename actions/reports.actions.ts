@@ -27,7 +27,14 @@ export interface SalesStats {
   total_sales: string;
   total_orders: number;
   average_order_value: string;
-  total_items_sold: number;
+  /**
+   * ⚠ UNE CHAÎNE, et non un nombre. Le serveur a corrigé son `IntegerField` :
+   * une journée à 0,5 kg de farine vendu s'affichait « 0 article vendu ». DRF
+   * sérialise un `DecimalField` en CHAÎNE, et le type resté `number` ne le
+   * signalerait nulle part - c'est le défaut qui est tombé en production sur
+   * cette page même, sous la forme « r.toFixed is not a function ».
+   */
+  total_items_sold: string;
   completed_sales: number;
   pending_sales: number;
   cancelled_sales: number;

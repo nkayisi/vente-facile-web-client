@@ -794,7 +794,7 @@ export default function ReportsPage() {
                   </div>
                   <StatValue value={formatPrice(summary.sales.average_order_value)} />
                   <p className="text-sm text-gray-500 mt-1">
-                    {summary.sales.total_items_sold} articles vendus
+                    {formatDecimal(summary.sales.total_items_sold)} articles vendus
                   </p>
                 </div>
             </CardContent>

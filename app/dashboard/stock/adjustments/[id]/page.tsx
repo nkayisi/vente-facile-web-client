@@ -29,7 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { formatPrice, formatDateTime } from "@/lib/format";
+import { formatPrice, formatDecimal, formatDateTime } from "@/lib/format";
 import { useOrganization } from "@/components/auth/organization-checker";
 import {
   getStockAdjustment,
@@ -395,8 +395,11 @@ export default function AdjustmentDetailPage() {
                 </thead>
                 <tbody className="divide-y">
                   {adjustment.items.map((item, index) => {
-                    const diff = item.quantity_difference || 0;
-                    const impact = diff * item.unit_cost;
+                    // ⚠ `item.quantity_difference || 0` AVAIT L'AIR DÉFENSIF et ne
+                    // gardait rien : `"0.000"` est truthy, donc `diff` restait une
+                    // chaîne et `diff * item.unit_cost` multipliait du texte.
+                    const diff = parseFloat(item.quantity_difference ?? "0") || 0;
+                    const impact = diff * (parseFloat(item.unit_cost) || 0);
                     return (
                       <tr key={item.id || index} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
@@ -409,12 +412,12 @@ export default function AdjustmentDetailPage() {
                           {/* Rendus par le serveur pour les produits vendus par
                               contenant : « 3 cartons + 2 bouteilles ». */}
                           <span className="text-gray-600">
-                            {item.expected_display || item.quantity_expected}
+                            {item.expected_display || formatDecimal(item.quantity_expected)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className="font-medium">
-                            {item.counted_display || item.quantity_counted}
+                            {item.counted_display || formatDecimal(item.quantity_counted)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -433,7 +436,7 @@ export default function AdjustmentDetailPage() {
                                 }`}
                             >
                               {diff > 0 ? "+" : ""}
-                              {diff}
+                              {formatDecimal(diff)}
                             </span>
                           </div>
                         </td>

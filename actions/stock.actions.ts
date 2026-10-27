@@ -211,13 +211,33 @@ export interface StockAdjustmentItem {
   product_sku?: string;
   variant?: string | null;
   batch?: string | null;
-  quantity_counted: number;
-  quantity_expected: number;
-  quantity_difference?: number;
+  /**
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ DES CHAÎNES, et le type disait `number`.                             │
+   * │                                                                      │
+   * │ Ce sont des `DecimalField(max_digits=15, decimal_places=3)` du        │
+   * │ modèle, exposés par un `ModelSerializer` : DRF les sérialise en       │
+   * │ CHAÎNE comme tout le reste. `pnpm check:api-decimals` ne les voyait   │
+   * │ pas, parce qu'il ne lisait que les champs DÉCLARÉS - il lit désormais │
+   * │ aussi les hérités, et c'est ce qui a nommé ces six lignes.            │
+   * │                                                                      │
+   * │ Le coût était mesuré sur la fiche d'ajustement :                      │
+   * │ `item.quantity_difference || 0` paraissait défensif, mais `"0.000"`   │
+   * │ est TRUTHY - le garde-fou ne gardait rien, l'écart s'affichait         │
+   * │ « -0.500 » au point anglais, et `diff` restait une chaîne dans         │
+   * │ `diff * item.unit_cost`.                                              │
+   * │                                                                      │
+   * │ ⚠ Ce type ne sert qu'à la LECTURE : la page de création porte son     │
+   * │ propre type local, où ces champs sont bien des nombres.               │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
+  quantity_counted: string;
+  quantity_expected: string;
+  quantity_difference?: string;
   /** Contenants scellés comptés (produits vendus en gros) */
-  counted_package_quantity?: number | null;
+  counted_package_quantity?: string | null;
   /** Unités comptées hors contenant */
-  counted_loose_quantity?: number | null;
+  counted_loose_quantity?: string | null;
   packaging_factor?: number | null;
   /** Comptage prêt à afficher : « 3 cartons + 2 bouteilles » */
   counted_display?: string;
@@ -225,10 +245,10 @@ export interface StockAdjustmentItem {
   /** Écart ventilé par canal : « -2 casiers, +5 bouteilles » */
   difference_display?: string;
   /** Part vrac du stock théorique, relevée à la création de l'ajustement */
-  expected_loose_quantity?: number | null;
+  expected_loose_quantity?: string | null;
   unit_name?: string | null;
   package_unit_name?: string | null;
-  unit_cost: number;
+  unit_cost: string;
   notes?: string;
 }
 

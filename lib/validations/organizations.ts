@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { SUPPORTED_CURRENCIES } from "@/lib/currencies";
+
 // Schéma pour la création d'organisation
 export const createOrganizationSchema = z.object({
   name: z
@@ -36,8 +38,16 @@ export const createOrganizationSchema = z.object({
     .string()
     .max(100, "Le pays ne peut pas dépasser 100 caractères")
     .default("RDC"),
+  // ⚠ Pas un `z.enum` recopié : il ne connaissait que CDF, USD et EUR, soit
+  // trois des vingt et une devises que le sélecteur offre et que le serveur
+  // accepte. Ce schéma n'a aucun `.parse()` aujourd'hui - seul son type est
+  // réexporté par `lib/types/index.ts` - mais une liste fausse laissée en place
+  // est un piège armé pour son premier appelant.
   currency: z
-    .enum(["CDF", "USD", "EUR"])
+    .string()
+    .refine((code) => SUPPORTED_CURRENCIES.some((d) => d.code === code), {
+      message: "Cette devise n'est pas prise en charge",
+    })
     .default("CDF"),
   timezone: z
     .string()

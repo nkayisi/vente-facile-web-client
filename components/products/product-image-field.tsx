@@ -5,9 +5,7 @@ import { ImagePlus, X } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-/** Au-delà, l'envoi devient lent sur les connexions du terrain. */
-const TAILLE_MAX_MO = 5;
+import { TAILLE_MAX_PHOTO_MO } from "@/lib/uploads";
 
 interface ProductImageFieldProps {
   /** Photo déjà enregistrée, affichée tant qu'aucune nouvelle n'est choisie. */
@@ -51,8 +49,8 @@ export function ProductImageField({
       setLocalError("Choisissez un fichier image");
       return;
     }
-    if (file.size > TAILLE_MAX_MO * 1024 * 1024) {
-      setLocalError(`La photo ne doit pas dépasser ${TAILLE_MAX_MO} Mo`);
+    if (file.size > TAILLE_MAX_PHOTO_MO * 1024 * 1024) {
+      setLocalError(`La photo ne doit pas dépasser ${TAILLE_MAX_PHOTO_MO} Mo`);
       return;
     }
     setLocalError(null);
@@ -102,7 +100,7 @@ export function ProductImageField({
           className="cursor-pointer"
         />
         <p className="text-xs text-gray-500">
-          Facultatif. JPG ou PNG, {TAILLE_MAX_MO} Mo maximum.
+          Facultatif. JPG ou PNG, {TAILLE_MAX_PHOTO_MO} Mo maximum.
         </p>
         {message && <p className="text-sm text-red-500">{message}</p>}
       </div>

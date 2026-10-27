@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatDecimal } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
@@ -163,7 +163,10 @@ export default function ProductDetailPage() {
   }
 
   const stockQuantity = product.stock_quantity ?? 0;
-  const isLowStock = product.track_inventory && stockQuantity <= product.reorder_point;
+  // ⚠ `reorder_point` est une CHAÎNE : la comparaison aurait opposé un
+  // nombre à du texte, et JavaScript aurait comparé lexicographiquement.
+  const isLowStock =
+    product.track_inventory && stockQuantity <= (parseFloat(product.reorder_point) || 0);
   /**
    * Marge sur le PRIX DE VENTE, par `computeMargin` du noyau.
    *
@@ -473,9 +476,10 @@ export default function ProductDetailPage() {
               )}
               {product.track_inventory && (
                 <>
-                  <DetailItem label="Stock minimum" value={String(product.min_stock_level)} />
-                  <DetailItem label="Seuil réappro." value={String(product.reorder_point)} />
-                  <DetailItem label="Qté réappro." value={String(product.reorder_quantity)} />
+                  {/* `String` afficherait « 5.000 » : le serveur rend trois décimales. */}
+                  <DetailItem label="Stock minimum" value={formatDecimal(product.min_stock_level)} />
+                  <DetailItem label="Seuil réappro." value={formatDecimal(product.reorder_point)} />
+                  <DetailItem label="Qté réappro." value={formatDecimal(product.reorder_quantity)} />
                   <DetailItem label="Produit périssable" value={product.has_expiry_date ? "Oui" : "Non"} />
                   <DetailItem label="Stock négatif" value={product.allow_negative_stock ? "Autorisé" : "Non autorisé"} />
                 </>

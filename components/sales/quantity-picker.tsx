@@ -23,15 +23,17 @@ import { Product } from "@/actions/products.actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { formatNumber, formatPrice } from "@/lib/format";
+import { formatPrice } from "@/lib/format";
 import {
   getPackaging,
   splitPackaged,
   roundQuantity,
+  formatQuantity,
+  MIN_QUANTITY,
   QUANTITY_DECIMALS,
   QUANTITY_INTEGER_DIGITS,
 } from "@/lib/packaging";
-import { pluralizeUnit } from "@/lib/units";
+import { formatUnitQuantity, pluralizeUnit } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 /**
@@ -65,8 +67,13 @@ export interface PackagedSelection {
 
 type Channel = "package" | "retail";
 
-/** Raccourcis de quantité : couvre l'écrasante majorité des ventes au comptoir. */
-const QUICK_VALUES = [1, 2, 3, 5, 10];
+/**
+ * Raccourcis de quantité : couvre l'écrasante majorité des ventes au comptoir.
+ *
+ * Le demi ouvre la rangée parce que ce produit se vend au POIDS : un commerce
+ * qui pèse sa farine sert plus souvent un demi-kilo que dix.
+ */
+const QUICK_VALUES = [0.5, 1, 2, 3, 5, 10];
 
 /**
  * Vrai sous 640 px, où un popover ancré devient moins confortable qu'une
@@ -323,7 +330,11 @@ function QuantityPickerBody({
   const unitPrice = parseFloat(product.selling_price || "0");
   const packagePrice = parseFloat(product.wholesale_price || "0");
 
-  const base = packages * factor + loose;
+  // ⚠ LE TOTAL SE QUANTISE, comme `verifierAjout` le fait dans le paquet.
+  // Sans cela, `0,1 + 0,2` donne `0.30000000000000004` : `overStock` refusait
+  // alors sur un stock de 0,3, et `canRemove` (`base === 0`) devenait faux sur
+  // une ligne vidée au clavier.
+  const base = roundQuantity(packages * factor + loose);
   // Miroir de `lineGross` : le prix d'un conditionnement n'est pas le prix
   // unitaire multiplié par son contenu, c'est tout l'intérêt du gros.
   const gross = packaging
@@ -335,16 +346,16 @@ function QuantityPickerBody({
   const availabilityLabel = useMemo(() => {
     if (maxBase === null) return null;
     if (!packaging) {
-      return `${formatNumber(maxBase)} ${pluralizeUnit(retailWord, maxBase)}`;
+      return formatUnitQuantity(maxBase, retailWord);
     }
     const knownLoose = looseAvailable === null ? maxBase : Math.min(looseAvailable, maxBase);
     const split = splitPackaged(maxBase, knownLoose, factor);
     const parts: string[] = [];
     if (split.packages > 0) {
-      parts.push(`${split.packages} ${pluralizeUnit(packageWord, split.packages)}`);
+      parts.push(formatUnitQuantity(split.packages, packageWord));
     }
     if (split.loose > 0 || parts.length === 0) {
-      parts.push(`${formatNumber(split.loose)} ${pluralizeUnit(retailWord, split.loose)}`);
+      parts.push(formatUnitQuantity(split.loose, retailWord));
     }
     return parts.join(" + ");
   }, [maxBase, looseAvailable, packaging, factor, packageWord, retailWord]);
@@ -366,7 +377,8 @@ function QuantityPickerBody({
     if (!overSealed || sealedAvailable === null) return null;
     const missingLoose = (packages - sealedAvailable) * factor;
     const nextLoose = loose + missingLoose;
-    if (maxBase !== null && sealedAvailable * factor + nextLoose > maxBase) return null;
+    if (maxBase !== null && roundQuantity(sealedAvailable * factor + nextLoose) > maxBase)
+      return null;
     return { packages: sealedAvailable, loose: nextLoose };
   }, [overSealed, sealedAvailable, packages, loose, factor, maxBase]);
 
@@ -388,7 +400,17 @@ function QuantityPickerBody({
       ? Math.ceil((loose - looseAvailable) / factor)
       : 0;
 
-  const canSubmit = base >= 1 && !overStock && !overSealed && !needsOpening;
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │ LE SEUIL EST `MIN_QUANTITY`, JAMAIS 1.                                │
+  // │                                                                      │
+  // │ Avec un seuil à 1, le caissier tapait 0,5 pour un demi-kilo de       │
+  // │ farine, le champ l'acceptait, le récapitulatif l'affichait, et le    │
+  // │ bouton « Ajouter au panier » restait GRIS. Sans un mot. Le serveur,  │
+  // │ lui, accepte 0,001 depuis que les quantités se vendent au poids      │
+  // │ (`SaleItem.quantity` : `DecimalField(15, 3)` et                       │
+  // │ `MinValueValidator(0.001)`).                                          │
+  // └──────────────────────────────────────────────────────────────────────┘
+  const canSubmit = base >= MIN_QUANTITY && !overStock && !overSealed && !needsOpening;
 
   // Ouverture manuelle : elle ne se propose que si elle est possible, c'est à
   // dire s'il reste des contenants scellés à ouvrir. Le message renvoyait
@@ -490,10 +512,10 @@ function QuantityPickerBody({
   const recap = (() => {
     const parts: string[] = [];
     if (packaging && packages > 0) {
-      parts.push(`${packages} ${pluralizeUnit(packageWord, packages)}`);
+      parts.push(formatUnitQuantity(packages, packageWord));
     }
     if (loose > 0 || parts.length === 0) {
-      parts.push(`${formatNumber(loose)} ${pluralizeUnit(retailWord, loose)}`);
+      parts.push(formatUnitQuantity(loose, retailWord));
     }
     return parts.join(" + ");
   })();
@@ -527,7 +549,7 @@ function QuantityPickerBody({
           </p>
           {packaging ? (
             <p className="mt-0.5 truncate text-[10px] leading-tight text-slate-500">
-              1 {packageWord} = {factor} {pluralizeUnit(retailWord, factor)}
+              1 {packageWord} = {formatUnitQuantity(factor, retailWord)}
             </p>
           ) : null}
         </div>
@@ -590,7 +612,7 @@ function QuantityPickerBody({
                 </span>
                 {!active && staged > 0 ? (
                   <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold leading-none text-white tabular-nums">
-                    {staged}
+                    {formatQuantity(staged)}
                   </span>
                 ) : null}
               </button>
@@ -682,8 +704,15 @@ function QuantityPickerBody({
         </Button>
       </div>
 
-      {/* Raccourcis : la quantité tapée au comptoir est presque toujours là */}
-      <div className="grid grid-cols-5 gap-1">
+      {/* Raccourcis : la quantité tapée au comptoir est presque toujours là.
+          ⚠ LE NOMBRE DE COLONNES SUIT LA LISTE. Le demi a porté `QUICK_VALUES`
+          de cinq à six valeurs, et la grille était restée `grid-cols-5` : le
+          dernier raccourci repassait seul sur une seconde rangée, au cinquième
+          de la largeur. */}
+      <div
+        className="grid gap-1"
+        style={{ gridTemplateColumns: `repeat(${QUICK_VALUES.length}, minmax(0, 1fr))` }}
+      >
         {QUICK_VALUES.map((value) => (
           <button
             key={value}
@@ -696,7 +725,10 @@ function QuantityPickerBody({
                 : "bg-slate-100 text-slate-700 hover:bg-slate-200"
             )}
           >
-            {value}
+            {/* ⚠ Et non `{value}` brut : le demi sortait « 0.5 », au point
+                décimal anglais, dans un écran qui écrit « 1 250,5 » partout
+                ailleurs. */}
+            {formatQuantity(value)}
           </button>
         ))}
       </div>
@@ -717,7 +749,7 @@ function QuantityPickerBody({
               {overStock
                 ? `Il ne reste que ${availabilityLabel}.`
                 : overSealed
-                  ? `Il ne reste que ${sealedAvailable} ${pluralizeUnit(packageWord, sealedAvailable ?? 0)} ${
+                  ? `Il ne reste que ${formatUnitQuantity(sealedAvailable ?? 0, packageWord)} ${
                       (sealedAvailable ?? 0) > 1 ? "scellés" : "scellé"
                     }. Les ${pluralizeUnit(retailWord, 2)} déjà sorties d'un emballage ne peuvent pas y être remises.`
                   : `Aucune ${retailWord} à l'unité disponible : ouvrez un ${packageWord} pour continuer.`}
@@ -743,10 +775,9 @@ function QuantityPickerBody({
             >
               Vendre{" "}
               {fallbackSelection.packages > 0
-                ? `${fallbackSelection.packages} ${pluralizeUnit(packageWord, fallbackSelection.packages)} + `
+                ? `${formatUnitQuantity(fallbackSelection.packages, packageWord)} + `
                 : ""}
-              {formatNumber(fallbackSelection.loose)}{" "}
-              {pluralizeUnit(retailWord, fallbackSelection.loose)}
+              {formatUnitQuantity(fallbackSelection.loose, retailWord)}
             </Button>
           ) : null}
 
@@ -771,7 +802,7 @@ function QuantityPickerBody({
             >
               {unpacking
                 ? "Ouverture…"
-                : `Ouvrir ${packagesToOpenManually} ${pluralizeUnit(packageWord, packagesToOpenManually)} (${formatNumber(packagesToOpenManually * factor)} ${pluralizeUnit(retailWord, packagesToOpenManually * factor)})`}
+                : `Ouvrir ${formatUnitQuantity(packagesToOpenManually, packageWord)} (${formatUnitQuantity(packagesToOpenManually * factor, retailWord)})`}
             </Button>
           ) : null}
         </div>
@@ -783,9 +814,9 @@ function QuantityPickerBody({
         <p className="flex items-start gap-1 rounded-lg bg-amber-50 px-1.5 py-1 text-[10px] font-medium leading-snug text-amber-700">
           <Package className="mt-px h-3 w-3 shrink-0" />
           <span>
-            {packagesToOpen} {pluralizeUnit(packageWord, packagesToOpen)}{" "}
+            {formatUnitQuantity(packagesToOpen, packageWord)}{" "}
             {packagesToOpen > 1 ? "seront ouverts" : "sera ouvert"} pour servir{" "}
-            {formatNumber(loose)} {pluralizeUnit(retailWord, loose)}.
+            {formatUnitQuantity(loose, retailWord)}.
           </span>
         </p>
       ) : null}

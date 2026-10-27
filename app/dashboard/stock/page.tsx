@@ -52,7 +52,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { PermissionGate } from "@/components/auth/permission-gate";
-import { formatPrice, formatDecimal, formatNumber, formatDateTime } from "@/lib/format";
+import { formatPrice, formatDecimal, formatDateTime } from "@/lib/format";
 import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
 import { ActionTile } from "@/components/shared/ActionTile";
 import {
@@ -356,7 +356,7 @@ export default function StockPage() {
         />
         <StatStripItem
           label="Unités au total"
-          value={formatNumber(totalQuantity)}
+          value={formatDecimal(totalQuantity)}
           icon={Boxes}
           hint="Somme en unités de détail, tous produits confondus. Les contenants scellés y comptent pour leur contenu."
         />

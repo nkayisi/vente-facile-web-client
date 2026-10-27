@@ -22,6 +22,12 @@ const DASHBOARD_ROUTE_RULES: RouteRule[] = [
   { prefix: "/dashboard/products", permission: "products.view" },
   { prefix: "/dashboard/stock", permission: "stock.view" },
   { prefix: "/dashboard/inventory", permission: "inventory.view" },
+  // ⚠ SANS CETTE RÈGLE, `/dashboard/purchases` retombe sur le wildcard
+  // `/dashboard` et son `dashboard.view` - que le CAISSIER possède. Il aurait
+  // donc atteint les commandes, les règlements et les retours fournisseurs,
+  // que le serveur lui refuse endpoint par endpoint : il aurait lu des écrans
+  // vides sans savoir pourquoi.
+  { prefix: "/dashboard/purchases", permission: "purchases.view" },
   { prefix: "/dashboard/cashbook", permission: "cashbook.view" },
   { prefix: "/dashboard/reports", permission: "reports.view" },
   {

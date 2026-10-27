@@ -71,7 +71,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { formatPoints, formatPrice, formatNumber } from "@/lib/format";
+import { formatPoints, formatPrice, formatDecimal } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { StatValue } from "@/components/shared/StatValue";
 import { ProductThumb } from "@/components/products/product-thumb";
@@ -80,6 +80,7 @@ import {
   ChannelAvailability,
   remainingChannels,
   roundQuantity,
+  formatQuantity,
   MIN_QUANTITY,
 } from "@/lib/packaging";
 import {
@@ -108,7 +109,8 @@ import {
 } from "@/lib/pos";
 import { unpackStock } from "@/actions/stock.actions";
 import { usePermissions } from "@/components/auth/permissions-provider";
-import { pluralizeUnit } from "@/lib/units";
+import { formatUnitQuantity, pluralizeUnit } from "@/lib/units";
+import { pasDeLigne } from "@/lib/stock/pas-de-ligne";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
   buildSaleReceipt,
@@ -234,7 +236,7 @@ function PackagedQuantityTrigger({
     >
       {item.packageQuantity > 0 ? (
         <span>
-          {item.packageQuantity}
+          {formatQuantity(item.packageQuantity)}
           <span className="ml-0.5 text-xs font-medium text-slate-500">{packLabel}</span>
         </span>
       ) : null}
@@ -243,7 +245,7 @@ function PackagedQuantityTrigger({
       ) : null}
       {loose > 0 || item.packageQuantity === 0 ? (
         <span>
-          {loose}
+          {formatQuantity(loose)}
           <span className="ml-0.5 text-xs font-medium text-slate-500">{unitLabel}</span>
         </span>
       ) : null}
@@ -355,16 +357,16 @@ function CartLineQuantityEditor({
 function describeCartLine(item: CartItem): string {
   const factor = packagingFactorOf(item.product);
   const retail = item.product.unit_name || "unité";
-  if (!factor) return `${item.quantity} ${pluralizeUnit(retail, item.quantity)}`;
+  if (!factor) return formatUnitQuantity(item.quantity, retail);
 
   const pack = item.product.packaging_unit_name || "conditionnement";
   const loose = looseQuantityOf(item);
   const parts: string[] = [];
   if (item.packageQuantity > 0) {
-    parts.push(`${item.packageQuantity} ${pluralizeUnit(pack, item.packageQuantity)}`);
+    parts.push(formatUnitQuantity(item.packageQuantity, pack));
   }
   if (loose > 0 || parts.length === 0) {
-    parts.push(`${loose} ${pluralizeUnit(retail, loose)}`);
+    parts.push(formatUnitQuantity(loose, retail));
   }
   return parts.join(" + ");
 }
@@ -673,7 +675,11 @@ export default function POSPage() {
     // le serveur qui travaille en `Decimal`.
     const packages = factor ? Math.max(0, roundQuantity(selection.packages)) : 0;
     const loose = Math.max(0, roundQuantity(selection.loose));
-    const qty = factor ? packages * factor + loose : loose;
+    // ⚠ LE TOTAL AUSSI. Les deux canaux étaient quantisés, pas leur somme :
+    // `0,1 + 0,2` rendait `0.30000000000000004`, donc le contrôle de stock
+    // ci-dessous refusait « Stock insuffisant » sur un rayon de 0,3 qui
+    // couvrait parfaitement la demande.
+    const qty = roundQuantity(factor ? packages * factor + loose : loose);
 
     if (qty < MIN_QUANTITY) {
       toast.error("Quantité invalide");
@@ -693,9 +699,13 @@ export default function POSPage() {
     const existingIndex = cart.findIndex(item => item.product.id === product.id);
     const currentQty = existingIndex >= 0 ? cart[existingIndex].quantity : 0;
 
-    if (product.track_inventory && !product.allow_negative_stock && currentQty + qty > available) {
+    if (
+      product.track_inventory &&
+      !product.allow_negative_stock &&
+      roundQuantity(currentQty + qty) > available
+    ) {
       toast.warning(
-        `Stock insuffisant pour "${product.name}". Disponible: ${available}, déjà au panier: ${currentQty}.`,
+        `Stock insuffisant pour « ${product.name} ». Disponible : ${formatQuantity(available)}, déjà au panier : ${formatQuantity(currentQty)}.`,
         { duration: 4000 }
       );
       return;
@@ -711,7 +721,7 @@ export default function POSPage() {
         sealedLeft
       );
       toast.warning(
-        `"${product.name}" : il ne reste que ${sealedLeft} ${packageWord} scellé${sealedLeft > 1 ? "s" : ""} en tenant compte du panier.`,
+        `« ${product.name} » : il ne reste que ${formatQuantity(sealedLeft)} ${packageWord} scellé${sealedLeft > 1 ? "s" : ""} en tenant compte du panier.`,
         { duration: 5000 }
       );
       return;
@@ -722,8 +732,12 @@ export default function POSPage() {
       const line = newCart[existingIndex];
       newCart[existingIndex] = {
         ...line,
-        quantity: line.quantity + qty,
-        packageQuantity: line.packageQuantity + packages,
+        // La fusion se quantise elle aussi : deux ajouts de 0,1 et 0,2
+        // donnaient `0.30000000000000004`, soit dix-sept décimales dans un
+        // champ que le serveur borne à trois. La vente partait en 400 à
+        // l'encaissement, ticket déjà imprimé.
+        quantity: roundQuantity(line.quantity + qty),
+        packageQuantity: roundQuantity(line.packageQuantity + packages),
       };
       setCart(newCart);
     } else {
@@ -762,10 +776,13 @@ export default function POSPage() {
     // le serveur qui travaille en `Decimal`.
     const packages = factor ? Math.max(0, roundQuantity(selection.packages)) : 0;
     const loose = Math.max(0, roundQuantity(selection.loose));
-    const nextQuantity = factor ? packages * factor + loose : loose;
+    const nextQuantity = roundQuantity(factor ? packages * factor + loose : loose);
 
     if (nextQuantity < MIN_QUANTITY) {
-      toast.error("La ligne doit contenir au moins une unité");
+      // ⚠ Le message disait « au moins une unité » alors que le seuil testé
+      // est `MIN_QUANTITY`, soit un millième : il ENSEIGNAIT au caissier la
+      // règle qu'on vient de supprimer. C'est le libellé de `verifierAjout`.
+      toast.error("Indiquez une quantité.");
       return;
     }
 
@@ -867,7 +884,11 @@ export default function POSPage() {
   const updateQuantity = (index: number, delta: number) => {
     const newCart = [...cart];
     const item = newCart[index];
-    const newQty = item.quantity + delta;
+    // ⚠ LE PAS SUIT LA LIGNE. Avec un pas de 1, « − » sur une ligne de 0,5 kg
+    // donnait -0,5 et SUPPRIMAIT l'article : ces deux boutons ne sont rendus
+    // que pour les produits sans conditionnement, c'est-à-dire exactement ceux
+    // qui se pèsent.
+    const newQty = roundQuantity(item.quantity + delta * pasDeLigne(item.quantity));
 
     if (newQty <= 0) {
       newCart.splice(index, 1);
@@ -880,7 +901,7 @@ export default function POSPage() {
       const available = getAvailableStock(item.product);
       if (newQty > available) {
         toast.warning(
-          `Stock insuffisant pour "${item.product.name}". Disponible: ${available}`,
+          `Stock insuffisant pour « ${item.product.name} ». Disponible : ${formatQuantity(available)}`,
           { duration: 4000 }
         );
         return;
@@ -1781,9 +1802,13 @@ export default function POSPage() {
                   !product.allow_negative_stock &&
                   getRemainingStock(product) <= 0;
                 const stockQty = getAvailableStock(product);
+                // ⚠ `product.reorder_point` est une CHAÎNE depuis que le seuil
+                // est décimal, et `"0.000" || 5` est TRUTHY : le repli à 5 ne
+                // s'appliquait plus, et la comparaison opposait un nombre à du
+                // texte. C'est `tsc` qui l'a nommé, pas le lint.
+                const seuilAlerte = parseFloat(String(product.reorder_point ?? "")) || 5;
                 const stockLow =
-                  product.track_inventory &&
-                  getRemainingStock(product) <= (product.reorder_point || 5);
+                  product.track_inventory && getRemainingStock(product) <= seuilAlerte;
                 const stockEmpty =
                   product.track_inventory &&
                   !product.allow_negative_stock &&
@@ -1798,9 +1823,9 @@ export default function POSPage() {
                     product.stock_packages !== undefined
                     ? `${product.stock_packages} ${product.packaging_unit_symbol || "pqt"}` +
                       (parseFloat(product.stock_loose || "0") > 0
-                        ? ` + ${formatNumber(parseFloat(product.stock_loose || "0"))} ${product.unit_symbol || ""}`.trimEnd()
+                        ? ` + ${formatQuantity(parseFloat(product.stock_loose || "0"))} ${product.unit_symbol || ""}`.trimEnd()
                         : "")
-                    : `${formatNumber(stockQty)}${product.unit_symbol ? ` ${product.unit_symbol}` : ""}`;
+                    : `${formatQuantity(stockQty)}${product.unit_symbol ? ` ${product.unit_symbol}` : ""}`;
 
                 // Prix affichés par canal. Un produit vendu en gros seul n'a pas
                 // de prix de détail : afficher le sien donnerait « 0 FC ».
@@ -2009,7 +2034,7 @@ export default function POSPage() {
                 <div className="relative">
                   <ShoppingCart className="h-6 w-6 text-orange-500" />
                   <span className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
-                    {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                    {formatQuantity(cart.reduce((sum, item) => sum + item.quantity, 0))}
                   </span>
                 </div>
                 <div>
@@ -2683,7 +2708,9 @@ export default function POSPage() {
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Récapitulatif</Label>
               <div className="p-3 bg-gray-50 rounded-xl space-y-1.5 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Sous-total ({cart.reduce((s, i) => s + i.quantity, 0)} articles)</span>
+                  <span className="text-gray-600">
+                    Sous-total ({formatQuantity(cart.reduce((s, i) => s + i.quantity, 0))} articles)
+                  </span>
                   <span className="font-medium">{money(convMoney(calculateSubtotal(), primaryCode(), saleCurrency()))}</span>
                 </div>
                 {calculateItemDiscount() > 0 && (
@@ -2875,7 +2902,12 @@ export default function POSPage() {
                 {t.currency !== saleCurrency() && amt > 0 && (
                   <p className="text-xs text-blue-600">
                     = {money(convMoney(amt, t.currency, saleCurrency()))}
-                    {"  "}(1 {t.currency} = {formatNumber(rateOf(t.currency) / rateOf(saleCurrency()))} {symbolOf(saleCurrency())})
+                    {"  "}(1 {t.currency} ={" "}
+                    {/* ⚠ `formatNumber` est un formateur d'ENTIERS : un taux inverse,
+                        comme un franc congolais vers le dollar, s'y affichait « 0 ».
+                        Six décimales, comme `formatPrice` en emploie. */}
+                    {formatDecimal(rateOf(t.currency) / rateOf(saleCurrency()), 6)}{" "}
+                    {symbolOf(saleCurrency())})
                   </p>
                 )}
                 {method?.requires_reference && !isCreditSale && (

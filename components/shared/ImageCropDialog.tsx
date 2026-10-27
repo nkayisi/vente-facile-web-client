@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Loader2, ZoomIn, ZoomOut, RotateCw } from "lucide-react";
+import { COTE_MAX_AVATAR_PX } from "@/lib/uploads";
 
 interface ImageCropDialogProps {
   open: boolean;
@@ -21,6 +22,34 @@ interface ImageCropDialogProps {
   aspectRatio?: number;
   cropShape?: "rect" | "round";
   title?: string;
+}
+
+/**
+ * La taille de SORTIE du recadrage, plafonnée au côté le plus long.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ SANS CE PLAFOND, LE RECADRAGE RÉ-ENCODAIT À LA TAILLE SOURCE.            │
+ * │                                                                          │
+ * │ Un carré pris dans une photo de téléphone sortait en plusieurs mégaoctets│
+ * │ de JPEG - pour une image affichée au plus à 96 px de côté. Au-delà de la │
+ * │ borne du corps d'une server action, l'envoi échouait ; en dessous, il    │
+ * │ coûtait des minutes sur une 2G, pour des pixels que personne ne voit.    │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ⚠ ON NE GROSSIT JAMAIS (`facteur` plafonné à 1) : agrandir un petit
+ * recadrage alourdirait le fichier sans ajouter un seul détail, et rendrait une
+ * image floue là où l'originale était nette.
+ */
+function tailleDeSortie(largeur: number, hauteur: number) {
+  const cote = Math.max(largeur, hauteur);
+  const facteur = cote > COTE_MAX_AVATAR_PX ? COTE_MAX_AVATAR_PX / cote : 1;
+  return {
+    // Au moins 1 px : un arrondi vers le bas sur un recadrage dégénéré donnerait
+    // un canevas de taille nulle, que `toBlob` rend vide - donc un envoi qui
+    // échoue sans rien dire.
+    largeur: Math.max(1, Math.round(largeur * facteur)),
+    hauteur: Math.max(1, Math.round(hauteur * facteur)),
+  };
 }
 
 async function getCroppedImage(
@@ -51,8 +80,13 @@ async function getCroppedImage(
   const croppedCanvas = document.createElement("canvas");
   const croppedCtx = croppedCanvas.getContext("2d")!;
 
-  croppedCanvas.width = pixelCrop.width;
-  croppedCanvas.height = pixelCrop.height;
+  const sortie = tailleDeSortie(pixelCrop.width, pixelCrop.height);
+  croppedCanvas.width = sortie.largeur;
+  croppedCanvas.height = sortie.hauteur;
+
+  // Une réduction en un seul passage crénelle sans ce réglage, et l'avatar est
+  // la seule image de l'application qu'on regarde de près.
+  croppedCtx.imageSmoothingQuality = "high";
 
   croppedCtx.drawImage(
     canvas,
@@ -62,8 +96,8 @@ async function getCroppedImage(
     pixelCrop.height,
     0,
     0,
-    pixelCrop.width,
-    pixelCrop.height
+    sortie.largeur,
+    sortie.hauteur
   );
 
   return new Promise((resolve, reject) => {

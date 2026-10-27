@@ -92,6 +92,8 @@ import {
 import { ExportMenu, type ExportTarget } from "@/components/shared/ExportMenu";
 import { formatApiErrorBody } from "@/lib/api/drf-error";
 import { cn } from "@/lib/utils";
+import { TAILLE_MAX_IMPORT_MO } from "@/lib/uploads";
+import { formatFixedFr } from "@vente-facile/core";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
 import { useOrganization } from "@/components/auth/organization-checker";
@@ -330,7 +332,29 @@ export default function ProductsPage() {
         setIsImporting(true);
         setImportResult(null);
 
-        const result = await importProducts(session.accessToken, organization.id, importFile);
+        /**
+         * ⚠ LE `try/catch` N'EST PAS DE L'HYGIÈNE : SANS LUI, LA FENÊTRE RESTE
+         * EN CHARGEMENT POUR TOUJOURS.
+         *
+         * Une server action peut rejeter AVANT d'entrer dans son corps - corps
+         * de requête trop gros, 413 d'un proxy inverse, coupure - et son
+         * `try/catch` interne ne rend alors aucun `{ success: false }`. Le rejet
+         * emportait donc `setIsImporting(false)` avec lui, et le marchand
+         * restait devant un bouton qui tourne sans fin, sans un mot.
+         */
+        let result: Awaited<ReturnType<typeof importProducts>>;
+        try {
+            result = await importProducts(session.accessToken, organization.id, importFile);
+        } catch (erreur) {
+            // Jamais silencieux : un jet ici désigne un défaut de serveur ou de
+            // proxy, et cette ligne en est la seule trace.
+            console.error("[Produits] Import du catalogue :", erreur);
+            toast.error("Le fichier n'a pas pu être envoyé", {
+                description: `Vérifiez votre connexion, et que le fichier ne dépasse pas ${TAILLE_MAX_IMPORT_MO} Mo.`,
+            });
+            setIsImporting(false);
+            return;
+        }
 
         if (result.success && result.data) {
             setImportResult(result.data);
@@ -884,6 +908,32 @@ function ImportDialog({
     onDownloadTemplate: () => void;
     isDownloadingTemplate: boolean;
 }) {
+    /**
+     * Le refus d'un fichier trop gros se dit SOUS LE CHAMP, au moment du choix.
+     *
+     * ⚠ Attendre l'appui sur « Importer » le ferait découvrir après le voyage,
+     * et pour rien : le fichier n'atteindrait de toute façon pas le serveur, la
+     * borne du corps d'une server action étant dérivée de celle-ci.
+     */
+    const [refusFichier, setRefusFichier] = useState<string | null>(null);
+
+    const choisirFichier = (fichier: File | null) => {
+        if (fichier && fichier.size > TAILLE_MAX_IMPORT_MO * 1024 * 1024) {
+            setRefusFichier(
+                // ⚠ `toFixed` écrirait un point décimal anglais, sous une
+                // interface qui écrit des virgules partout ailleurs.
+                `Le fichier ne doit pas dépasser ${TAILLE_MAX_IMPORT_MO} Mo (celui-ci en fait ${formatFixedFr(
+                    fichier.size / (1024 * 1024),
+                    1
+                )} Mo).`
+            );
+            setImportFile(null);
+            return;
+        }
+        setRefusFichier(null);
+        setImportFile(fichier);
+    };
+
     // Un import « réussi » qui n'a rien créé, qui a écarté des lignes ou qui a
     // dû dériver un code demande une lecture, pas une coche verte.
     const nbRenommes = importResult?.renamed?.length ?? 0;
@@ -893,7 +943,13 @@ function ImportDialog({
 
     return (
         <Dialog open={open} onOpenChange={(isOpen) => {
-            if (!isOpen) onReset();
+            // ⚠ Le sous-composant n'est pas démonté à la fermeture : sans cet
+            // effacement, le refus d'un fichier trop gros s'afficherait encore
+            // à la réouverture, au-dessus d'un champ redevenu vide.
+            if (!isOpen) {
+                setRefusFichier(null);
+                onReset();
+            }
             else onOpenChange(isOpen);
         }}>
             <DialogContent className="sm:max-w-lg">
@@ -950,7 +1006,7 @@ function ImportDialog({
                                     <input
                                         type="file"
                                         accept=".xlsx,.xls"
-                                        onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                                        onChange={(e) => choisirFichier(e.target.files?.[0] || null)}
                                         className="hidden"
                                         id="import-file"
                                     />
@@ -974,6 +1030,9 @@ function ImportDialog({
                                         )}
                                     </label>
                                 </div>
+                                {refusFichier && (
+                                    <p className="text-sm text-red-500">{refusFichier}</p>
+                                )}
                             </div>
                         </>
                     ) : (

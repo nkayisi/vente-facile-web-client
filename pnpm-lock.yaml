@@ -27,8 +27,8 @@ importers:
         specifier: ^5.91.3
         version: 5.91.3(@tanstack/react-query@5.90.20(react@19.2.3))(react@19.2.3)
       '@vente-facile/core':
-        specifier: github:nkayisi/vente-facile-core#v0.7.9
-        version: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/bce3f146385f1641ec8bfa34abbf8949893bacd6
+        specifier: github:nkayisi/vente-facile-core#v0.7.11
+        version: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/52089d065f5b2f563b3c48bd44f529e817039074
       axios:
         specifier: ^1.13.4
         version: 1.13.4
@@ -2143,9 +2143,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/bce3f146385f1641ec8bfa34abbf8949893bacd6':
-    resolution: {tarball: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/bce3f146385f1641ec8bfa34abbf8949893bacd6}
-    version: 0.7.9
+  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/52089d065f5b2f563b3c48bd44f529e817039074':
+    resolution: {tarball: https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/52089d065f5b2f563b3c48bd44f529e817039074}
+    version: 0.7.11
 
   '@webassemblyjs/ast@1.14.1':
     resolution: {integrity: sha512-nuBEDgQfm1ccRp/8bCQrx1frohyufl4JlbMMZ4P1wpeOfDhF6FQkxZJ1b/e+PLwr6X1Nhw6OLme5usuBWYBvuQ==}
@@ -6944,7 +6944,7 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.11.1':
     optional: true
 
-  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/bce3f146385f1641ec8bfa34abbf8949893bacd6': {}
+  '@vente-facile/core@https://codeload.github.com/nkayisi/vente-facile-core/tar.gz/52089d065f5b2f563b3c48bd44f529e817039074': {}
 
   '@webassemblyjs/ast@1.14.1':
     dependencies:

@@ -35,6 +35,7 @@ import {
 import { toast } from "sonner";
 import { formatDateTime, getMediaUrl } from "@/lib/format";
 import { ImageCropDialog } from "@/components/shared/ImageCropDialog";
+import { TAILLE_MAX_AVATAR_SOURCE_MO } from "@/lib/uploads";
 import {
     getUserProfile,
     updateUserProfile,
@@ -128,8 +129,17 @@ export default function ProfilePage() {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (file.size > 10 * 1024 * 1024) {
-            toast.error("La taille de l'image ne doit pas dépasser 10 Mo");
+        /**
+         * ⚠ CETTE BORNE PORTE SUR LE FICHIER SOURCE, QUI NE TRAVERSE JAMAIS LE
+         * RÉSEAU. Ce qui part est l'image RECADRÉE, plafonnée par
+         * `COTE_MAX_AVATAR_PX` : elle pèse une centaine de kilooctets quelle que
+         * soit la photo d'origine. Ici on protège la mémoire du navigateur -
+         * `readAsDataURL` charge tout le fichier en base64, un tiers plus gros.
+         */
+        if (file.size > TAILLE_MAX_AVATAR_SOURCE_MO * 1024 * 1024) {
+            toast.error(
+                `La taille de l'image ne doit pas dépasser ${TAILLE_MAX_AVATAR_SOURCE_MO} Mo`
+            );
             return;
         }
 
@@ -148,17 +158,37 @@ export default function ProfilePage() {
     };
 
     // Upload après crop
+    /**
+     * ⚠ LE `try/finally` N'EST PAS DE L'HYGIÈNE : SANS LUI, LE BOUTON RESTE
+     * FIGÉ POUR TOUJOURS.
+     *
+     * Une server action peut rejeter AVANT d'entrer dans son corps - corps de
+     * requête trop gros, 413 d'un proxy inverse, coupure - et son `try/catch`
+     * interne ne rend alors aucun `{ success: false }`. Le rejet emportait donc
+     * `setIsUploadingAvatar(false)`, et l'écran restait en chargement sans un
+     * mot, sur un écran de crash.
+     */
     const handleCroppedAvatar = async (croppedFile: File) => {
         if (!session?.accessToken) return;
         setIsUploadingAvatar(true);
-        const result = await updateUserAvatar(session.accessToken, croppedFile);
-        if (result.success && result.data) {
-            setProfile(result.data);
-            toast.success(result.message);
-        } else {
-            toast.error(result.message || "Erreur lors de la mise à jour de la photo");
+        try {
+            const result = await updateUserAvatar(session.accessToken, croppedFile);
+            if (result.success && result.data) {
+                setProfile(result.data);
+                toast.success(result.message);
+            } else {
+                toast.error(result.message || "Erreur lors de la mise à jour de la photo");
+            }
+        } catch (erreur) {
+            // Jamais silencieux : un jet ici désigne un défaut de serveur ou de
+            // proxy, et cette ligne en est la seule trace.
+            console.error("[Profil] Envoi de l'avatar :", erreur);
+            toast.error("La photo n'a pas pu être envoyée", {
+                description: "Réessayez, ou choisissez une image plus petite.",
+            });
+        } finally {
+            setIsUploadingAvatar(false);
         }
-        setIsUploadingAvatar(false);
     };
 
     // Remove avatar

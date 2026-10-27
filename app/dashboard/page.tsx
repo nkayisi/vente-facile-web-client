@@ -284,7 +284,12 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <StatValue value={stats ? formatNumber(stats.cards.units_sold.value as number) : "0"} />
+            {/* `formatNumber` est un formateur d'ENTIERS : une journée à 0,5 kg
+                vendu s'affichait « 1 », et à 0,4 kg « 0 ». Le serveur avait pourtant
+                été corrigé pour cela (`TopProductSerializer.quantity_sold`). */}
+            <StatValue
+              value={stats ? formatDecimal(stats.cards.units_sold.value as number) : "0"}
+            />
             <Variation valeur={stats?.cards.units_sold.variation} />
           </CardContent>
         </Card>
