@@ -220,7 +220,7 @@ export const CAPACITES = {
       details: [
         "Remise par ligne ou sur le total, plafonnée",
         "Panier mis en attente, repris plus tard",
-        "Vente à crédit, points de fidélité déduits",
+        "Vente à crédit, cagnotte de fidélité déduite",
       ],
     },
     {

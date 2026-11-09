@@ -18,10 +18,8 @@ import {
 } from "@/components/ui/select";
 import {
   ArrowLeft,
-  ArrowUpRight,
   Building2,
   CreditCard,
-  DollarSign,
   Loader2,
   Mail,
   MapPin,
@@ -54,16 +52,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { formatPoints, formatPrice, formatDateTime } from "@/lib/format";
+import { formatPrice, formatDateTime } from "@/lib/format";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
   getCustomer,
   deleteCustomer,
   updateCustomer,
-  getCustomerTransactions,
-  redeemCustomerPointsToDebt,
+  applyLoyaltyToDebt,
   Customer,
-  CustomerTransaction,
 } from "@/actions/contacts.actions";
 import {
   getSale,
@@ -81,28 +77,26 @@ import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import {
   getCustomerLoyalty,
-  getCustomerLoyaltyTransactions,
   getLoyaltyProgram,
   getOrganizationCurrencies,
   CustomerLoyalty,
   LoyaltyProgram,
-  LoyaltyTransaction,
   OrganizationCurrency,
 } from "@/actions/settings.actions";
 import { Star } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { LoyaltyPointsPicker } from "@/components/sales/loyalty-points-picker";
+import { LoyaltyCreditPicker } from "@/components/sales/loyalty-credit-picker";
 import { createMoneyHelpers, MONEY_EPS } from "@/lib/currency";
 import { isOverdue, dueDateLabel } from "@/lib/due-date";
 import { useOrganization } from "@/components/auth/organization-checker";
 
 /**
- * Arrondi d'une saisie de points au centième.
+ * Arrondi d'une saisie de cagnotte au centième, par DÉFAUT.
  *
- * Les points sont fractionnaires : tronquer à l'entier interdisait au client
- * d'utiliser le solde qu'il vient de gagner (0,58 point devenait 0).
+ * Jamais au-dessus : on ne propose pas au caissier un montant que le solde du
+ * client ne couvre pas.
  */
-function roundPoints(value: number): number {
+function arrondiCagnotte(value: number): number {
   return Math.floor(value * 100) / 100;
 }
 
@@ -122,9 +116,6 @@ export default function CustomerDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Transactions
-  const [transactions, setTransactions] = useState<CustomerTransaction[]>([]);
-  const [isLoadingTxns, setIsLoadingTxns] = useState(false);
-  const [txnFilter, setTxnFilter] = useState<string>("all");
 
   // Credit limit dialog
   const [showCreditLimitDialog, setShowCreditLimitDialog] = useState(false);
@@ -135,7 +126,6 @@ export default function CustomerDetailPage() {
   // Loyalty points
   const [customerLoyalty, setCustomerLoyalty] = useState<CustomerLoyalty | null>(null);
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
-  const [loyaltyTransactions, setLoyaltyTransactions] = useState<LoyaltyTransaction[]>([]);
 
   // Invoice payment dialog
   const [showInvoicePaymentDialog, setShowInvoicePaymentDialog] = useState(false);
@@ -146,13 +136,13 @@ export default function CustomerDetailPage() {
   const [invoicePaymentAmount, setInvoicePaymentAmount] = useState("");
   const [invoicePaymentRef, setInvoicePaymentRef] = useState("");
   // Points de fidélité utilisés sur cette facture (cumulables avec l'argent).
-  const [invoicePointsUsed, setInvoicePointsUsed] = useState("");
+  const [invoiceLoyaltyUsed, setInvoiceLoyaltyUsed] = useState("");
   // Ouverture du popover de saisie des points, comme au POS : le panneau
   // déplié coûtait cinq lignes en permanence pour un geste occasionnel.
-  const [showInvoicePointsPicker, setShowInvoicePointsPicker] = useState(false);
+  const [showInvoiceLoyaltyPicker, setShowInvoiceLoyaltyPicker] = useState(false);
   // Utilisation des points sur la dette globale du client.
   const [showRedeemDebtDialog, setShowRedeemDebtDialog] = useState(false);
-  const [debtPointsUsed, setDebtPointsUsed] = useState("");
+  const [debtLoyaltyUsed, setDebtLoyaltyUsed] = useState("");
   // Multi-devise : devise du règlement + taux org (conversion & validation).
   const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
   const [invoicePaymentCurrency, setInvoicePaymentCurrency] = useState<string>("");
@@ -179,15 +169,15 @@ export default function CustomerDetailPage() {
   // plus bas les mettrait en zone morte temporelle sur les rendus qui sortent
   // tôt.
   //
-  // Le barème (`point_value`) est libellé en devise principale : on ne propose
-  // donc les points que sur une facture dans cette même devise.
-  const availablePoints = customerLoyalty?.current_points ?? 0;
-  const pointValue = parseFloat(loyaltyProgram?.point_value ?? "0");
-  const minPointsToRedeem = loyaltyProgram?.min_points_to_redeem ?? 0;
-  const canUsePointsOnInvoice =
+  // La cagnotte est libellée en devise principale : on ne propose donc son
+  // emploi que sur une facture dans cette même devise.
+  //
+  // ⚠ `Number(...)` : le solde arrive en CHAÎNE, comme tout montant. Le lire
+  // tel quel ferait concaténer au lieu d'additionner.
+  const availableLoyalty = Number(customerLoyalty?.balance ?? 0) || 0;
+  const canUseLoyaltyOnInvoice =
     !!loyaltyProgram?.is_active &&
-    availablePoints > 0 &&
-    pointValue > 0 &&
+    availableLoyalty > 0 &&
     selectedSale?.currency === defaultCurrency.code;
 
   /**
@@ -204,19 +194,14 @@ export default function CustomerDetailPage() {
   const maxRedeemableAmount = parseFloat(
     selectedSale?.loyalty_max_redeemable ?? "0"
   ) || 0;
-  const maxUsablePoints = canUsePointsOnInvoice
-    ? Math.min(availablePoints, roundPoints(maxRedeemableAmount / pointValue))
+  const maxUsableLoyalty = canUseLoyaltyOnInvoice
+    ? Math.min(availableLoyalty, arrondiCagnotte(maxRedeemableAmount))
     : 0;
-  // En dessous du minimum du programme, le serveur n'accorde AUCUNE remise :
-  // le panneau doit le dire plutôt qu'offrir un champ sans effet.
-  const pointsRedeemable = maxUsablePoints >= minPointsToRedeem && maxUsablePoints > 0;
-  const enteredPoints = parseFloat(invoicePointsUsed) || 0;
-  // Miroir de `calculateLoyaltyDiscount` au POS : sous le minimum la valeur est
-  // nulle, et elle ne dépasse jamais la part autorisée.
-  const pointsValue =
-    enteredPoints >= minPointsToRedeem
-      ? Math.min(enteredPoints * pointValue, maxRedeemableAmount)
-      : 0;
+  const loyaltyRedeemable = maxUsableLoyalty > 0;
+  const enteredLoyalty = parseFloat(invoiceLoyaltyUsed) || 0;
+  // Miroir de `loyaltyDiscount` du noyau : la remise ne dépasse jamais la part
+  // autorisée, et il n'y a plus de minimum à opposer.
+  const loyaltyValue = Math.min(enteredLoyalty, maxRedeemableAmount);
 
   /**
    * Montant saisi, exprimé dans la devise de la FACTURE.
@@ -279,12 +264,6 @@ export default function CustomerDetailPage() {
 
             if (loyaltyResult.success && loyaltyResult.data) {
               setCustomerLoyalty(loyaltyResult.data);
-              const txnsResult = await getCustomerLoyaltyTransactions(
-                session.accessToken, org.id, loyaltyResult.data.id
-              );
-              if (txnsResult.success && txnsResult.data) {
-                setLoyaltyTransactions(txnsResult.data);
-              }
             }
 
             if (programResult.success) {
@@ -362,30 +341,6 @@ export default function CustomerDetailPage() {
     }
   }, [session?.accessToken, organization, customerId]);
 
-  // Load transactions
-  const loadTransactions = useCallback(async () => {
-    if (!session?.accessToken || !organization) return;
-    setIsLoadingTxns(true);
-    try {
-      const typeParam = txnFilter === "all" ? undefined : txnFilter;
-      const result = await getCustomerTransactions(
-        session.accessToken, organization.id, customerId, typeParam
-      );
-      if (result.success && result.data) {
-        setTransactions(result.data);
-      } else {
-        // Sans ce message, un échec affichait « Aucun mouvement » : impossible
-        // de distinguer un client sans historique d'une requête en erreur.
-        setTransactions([]);
-        toast.warning("Historique des mouvements non chargé.");
-      }
-    } catch (error) {
-      console.error("Error loading transactions:", error);
-    } finally {
-      setIsLoadingTxns(false);
-    }
-  }, [session?.accessToken, organization, customerId, txnFilter]);
-
   // Dépendre de l'IDENTIFIANT du client, pas de l'objet : `refreshData()`
   // remplace l'objet `customer` après chaque opération, ce qui re-déclenchait
   // cet effet et doublait les requêtes déjà lancées explicitement par les
@@ -393,40 +348,32 @@ export default function CustomerDetailPage() {
   const customerLoaded = customer?.id;
   useEffect(() => {
     if (organization && customerLoaded) {
-      loadTransactions();
       loadPendingSales();
     }
-  }, [organization, customerLoaded, txnFilter, loadTransactions, loadPendingSales]);
+  }, [organization, customerLoaded, loadPendingSales]);
 
   // Handle invoice payment
   const handleInvoicePayment = async () => {
     if (!session?.accessToken || !organization || !customer || !selectedSale) return;
 
-    const pointsUsed = parseFloat(invoicePointsUsed) || 0;
+    const loyaltyUsed = parseFloat(invoiceLoyaltyUsed) || 0;
     const amount = parseFloat(invoicePaymentAmount) || 0;
 
-    // Une facture peut être réglée uniquement en points, uniquement en argent,
-    // ou par un mélange des deux.
-    if (amount <= 0 && pointsUsed <= 0) {
-      toast.error("Indiquez un montant ou un nombre de points à utiliser");
+    // Une facture peut être réglée uniquement en cagnotte, uniquement en
+    // argent, ou par un mélange des deux.
+    if (amount <= 0 && loyaltyUsed <= 0) {
+      toast.error("Indiquez un montant à encaisser ou une part de cagnotte");
       return;
     }
     if (amount > 0 && !selectedPaymentMethod) {
       toast.error("Sélectionnez un mode de paiement");
       return;
     }
-    // Miroirs des deux refus de `resolve_redemption` : sans eux le caissier
-    // encaissait, attendait l'impression, et recevait « Points inutilisables ».
-    if (pointsUsed > 0 && pointsUsed < minPointsToRedeem) {
+    // Miroir du refus de `resolve_redemption` : sans lui le caissier
+    // encaissait, attendait l'impression, et recevait « Cagnotte inutilisable ».
+    if (loyaltyUsed > maxUsableLoyalty) {
       toast.error(
-        `Il faut utiliser au moins ${formatPoints(minPointsToRedeem)} points.`
-      );
-      return;
-    }
-    if (pointsUsed > maxUsablePoints) {
-      toast.error(
-        `${formatPoints(maxUsablePoints)} points au maximum sur cette facture ` +
-        `(${formatPrice(maxRedeemableAmount)}).`
+        `Au plus ${formatPrice(maxUsableLoyalty)} de cagnotte sur cette facture.`
       );
       return;
     }
@@ -435,14 +382,14 @@ export default function CustomerDetailPage() {
     // Le restant dû est en devise de la vente : comparer la valeur convertie,
     // déduction faite de ce que les points couvrent déjà.
     const amountInSale = amount > 0 ? invToSaleCurrency(amount) : 0;
-    // Même borne que le serveur : au-delà du plafond, les points ne couvrent
+    // Même borne que le serveur : au-delà du plafond, la cagnotte ne couvre
     // pas davantage, et compter la valeur brute sous-estimerait l'argent dû.
-    const coveredByPoints = Math.min(pointsUsed * pointValue, maxRedeemableAmount);
+    const coveredByLoyalty = Math.min(loyaltyUsed, maxRedeemableAmount);
     // Tolérance d'arrondi partagée avec l'affichage, et montant libellé dans la
     // devise de la facture : `formatPrice` seul y collait le symbole de la
     // devise principale, puis le code de la facture était ajouté derrière -
     // une facture de 50 USD s'annonçait « 50 FC USD ».
-    if (amountInSale + coveredByPoints > amountDue + MONEY_EPS) {
+    if (amountInSale + coveredByLoyalty > amountDue + MONEY_EPS) {
       toast.error(
         `Le règlement ne peut pas dépasser ${money.money(amountDue, selectedSale.currency)}`
       );
@@ -466,7 +413,7 @@ export default function CustomerDetailPage() {
                   : {}),
               }
             : {}),
-          ...(pointsUsed > 0 ? { points_used: pointsUsed } : {}),
+          ...(loyaltyUsed > 0 ? { loyalty_amount_used: loyaltyUsed } : {}),
           reference: invoicePaymentRef || undefined,
         }
       );
@@ -476,7 +423,7 @@ export default function CustomerDetailPage() {
         // Repli à 0 : ces montants partent sur le reçu PDF, où un `NaN`
         // s'imprimerait tel quel.
         const previouslyPaid = parseFloat(selectedSale.amount_paid) || 0;
-        const remainingBalance = amountDue - amountInSale - coveredByPoints;
+        const remainingBalance = amountDue - amountInSale - coveredByLoyalty;
 
         // Numéro du serveur, porté par le règlement créé : une réimpression
         // rend le même, ce que `PAY-${Date.now()}` ne pouvait pas garantir.
@@ -494,7 +441,7 @@ export default function CustomerDetailPage() {
           // Ces montants sont en devise de la FACTURE : y annoncer la devise
           // principale donnait un reçu où quatre montants portaient deux
           // référentiels différents.
-          amountPaid: amountInSale + coveredByPoints,
+          amountPaid: amountInSale + coveredByLoyalty,
           currency: selectedSale.currency,
           invoice: {
             reference: selectedSale.reference,
@@ -509,11 +456,13 @@ export default function CustomerDetailPage() {
             currency: selectedSale.currency,
           },
           // Valeurs autoritatives de la vente rafraîchie : le règlement a pu
-          // être fait en points.
+          // puiser dans la cagnotte.
           loyalty: {
             show: !!result.data?.loyalty_program_active,
-            used: result.data?.loyalty_points_used ?? 0,
-            balance: result.data?.loyalty_points_balance ?? 0,
+            used: Number(result.data?.loyalty_used ?? 0) || 0,
+            balance: Number(result.data?.loyalty_balance ?? 0) || 0,
+            // ⚠ LA CAGNOTTE EST EN DEVISE PRINCIPALE, pas en devise de facture.
+            currency: defaultCurrency.code,
           },
         };
 
@@ -527,7 +476,6 @@ export default function CustomerDetailPage() {
 
         // Refresh data
         await refreshData();
-        loadTransactions();
         loadPendingSales();
       } else {
         job.abort();
@@ -542,57 +490,50 @@ export default function CustomerDetailPage() {
     }
   };
 
-  // Utilise les points du client pour éponger sa dette. Le backend convertit
-  // les points en montant puis l'impute sur les factures ouvertes.
-  const handleRedeemPointsToDebt = async () => {
+  // Emploie la cagnotte du client pour éponger sa dette. Le backend l'impute
+  // sur les factures ouvertes, de la plus ancienne à la plus récente.
+  const handleUseLoyaltyOnDebt = async () => {
     if (!session?.accessToken || !organization || !customer) return;
 
-    const points = parseFloat(debtPointsUsed) || 0;
-    if (points <= 0) {
-      toast.error("Indiquez un nombre de points");
+    const montant = parseFloat(debtLoyaltyUsed) || 0;
+    if (montant <= 0) {
+      toast.error("Indiquez un montant de cagnotte");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await redeemCustomerPointsToDebt(
+      const result = await applyLoyaltyToDebt(
         session.accessToken,
         organization.id,
         customer.id,
-        { points }
+        { amount: montant }
       );
 
       if (result.success && result.data) {
-        const { points_used, amount, settled_invoices } = result.data;
-        toast.success(`${points_used} points utilisés`, {
+        const { loyalty_amount_used, amount, settled_invoices } = result.data;
+        toast.success(`${formatPrice(loyalty_amount_used)} de cagnotte employés`, {
           description: settled_invoices.length
             ? `${formatPrice(amount)} imputés sur : ${settled_invoices.join(", ")}`
             : `${formatPrice(amount)} déduits de la dette`,
         });
         setShowRedeemDebtDialog(false);
-        setDebtPointsUsed("");
+        setDebtLoyaltyUsed("");
 
         await refreshData();
-        loadTransactions();
         loadPendingSales();
         const loyaltyResult = await getCustomerLoyalty(
           session.accessToken, organization.id, customer.id
         );
         if (loyaltyResult.success && loyaltyResult.data) {
           setCustomerLoyalty(loyaltyResult.data);
-          const txnsResult = await getCustomerLoyaltyTransactions(
-            session.accessToken, organization.id, loyaltyResult.data.id
-          );
-          if (txnsResult.success && txnsResult.data) {
-            setLoyaltyTransactions(txnsResult.data);
-          }
         }
       } else {
-        toast.error(result.message || "Erreur lors de l'utilisation des points");
+        toast.error(result.message || "Erreur lors de l'utilisation de la cagnotte");
       }
     } catch (error) {
-      console.error("Error redeeming points:", error);
-      toast.error("Erreur lors de l'utilisation des points");
+      console.error("Error applying loyalty credit:", error);
+      toast.error("Erreur lors de l'utilisation de la cagnotte");
     } finally {
       setIsSubmitting(false);
     }
@@ -613,8 +554,8 @@ export default function CustomerDetailPage() {
     const cashMethod = paymentMethods.find(m => m.method_type === "cash");
     setSelectedPaymentMethod(cashMethod?.id || "");
     setInvoicePaymentRef("");
-    setInvoicePointsUsed("");
-    setShowInvoicePointsPicker(false);
+    setInvoiceLoyaltyUsed("");
+    setShowInvoiceLoyaltyPicker(false);
     setShowInvoicePaymentDialog(true);
 
     // La facture vient de la LISTE, qui ne porte pas les champs de fidélité :
@@ -656,8 +597,8 @@ export default function CustomerDetailPage() {
     setSelectedPaymentMethod("");
     setInvoicePaymentAmount("");
     setInvoicePaymentRef("");
-    setInvoicePointsUsed("");
-    setShowInvoicePointsPicker(false);
+    setInvoiceLoyaltyUsed("");
+    setShowInvoiceLoyaltyPicker(false);
     // Oublié du bloc de reset d'origine : la devise du règlement précédent
     // restait en place et s'appliquait à la facture suivante.
     setInvoicePaymentCurrency("");
@@ -726,32 +667,6 @@ export default function CustomerDetailPage() {
     }
   };
 
-  const getTxnIcon = (type: string) => {
-    switch (type) {
-      case "credit_sale": return <ArrowUpRight className="h-4 w-4 text-red-500" />;
-      case "payment": return <CreditCard className="h-4 w-4 text-green-500" />;
-      case "advance": return <Banknote className="h-4 w-4 text-blue-500" />;
-      case "adjustment": return <DollarSign className="h-4 w-4 text-orange-500" />;
-      case "refund": return <ArrowUpRight className="h-4 w-4 text-purple-500" />;
-      default: return <DollarSign className="h-4 w-4 text-gray-500" />;
-    }
-  };
-
-  const getTxnColor = (type: string) => {
-    switch (type) {
-      case "credit_sale": return "text-red-600";
-      case "payment": return "text-green-600";
-      case "advance": return "text-blue-600";
-      case "adjustment": return "text-orange-600";
-      case "refund": return "text-purple-600";
-      default: return "text-gray-600";
-    }
-  };
-
-  const getTxnSign = (type: string) => {
-    return type === "credit_sale" || type === "refund" ? "+" : "-";
-  };
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -779,11 +694,8 @@ export default function CustomerDetailPage() {
   const primaryDebt = parseFloat(
     balanceLines.find((b) => b.currency === defaultCurrency.code)?.amount || "0"
   );
-  const maxPointsForDebt =
-    pointValue > 0 && primaryDebt > 0
-      ? Math.min(availablePoints, roundPoints(primaryDebt / pointValue))
-      : 0;
-  const debtPointsValue = (parseFloat(debtPointsUsed) || 0) * pointValue;
+  const maxLoyaltyForDebt =
+    primaryDebt > 0 ? Math.min(availableLoyalty, arrondiCagnotte(primaryDebt)) : 0;
   const creditLimit = parseFloat(customer.credit_limit);
   const availableCredit = parseFloat(customer.available_credit || "0");
   const totalPurchases = parseFloat(customer.total_purchases || "0");
@@ -823,6 +735,12 @@ export default function CustomerDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/dashboard/contacts/customers/${customerId}/historique`}>
+            <Button variant="outline">
+              <History className="h-4 w-4 mr-2" />
+              Historique
+            </Button>
+          </Link>
           <Button
             variant="outline"
             onClick={openCreditLimitDialog}
@@ -923,73 +841,48 @@ export default function CustomerDetailPage() {
               </div>
               <div>
                 <p className={`text-sm font-medium ${loyaltyProgram?.is_active ? 'text-amber-700' : 'text-gray-500'}`}>
-                  Points de fidélité {!loyaltyProgram?.is_active && '(Programme inactif)'}
+                  Cagnotte de fidélité {!loyaltyProgram?.is_active && '(Programme inactif)'}
                 </p>
                 <p className={`text-4xl font-bold ${loyaltyProgram?.is_active ? 'text-amber-800' : 'text-gray-400'}`}>
-                  {formatPoints(customerLoyalty?.current_points)} <span className="text-xl font-normal">pts</span>
+                  {formatPrice(availableLoyalty)}
                 </p>
               </div>
             </div>
             <div className="text-right space-y-1">
               <p className={`text-sm ${loyaltyProgram?.is_active ? 'text-amber-700' : 'text-gray-500'}`}>
-                Total gagné: <span className="font-semibold">{formatPoints(customerLoyalty?.total_points_earned)} pts</span>
+                Total gagné : <span className="font-semibold">{formatPrice(customerLoyalty?.total_earned ?? 0)}</span>
               </p>
               <p className={`text-sm ${loyaltyProgram?.is_active ? 'text-amber-700' : 'text-gray-500'}`}>
-                Total utilisé: <span className="font-semibold">{formatPoints(customerLoyalty?.total_points_redeemed)} pts</span>
+                Total utilisé : <span className="font-semibold">{formatPrice(customerLoyalty?.total_used ?? 0)}</span>
               </p>
-              {loyaltyProgram?.is_active && loyaltyProgram.min_points_to_redeem > 0 && (
+              {loyaltyProgram?.is_active && (
                 <p className="text-xs text-amber-600 mt-2">
-                  Min. pour utiliser: {loyaltyProgram.min_points_to_redeem} pts
+                  {Number(loyaltyProgram.earn_percent)} % de chaque facture réglée
                 </p>
               )}
             </div>
           </div>
 
-          {/* Échéance à venir : le marchand doit pouvoir prévenir son client
-              AVANT que les points ne tombent. */}
-          {loyaltyProgram?.is_active &&
-            !!customerLoyalty?.next_expiry_at &&
-            customerLoyalty.next_expiry_points > 0 && (
-              <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-white/70 p-3">
-                <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                <p className="text-sm text-amber-800">
-                  <span className="font-semibold">
-                    {customerLoyalty.next_expiry_points} points
-                  </span>{" "}
-                  expirent le {formatDateTime(customerLoyalty.next_expiry_at).split(" ")[0]}
-                  {customerLoyalty.points_expiry_days > 0 && (
-                    <span className="block text-xs text-amber-600">
-                      Validité d&apos;un point : {customerLoyalty.points_expiry_days} jours
-                      après son obtention
-                    </span>
-                  )}
-                </p>
-              </div>
-            )}
-
-          {/* Utiliser les points sur la dette : les points sont convertis en
-              montant puis imputés sur les factures ouvertes, de la plus
-              ancienne à la plus récente. */}
-          {loyaltyProgram?.is_active && availablePoints > 0 && balance > 0 && (
+          {/* Employer la cagnotte sur la dette : le montant est imputé sur les
+              factures ouvertes, de la plus ancienne à la plus récente. */}
+          {loyaltyProgram?.is_active && availableLoyalty > 0 && balance > 0 && (
             <div className="mt-4 flex flex-col gap-3 border-t border-amber-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-amber-800">
-                Utiliser ces points pour réduire la dette du client
-                {pointValue > 0 && (
-                  <span className="block text-xs text-amber-600">
-                    {formatPoints(availablePoints)} pts = {formatPrice(availablePoints * pointValue)} maximum
-                  </span>
-                )}
+                Employer cette cagnotte pour réduire la dette du client
+                <span className="block text-xs text-amber-600">
+                  {formatPrice(maxLoyaltyForDebt)} au maximum, dette comprise
+                </span>
               </p>
               <Button
                 variant="outline"
                 className="border-amber-400 bg-white text-amber-700 hover:bg-amber-50"
                 onClick={() => {
-                  setDebtPointsUsed(String(maxPointsForDebt));
+                  setDebtLoyaltyUsed(String(maxLoyaltyForDebt));
                   setShowRedeemDebtDialog(true);
                 }}
               >
                 <Star className="mr-2 h-4 w-4" />
-                Payer la dette avec les points
+                Payer la dette avec la cagnotte
               </Button>
             </div>
           )}
@@ -1147,140 +1040,14 @@ export default function CustomerDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Transaction History */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <History className="h-5 w-5 text-orange-500" />
-                  Historique des mouvements
-                </CardTitle>
-                <Select value={txnFilter} onValueChange={setTxnFilter}>
-                  <SelectTrigger className="w-full sm:w-[200px]">
-                    <SelectValue placeholder="Filtrer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tous les mouvements</SelectItem>
-                    <SelectItem value="credit_sale">Achats à crédit</SelectItem>
-                    <SelectItem value="payment">Paiements reçus</SelectItem>
-                    <SelectItem value="advance">Avances données</SelectItem>
-                    <SelectItem value="adjustment">Corrections</SelectItem>
-                    <SelectItem value="refund">Remboursements</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isLoadingTxns ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
-                </div>
-              ) : transactions.length === 0 ? (
-                <div className="text-center py-8">
-                  <History className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">Aucun mouvement</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Les paiements, avances et achats à crédit apparaîtront ici
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {transactions.map(txn => (
-                    <div
-                      key={txn.id}
-                      className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="p-2 bg-gray-100 rounded-full">
-                        {getTxnIcon(txn.transaction_type)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium">{txn.transaction_type_display}</p>
-                          {txn.sale_reference && (
-                            <Link
-                              href={`/dashboard/sales/${txn.sale}`}
-                              className="text-xs text-orange-600 hover:underline"
-                            >
-                              {txn.sale_reference}
-                            </Link>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <span>{formatDateTime(txn.created_at)}</span>
-                          {txn.payment_method && (
-                            <span>· {txn.payment_method === "cash" ? "Espèces" : txn.payment_method === "mobile_money" ? "Mobile Money" : txn.payment_method === "bank_transfer" ? "Virement" : txn.payment_method === "check" ? "Chèque" : txn.payment_method}</span>
-                          )}
-                          {txn.reference && <span>· Réf: {txn.reference}</span>}
-                        </div>
-                        {txn.notes && (
-                          <p className="text-xs text-gray-400 mt-0.5 truncate">{txn.notes}</p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-sm font-semibold ${getTxnColor(txn.transaction_type)}`}>
-                          {getTxnSign(txn.transaction_type)}
-                          {money.money(txn.amount, txn.currency || defaultCurrency.code)}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          Dette après :{" "}
-                          {money.money(txn.balance_after, txn.currency || defaultCurrency.code)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Historique des points : le registre existait côté backend depuis le
-              début mais n'était affiché nulle part. */}
-          {loyaltyTransactions.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Star className="h-5 w-5 fill-amber-500 text-amber-500" />
-                  Historique des points
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {loyaltyTransactions.map((txn) => (
-                    <div
-                      key={txn.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border p-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900">
-                          {txn.transaction_type_display}
-                          {txn.sale_reference && (
-                            <span className="ml-2 text-xs text-gray-400">
-                              {txn.sale_reference}
-                            </span>
-                          )}
-                        </p>
-                        {txn.description && (
-                          <p className="truncate text-xs text-gray-400">{txn.description}</p>
-                        )}
-                        <p className="text-xs text-gray-400">{formatDateTime(txn.created_at)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p
-                          className={`text-sm font-semibold ${
-                            txn.points >= 0 ? "text-green-600" : "text-red-600"
-                          }`}
-                        >
-                          {txn.points >= 0 ? "+" : ""}
-                          {formatPoints(txn.points)} pts
-                        </p>
-                        <p className="text-xs text-gray-400">Solde : {formatPoints(txn.balance_after)} pts</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {/* ┌────────────────────────────────────────────────────────────────┐
+          │ LES TROIS LECTURES DU PASSÉ VIVENT DANS UNE SOUS-PAGE.        │
+          │                                                                │
+          │ Le grand livre, le registre de cagnotte et le rapport par      │
+          │ période occupaient trois sections sous la fiche, et noyaient   │
+          │ ce qu'on vient y chercher devant un client : sa situation et   │
+          │ ce qu'il doit. On les consulte rarement, et longuement.        │
+          └────────────────────────────────────────────────────────────────┘ */}
         </div>
 
         {/* Right: Pending Invoices + Recent Sales */}
@@ -1366,6 +1133,12 @@ export default function CustomerDetailPage() {
                   ))}
                 </div>
               )}
+              <Link
+                href={`/dashboard/contacts/customers/${customerId}/historique`}
+                className="mt-3 block text-center text-xs text-orange-600 hover:underline"
+              >
+                Voir tout l&apos;historique
+              </Link>
             </CardContent>
           </Card>
         </div>
@@ -1474,19 +1247,19 @@ export default function CustomerDetailPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Star className="h-5 w-5 fill-amber-500 text-amber-500" />
-              Payer la dette avec les points
+              Payer la dette avec la cagnotte
             </DialogTitle>
             <DialogDescription>
-              Les points sont convertis en montant, puis imputés sur les factures
-              ouvertes de la plus ancienne à la plus récente.
+              Le montant est imputé sur les factures ouvertes, de la plus
+              ancienne à la plus récente.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-center">
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                <p className="text-xs uppercase tracking-wider text-amber-600">Points disponibles</p>
-                <p className="text-xl font-bold text-amber-800">{availablePoints}</p>
+                <p className="text-xs uppercase tracking-wider text-amber-600">Cagnotte disponible</p>
+                <p className="text-xl font-bold text-amber-800">{formatPrice(availableLoyalty)}</p>
               </div>
               <div className="rounded-xl border border-red-200 bg-red-50 p-3">
                 <p className="text-xs uppercase tracking-wider text-red-600">Dette en {defaultCurrency.code}</p>
@@ -1495,36 +1268,30 @@ export default function CustomerDetailPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Points à utiliser</Label>
+              <Label>Montant de cagnotte à employer</Label>
               <div className="flex flex-wrap items-center gap-2">
                 <Input
                   type="number"
                   min={0}
-                  max={maxPointsForDebt}
+                  max={maxLoyaltyForDebt}
                   step="0.01"
-                  value={debtPointsUsed}
-                  onChange={(e) => setDebtPointsUsed(e.target.value)}
+                  value={debtLoyaltyUsed}
+                  onChange={(e) => setDebtLoyaltyUsed(e.target.value)}
                   className="h-11"
                 />
                 <Button
                   type="button"
                   variant="outline"
                   className="h-11 shrink-0"
-                  onClick={() => setDebtPointsUsed(String(maxPointsForDebt))}
+                  onClick={() => setDebtLoyaltyUsed(String(maxLoyaltyForDebt))}
                 >
                   Maximum
                 </Button>
               </div>
-              {debtPointsValue > 0 && (
-                <p className="text-sm text-amber-800">
-                  Soit {formatPrice(debtPointsValue)} déduits de la dette
-                </p>
-              )}
-              {loyaltyProgram && loyaltyProgram.min_points_to_redeem > 0 && (
-                <p className="text-xs text-gray-500">
-                  Minimum {loyaltyProgram.min_points_to_redeem} points
-                </p>
-              )}
+              <p className="text-xs text-gray-500">
+                Au plus {formatPrice(maxLoyaltyForDebt)} : la cagnotte ne couvre
+                jamais plus que la dette.
+              </p>
             </div>
           </div>
 
@@ -1537,8 +1304,8 @@ export default function CustomerDetailPage() {
               Annuler
             </Button>
             <Button
-              onClick={handleRedeemPointsToDebt}
-              disabled={isSubmitting || (parseFloat(debtPointsUsed) || 0) <= 0}
+              onClick={handleUseLoyaltyOnDebt}
+              disabled={isSubmitting || (parseFloat(debtLoyaltyUsed) || 0) <= 0}
               className="bg-amber-600 hover:bg-amber-700 sm:flex-1"
             >
               {isSubmitting ? "Traitement..." : "Confirmer"}
@@ -1585,97 +1352,91 @@ export default function CustomerDetailPage() {
             const saleCur = selectedSale.currency || defaultCurrency.code;
             const payCur = invoicePaymentCurrency || saleCur;
             const dueInSale = parseFloat(selectedSale.amount_due) || 0;
-            // Reste à payer une fois les points imputés : c'est ce que le
+            // Reste à payer une fois la cagnotte imputée : c'est ce que le
             // caissier doit encore réunir en argent.
-            const dueAfterPoints = Math.max(0, dueInSale - pointsValue);
+            const dueAfterLoyalty = Math.max(0, dueInSale - loyaltyValue);
             const raw = parseFloat(invoicePaymentAmount) || 0;
             const paidInSale = raw > 0 ? invToSaleCurrency(raw) : 0;
-            const remaining = dueAfterPoints - paidInSale;
+            const remaining = dueAfterLoyalty - paidInSale;
             const method = paymentMethods.find(m => m.id === selectedPaymentMethod);
 
             return (
               <>
                 <div className="space-y-5 overflow-y-auto flex-1 pr-2">
 
-                  {/* 1. Points de fidélité. Placés avant le récapitulatif :
-                      ils changent le reste à payer, donc le montant à saisir. */}
-                  {canUsePointsOnInvoice && (
+                  {/* 1. Cagnotte de fidélité. Placée avant le récapitulatif :
+                      elle change le reste à payer, donc le montant à saisir. */}
+                  {canUseLoyaltyOnInvoice && (
                     <div className="space-y-2">
                       <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        Points de fidélité ({formatPoints(availablePoints)} pts)
+                        Cagnotte de fidélité ({formatPrice(availableLoyalty)})
                       </Label>
                       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                         {/* La case à cocher EST l'ancre du popover : cocher
                             demande combien, décocher annule sans rien demander. */}
-                        <LoyaltyPointsPicker
-                          open={showInvoicePointsPicker}
-                          onOpenChange={setShowInvoicePointsPicker}
-                          balance={availablePoints}
-                          minPoints={minPointsToRedeem}
-                          maxPoints={maxUsablePoints}
-                          pointValue={pointValue}
-                          maxAmount={maxRedeemableAmount}
+                        <LoyaltyCreditPicker
+                          open={showInvoiceLoyaltyPicker}
+                          onOpenChange={setShowInvoiceLoyaltyPicker}
+                          balance={availableLoyalty}
+                          maxAmount={maxUsableLoyalty}
                           formatAmount={formatPrice}
-                          initial={enteredPoints}
-                          onConfirm={(points) => {
-                            // Le montant saisi n'est jamais recalculé : c'est
-                            // la saisie du caissier. Si points + argent dépassent
+                          initial={enteredLoyalty}
+                          onConfirm={(montant) => {
+                            // Le montant en argent n'est jamais recalculé : c'est
+                            // la saisie du caissier. Si cagnotte + argent dépassent
                             // le reste dû, le bilan le dit en rouge et bloque.
-                            setInvoicePointsUsed(points > 0 ? String(points) : "");
+                            setInvoiceLoyaltyUsed(montant > 0 ? String(montant) : "");
                           }}
                         >
                           <button
                             type="button"
-                            disabled={!pointsRedeemable}
-                            aria-pressed={enteredPoints > 0}
+                            disabled={!loyaltyRedeemable}
+                            aria-pressed={enteredLoyalty > 0}
                             onClick={(e) => {
-                              if (enteredPoints > 0) {
+                              if (enteredLoyalty > 0) {
                                 // Décocher est une annulation : immédiate, sans
                                 // popover. `preventDefault` neutralise le handler
                                 // du trigger, que Radix compose après celui-ci.
                                 e.preventDefault();
-                                setShowInvoicePointsPicker(false);
-                                setInvoicePointsUsed("");
+                                setShowInvoiceLoyaltyPicker(false);
+                                setInvoiceLoyaltyUsed("");
                               }
                             }}
-                            className={`flex w-full items-center gap-2.5 text-left ${pointsRedeemable ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+                            className={`flex w-full items-center gap-2.5 text-left ${loyaltyRedeemable ? "cursor-pointer" : "cursor-not-allowed opacity-60"
                               }`}
                           >
                             <span
                               aria-hidden
-                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${enteredPoints > 0
+                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${enteredLoyalty > 0
                                 ? "border-amber-600 bg-amber-600 text-white"
                                 : "border-amber-300 bg-white"
                                 }`}
                             >
-                              {enteredPoints > 0 && <Check className="h-3 w-3" />}
+                              {enteredLoyalty > 0 && <Check className="h-3 w-3" />}
                             </span>
                             <span className="text-sm font-medium text-amber-800">
-                              Régler une partie avec les points
+                              Régler une partie avec la cagnotte
                             </span>
                           </button>
-                        </LoyaltyPointsPicker>
+                        </LoyaltyCreditPicker>
 
-                        {!pointsRedeemable && (
+                        {!loyaltyRedeemable && (
                           <p className="mt-2 border-t border-amber-200 pt-2 text-xs text-amber-600">
-                            {maxUsablePoints <= 0
-                              ? "Cette facture n'est plus réglable en points."
-                              : `Il faut au moins ${formatPoints(minPointsToRedeem)} points, ` +
-                                `or seuls ${formatPoints(maxUsablePoints)} sont utilisables ici.`}
+                            Cette facture n&apos;est plus réglable avec la cagnotte.
                           </p>
                         )}
 
-                        {pointsRedeemable && pointsValue > 0 && (
+                        {loyaltyRedeemable && loyaltyValue > 0 && (
                           <div className="mt-2 flex items-center justify-between border-t border-amber-200 pt-2">
                             <span className="text-xs text-amber-700">
-                              {formatPoints(enteredPoints)} pts appliqués ·{" "}
-                              <span className="font-semibold">-{formatPrice(pointsValue)}</span>
+                              Cagnotte appliquée ·{" "}
+                              <span className="font-semibold">-{formatPrice(loyaltyValue)}</span>
                             </span>
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => setShowInvoicePointsPicker(true)}
+                              onClick={() => setShowInvoiceLoyaltyPicker(true)}
                               className="h-7 px-2 text-xs text-amber-700 hover:bg-amber-100 hover:text-amber-800"
                             >
                               Modifier
@@ -1688,8 +1449,8 @@ export default function CustomerDetailPage() {
 
                   {/* 2. Récapitulatif de la facture (dans SA devise).
                       Les trois colonnes d'origine ne pouvaient pas montrer la
-                      déduction des points : le reste à payer baissait sans que
-                      rien n'explique l'écart. */}
+                      déduction de la cagnotte : le reste à payer baissait sans
+                      que rien n'explique l'écart. */}
                   <div className="space-y-2">
                     <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Récapitulatif
@@ -1707,20 +1468,20 @@ export default function CustomerDetailPage() {
                           <span>-{money.money(selectedSale.amount_paid || 0, saleCur)}</span>
                         </div>
                       )}
-                      {pointsValue > 0 && (
+                      {loyaltyValue > 0 && (
                         <div className="flex justify-between text-amber-600">
-                          <span>Points appliqués ({formatPoints(enteredPoints)} pts)</span>
-                          <span>-{money.money(pointsValue, saleCur)}</span>
+                          <span>Cagnotte appliquée</span>
+                          <span>-{money.money(loyaltyValue, saleCur)}</span>
                         </div>
                       )}
                       <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-300">
                         <span>Reste à payer</span>
-                        <span className="text-orange-600">{money.money(dueAfterPoints, saleCur)}</span>
+                        <span className="text-orange-600">{money.money(dueAfterLoyalty, saleCur)}</span>
                       </div>
                       {payCur !== saleCur && (
                         <div className="flex justify-between text-xs text-gray-500">
                           <span>≈ à encaisser en {payCur}</span>
-                          <span>{money.money(money.convMoney(dueAfterPoints, saleCur, payCur), payCur)}</span>
+                          <span>{money.money(money.convMoney(dueAfterLoyalty, saleCur, payCur), payCur)}</span>
                         </div>
                       )}
                     </div>
@@ -1820,7 +1581,7 @@ export default function CustomerDetailPage() {
                       <div className="flex justify-between">
                         <span className="text-gray-600">Total réglé</span>
                         <span className="font-semibold">
-                          {money.money(paidInSale + pointsValue, saleCur)}
+                          {money.money(paidInSale + loyaltyValue, saleCur)}
                         </span>
                       </div>
 
@@ -1833,7 +1594,7 @@ export default function CustomerDetailPage() {
                         </div>
                       )}
 
-                      {Math.abs(remaining) <= MONEY_EPS && (paidInSale + pointsValue) > 0 && (
+                      {Math.abs(remaining) <= MONEY_EPS && (paidInSale + loyaltyValue) > 0 && (
                         <div className="flex justify-between pt-2 border-t border-gray-200 text-green-700 font-medium">
                           <span className="flex items-center gap-1.5">
                             <CheckCircle className="h-4 w-4" /> Facture soldée
@@ -1871,12 +1632,12 @@ export default function CustomerDetailPage() {
                     // Une facture peut être réglée uniquement en points,
                     // uniquement en argent, ou par un mélange : c'est ce que fait
                     // `handleInvoicePayment`. Le bouton exigeait pourtant un
-                    // montant en argent, rendant le règlement 100 % en points
-                    // impossible depuis cette page.
+                    // montant en argent, rendant le règlement intégral en
+                    // cagnotte impossible depuis cette page.
                     disabled={
                       isSubmitting ||
                       (raw > 0 && !selectedPaymentMethod) ||
-                      !(raw > 0 || enteredPoints > 0) ||
+                      !(raw > 0 || enteredLoyalty > 0) ||
                       remaining < -MONEY_EPS
                     }
                     className="sm:flex-[2] bg-green-600 hover:bg-green-700 gap-2"
@@ -1890,7 +1651,7 @@ export default function CustomerDetailPage() {
                       ? "Traitement..."
                       : raw > 0
                         ? `Encaisser ${money.money(raw, payCur)}`
-                        : `Régler ${formatPoints(enteredPoints)} pts`}
+                        : `Régler ${formatPrice(enteredLoyalty)} de cagnotte`}
                   </Button>
                 </DialogFooter>
               </>

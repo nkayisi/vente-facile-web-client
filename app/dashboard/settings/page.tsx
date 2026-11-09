@@ -110,7 +110,7 @@ export default function GeneralSettingsPage() {
     receipt_header: "",
     receipt_footer: "",
     receipt_paper_width: 58,
-    show_loyalty_points_on_receipt: true,
+    show_loyalty_on_receipt: true,
     low_stock_threshold: 10,
   });
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
@@ -126,7 +126,7 @@ export default function GeneralSettingsPage() {
           receipt_header: res.data.receipt_header || "",
           receipt_footer: res.data.receipt_footer || "",
           receipt_paper_width: res.data.receipt_paper_width || 58,
-          show_loyalty_points_on_receipt: res.data.show_loyalty_points_on_receipt,
+          show_loyalty_on_receipt: res.data.show_loyalty_on_receipt,
           low_stock_threshold: res.data.low_stock_threshold,
         });
       }
@@ -349,15 +349,15 @@ export default function GeneralSettingsPage() {
                 <h3 className="font-medium text-orange-600">Affichage sur les reçus</h3>
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label>Afficher les points de fidélité sur les reçus</Label>
+                    <Label>Afficher la cagnotte de fidélité sur les reçus</Label>
                     <p className="text-sm text-gray-500">
-                      Affiche les points gagnés et le solde du client sur les reçus/factures
+                      Affiche la cagnotte gagnée et le solde du client sur les reçus/factures
                     </p>
                   </div>
                   <Switch
-                    checked={settingsForm.show_loyalty_points_on_receipt}
+                    checked={settingsForm.show_loyalty_on_receipt}
                     onCheckedChange={(checked) =>
-                      setSettingsForm({ ...settingsForm, show_loyalty_points_on_receipt: checked })
+                      setSettingsForm({ ...settingsForm, show_loyalty_on_receipt: checked })
                     }
                   />
                 </div>

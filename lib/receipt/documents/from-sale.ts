@@ -21,6 +21,13 @@ export interface FromSaleOptions {
   settings?: OrganizationSettings | null;
   /** Réimpression : le ticket sort marqué DUPLICATA. */
   isDuplicate?: boolean;
+  /**
+   * Devise PRINCIPALE de l'établissement, celle de la cagnotte de fidélité.
+   *
+   * ⚠ Ce n'est PAS celle de la facture. Absente, le bloc fidélité imprime ses
+   * montants nus plutôt que sous un mauvais symbole.
+   */
+  primaryCurrency?: string;
 }
 
 export function saleReceiptFromSale(
@@ -86,13 +93,17 @@ export function saleReceiptFromSale(
     // du serveur, jamais d'un recalcul de barème côté client.
     loyalty: {
       show: Boolean(
-        options.settings?.show_loyalty_points_on_receipt &&
+        options.settings?.show_loyalty_on_receipt &&
           sale.customer &&
           sale.loyalty_program_active
       ),
-      earned: sale.loyalty_points_earned ?? 0,
-      used: sale.loyalty_points_used ?? 0,
-      balance: sale.loyalty_points_balance ?? 0,
+      earned: num(sale.loyalty_earned),
+      used: num(sale.loyalty_used),
+      balance: num(sale.loyalty_balance),
+      // ⚠ LA DEVISE DE LA CAGNOTTE EST LA PRINCIPALE, pas celle de la facture :
+      // une cagnotte de 12 500 FC rendue sous le symbole d'une facture en
+      // dollars se lirait « 12 500 $ ».
+      currency: options.primaryCurrency,
     },
   };
 }

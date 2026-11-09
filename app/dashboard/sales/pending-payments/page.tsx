@@ -35,7 +35,7 @@ import {
   CircleDollarSign,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPoints, formatPrice, formatDate, formatDateTime } from "@/lib/format";
+import { formatPrice, formatDate, formatDateTime } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { MultiCurrencyTotal } from "@/components/shared/MultiCurrencyTotal";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
@@ -67,12 +67,12 @@ import { PerimeterFilters, type PerimeterValue } from "@/components/filters/peri
 import { usePerimeter } from "@/hooks/use-perimeter";
 
 /**
- * Arrondi d'une saisie de points au centième.
+ * Arrondi d'une saisie de cagnotte au centième, par défaut.
  *
- * Les points sont fractionnaires : tronquer à l'entier interdisait au client
- * d'utiliser le solde qu'il vient de gagner (0,58 point devenait 0).
+ * Par DÉFAUT et jamais au-dessus : on ne propose pas au caissier un montant
+ * que le solde ne couvre pas.
  */
-function roundPoints(value: number): number {
+function arrondiCagnotte(value: number): number {
   return Math.floor(value * 100) / 100;
 }
 
@@ -97,7 +97,7 @@ export default function PendingPaymentsPage() {
   // en points sur la facture sélectionnée.
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
   const [saleCustomerLoyalty, setSaleCustomerLoyalty] = useState<CustomerLoyalty | null>(null);
-  const [pointsUsed, setPointsUsed] = useState("");
+  const [loyaltyUsed, setLoyaltyUsed] = useState("");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
@@ -142,20 +142,24 @@ export default function PendingPaymentsPage() {
     return money.convMoney(amount, paymentCurrency, selectedSale.currency);
   };
 
-  // Fidélité : le barème est libellé en devise principale, on ne propose donc
-  // le règlement en points que sur une facture dans cette même devise.
-  const availablePoints = saleCustomerLoyalty?.current_points ?? 0;
-  const pointValue = parseFloat(loyaltyProgram?.point_value ?? "0");
-  const canUsePoints =
+  // Fidélité : la cagnotte est libellée en devise principale, on ne propose
+  // donc son emploi que sur une facture dans cette même devise.
+  //
+  // ⚠ `Number(...)` : le solde arrive en CHAÎNE, comme tout montant. Le lire
+  // tel quel ferait concaténer au lieu d'additionner.
+  const availableLoyalty = Number(saleCustomerLoyalty?.balance ?? 0) || 0;
+  const canUseLoyalty =
     !!loyaltyProgram?.is_active &&
-    availablePoints > 0 &&
-    pointValue > 0 &&
+    availableLoyalty > 0 &&
     !!selectedSale?.customer &&
     selectedSale?.currency === (getPrimaryCurrency()?.currency_code || defaultCurrency.code);
-  const maxUsablePoints = canUsePoints
+  // ⚠ `loyalty_max_redeemable` EST LA SEULE AUTORITÉ : il est calculé par le
+  // serveur avec la fonction qu'il applique lui-même, déjà borné par le reste
+  // à payer. Rejouer le plafond ici proposerait un maximum qu'il refuserait.
+  const maxUsableLoyalty = canUseLoyalty
     ? Math.min(
-        availablePoints,
-        roundPoints(parseFloat(selectedSale?.amount_due || "0") / pointValue)
+        availableLoyalty,
+        arrondiCagnotte(Number(selectedSale?.loyalty_max_redeemable ?? 0) || 0)
       )
     : 0;
 
@@ -255,7 +259,7 @@ export default function PendingPaymentsPage() {
     // Reset to primary currency
     const primary = getPrimaryCurrency();
     setPaymentCurrency(primary?.currency_code || "CDF");
-    setPointsUsed("");
+    setLoyaltyUsed("");
     setSaleCustomerLoyalty(null);
     setShowPaymentDialog(true);
 
@@ -274,11 +278,11 @@ export default function PendingPaymentsPage() {
   const handleAddPayment = async () => {
     if (!selectedSale || !session?.accessToken || !organization) return;
 
-    const points = parseFloat(pointsUsed) || 0;
+    const cagnotte = parseFloat(loyaltyUsed) || 0;
     const rawAmount = parseFloat(paymentAmount) || 0;
 
-    if (rawAmount <= 0 && points <= 0) {
-      toast.error("Indiquez un montant ou un nombre de points à utiliser");
+    if (rawAmount <= 0 && cagnotte <= 0) {
+      toast.error("Indiquez un montant à encaisser ou une part de cagnotte");
       return;
     }
     if (rawAmount > 0 && !selectedPaymentMethod) {
@@ -288,10 +292,11 @@ export default function PendingPaymentsPage() {
 
     const amountInSale = rawAmount > 0 ? getAmountInSaleCurrency() : 0;
     const amountDue = parseFloat(selectedSale.amount_due);
-    const coveredByPoints = points * pointValue;
-    if (amountInSale + coveredByPoints > amountDue * 1.001) { // tolérance d'arrondi
+    // La cagnotte est en devise principale, et on n'offre ce bloc que sur une
+    // facture dans cette même devise : la somme est donc homogène.
+    if (amountInSale + cagnotte > amountDue * 1.001) { // tolérance d'arrondi
       toast.error(
-        `Le règlement (${money.money(amountInSale + coveredByPoints, selectedSale.currency)}) ` +
+        `Le règlement (${money.money(amountInSale + cagnotte, selectedSale.currency)}) ` +
         `dépasse le restant dû (${money.money(amountDue, selectedSale.currency)})`
       );
       return;
@@ -316,7 +321,7 @@ export default function PendingPaymentsPage() {
                 : {}),
             }
           : {}),
-        ...(points > 0 ? { points_used: points } : {}),
+        ...(cagnotte > 0 ? { loyalty_amount_used: cagnotte } : {}),
       };
 
       const result = await addPaymentToSale(
@@ -329,7 +334,7 @@ export default function PendingPaymentsPage() {
       if (result.success) {
         const selectedMethod = paymentMethods.find(m => m.id === selectedPaymentMethod);
         const previouslyPaid = parseFloat(selectedSale.amount_paid);
-        const remainingBalance = amountDue - amountInSale - coveredByPoints;
+        const remainingBalance = amountDue - amountInSale - cagnotte;
 
         const payLabel = !isPrimaryPayment()
           ? `${selectedMethod?.name || "Espèces"} (${formatPrice(rawAmount, getPaymentCurrencyObj()?.currency_symbol)})`
@@ -353,7 +358,7 @@ export default function PendingPaymentsPage() {
           // `previouslyPaid` et `remainingBalance` en viennent déjà. Y mêler un
           // montant converti en devise principale sous le même libellé donnait
           // un reçu incohérent.
-          amountPaid: amountInSale + coveredByPoints,
+          amountPaid: amountInSale + cagnotte,
           currency: selectedSale.currency,
           invoice: {
             reference: selectedSale.reference,
@@ -367,13 +372,15 @@ export default function PendingPaymentsPage() {
             after: remainingBalance,
             currency: selectedSale.currency,
           },
-          // Un règlement peut être fait en points : le client doit lire ce qui
-          // a été consommé et ce qui lui reste. Valeurs autoritatives de la
-          // vente rafraîchie, jamais un recalcul de barème.
+          // Un règlement peut puiser dans la cagnotte : le client doit lire ce
+          // qui a été consommé et ce qui lui reste. Valeurs autoritatives de la
+          // vente rafraîchie, jamais un recalcul.
           loyalty: {
             show: !!result.data?.loyalty_program_active,
-            used: result.data?.loyalty_points_used ?? 0,
-            balance: result.data?.loyalty_points_balance ?? 0,
+            used: Number(result.data?.loyalty_used ?? 0) || 0,
+            balance: Number(result.data?.loyalty_balance ?? 0) || 0,
+            // ⚠ LA CAGNOTTE EST EN DEVISE PRINCIPALE, pas en devise de facture.
+            currency: getPrimaryCurrency()?.currency_code || defaultCurrency.code,
           },
         };
 
@@ -780,17 +787,17 @@ export default function PendingPaymentsPage() {
               )}
             </div>
 
-            {/* Règlement en points. Le total de la facture émise ne change pas :
-                les points s'imputent comme un moyen de paiement. */}
-            {canUsePoints && (
+            {/* Règlement en cagnotte. Le total de la facture émise ne change
+                pas : la cagnotte s'impute comme un moyen de paiement. */}
+            {canUseLoyalty && (
               <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700">
                     <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
-                    Payer avec les points
+                    Payer avec la cagnotte
                   </Label>
                   <span className="text-xs font-medium text-amber-700">
-                    {formatPoints(availablePoints)} pts disponibles
+                    Cagnotte : {formatPrice(availableLoyalty)}
                   </span>
                 </div>
 
@@ -798,10 +805,10 @@ export default function PendingPaymentsPage() {
                   <Input
                     type="number"
                     min={0}
-                    max={maxUsablePoints}
+                    max={maxUsableLoyalty}
                     step="0.01"
-                    value={pointsUsed}
-                    onChange={(e) => setPointsUsed(e.target.value)}
+                    value={loyaltyUsed}
+                    onChange={(e) => setLoyaltyUsed(e.target.value)}
                     placeholder="0"
                     className="h-11"
                   />
@@ -809,22 +816,20 @@ export default function PendingPaymentsPage() {
                     type="button"
                     variant="outline"
                     className="h-11 shrink-0 border-amber-300 text-amber-700"
-                    onClick={() => setPointsUsed(String(maxUsablePoints))}
+                    onClick={() => setLoyaltyUsed(String(maxUsableLoyalty))}
                   >
                     Maximum
                   </Button>
                 </div>
 
-                {(parseFloat(pointsUsed) || 0) > 0 && (
+                {(parseFloat(loyaltyUsed) || 0) > 0 && (
                   <p className="text-sm text-amber-800">
-                    {formatPoints(parseFloat(pointsUsed) || 0)} points = {formatPrice((parseFloat(pointsUsed) || 0) * pointValue)} déduits
+                    {formatPrice(parseFloat(loyaltyUsed) || 0)} déduits de la facture
                   </p>
                 )}
-                {loyaltyProgram && loyaltyProgram.min_points_to_redeem > 0 && (
-                  <p className="text-xs text-amber-600">
-                    Minimum {loyaltyProgram.min_points_to_redeem} points par utilisation
-                  </p>
-                )}
+                <p className="text-xs text-amber-600">
+                  Au plus {formatPrice(maxUsableLoyalty)} sur cette facture.
+                </p>
               </div>
             )}
 

@@ -86,7 +86,7 @@ export const HORS_LIGNE = {
 export const MODULES_DETAIL: Record<string, readonly string[]> = {
   "Point de vente": [
     "L'écran de vente montre le catalogue, accepte le scan d'un code-barres, et compose le panier. Un sélecteur de quantité distingue le gros du détail : on vend trois casiers, ou sept bouteilles, ou les deux, et l'on peut ouvrir un casier pour servir au détail.",
-    "L'encaissement accepte plusieurs devises, rend la monnaie, applique une remise plafonnée par l'établissement, déduit des points de fidélité et inscrit une vente à crédit. Un panier peut être mis en attente et repris plus tard.",
+    "L'encaissement accepte plusieurs devises, rend la monnaie, applique une remise plafonnée par l'établissement, déduit une part de la cagnotte de fidélité et inscrit une vente à crédit. Un panier peut être mis en attente et repris plus tard.",
   ],
   Stock: [
     "Un transfert naît en brouillon : le stock ne bouge qu'à l'expédition, puis à la réception, qui peut être partielle. Un ajustement suit le même chemin, et n'est appliqué qu'après approbation.",

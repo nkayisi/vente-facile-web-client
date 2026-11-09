@@ -128,7 +128,7 @@ export function formatApiErrorBody(
 
   if (typeof data.message === "string" && data.message.trim()) return data.message.trim();
 
-  // Erreurs par champ (``{point_value: ["Un nombre valide est requis."]}``).
+  // Erreurs par champ (``{earn_percent: ["Un nombre valide est requis."]}``).
   // Sans ce repli, une 400 de validation retombait sur le message générique
   // du caller et l'utilisateur ne savait jamais QUEL champ posait problème.
   // On borne à 3 messages : au-delà, un toast devient illisible.

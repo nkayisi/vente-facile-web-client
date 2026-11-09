@@ -15,7 +15,6 @@ export {
   formatAmount,
   formatMoney,
   formatBare,
-  formatPoints,
   formatQuantity,
   deaccent,
   type CurrencyOverrides,

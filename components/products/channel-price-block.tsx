@@ -39,6 +39,38 @@ interface ChannelPriceBlockProps {
   /** Précision sous les champs : équivalent à l'unité, portée des prix… */
   footnote?: ReactNode;
   disabled?: boolean;
+  /**
+   * Les deux prix et la marge sont-ils rendus ?
+   *
+   * ┌────────────────────────────────────────────────────────────────────────┐
+   * │ LE DÉFAUT EST `true`, ET C'EST CE QUI REND CE PROP SÛR.                │
+   * │                                                                        │
+   * │ La fiche produit et le dialogue d'un seul mouvement ne le passent pas  │
+   * │ et ne changent pas d'un pixel. Seule la feuille d'approvisionnement de │
+   * │ MASSE s'en sert : elle porte jusqu'à trois cents lignes, et deux blocs │
+   * │ de prix complets par ligne donneraient une page de plusieurs dizaines  │
+   * │ de milliers de pixels, que personne ne peut remplir.                   │
+   * │                                                                        │
+   * │ ⚠ LA QUANTITÉ, ELLE, RESTE TOUJOURS LÀ. C'est la raison d'être d'un    │
+   * │   prop plutôt que d'une seconde disposition : le `quantitySlot` vit    │
+   * │   DANS le bloc, et le rendre ailleurs ferait SAUTER le champ de saisie │
+   * │   à l'instant où le marchand tape son premier chiffre.                 │
+   * └────────────────────────────────────────────────────────────────────────┘
+   *
+   * Miroir de `prixVisibles` de `features/stock/bloc-canal.tsx`, côté terminal.
+   */
+  pricesVisible?: boolean;
+  /**
+   * Préfixe des `id` des deux champs.
+   *
+   * ⚠ OBLIGATOIRE DÈS QUE PLUSIEURS BLOCS DU MÊME CANAL COEXISTENT. Les `id`
+   * étaient codés en dur (`retail-cost`) : la feuille d'approvisionnement de
+   * masse, qui rend jusqu'à trois cents lignes, en poserait trois cents
+   * identiques - et chaque `<Label htmlFor>` désignerait alors le champ de la
+   * PREMIÈRE ligne. Un lecteur d'écran annoncerait le même article partout, et
+   * un clic sur l'étiquette de la ligne 40 donnerait le focus à la ligne 1.
+   */
+  idPrefix?: string;
 }
 
 const CHANNEL_STYLES: Record<PriceChannel, { border: string; badge: string }> = {
@@ -83,11 +115,14 @@ export function ChannelPriceBlock({
   quantitySlot,
   footnote,
   disabled = false,
+  pricesVisible = true,
+  idPrefix,
 }: ChannelPriceBlockProps) {
   const styles = CHANNEL_STYLES[channel];
   const margin = computeMargin(costPrice, sellingPrice);
   const costError = costErrorKey ? errors[costErrorKey] : undefined;
   const sellingError = sellingErrorKey ? errors[sellingErrorKey] : undefined;
+  const base = idPrefix ? `${idPrefix}-${channel}` : channel;
 
   const toNumber = (raw: string) => (raw === "" ? null : parseFloat(raw));
 
@@ -106,12 +141,13 @@ export function ChannelPriceBlock({
 
       {quantitySlot}
 
+      {pricesVisible && (
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor={`${channel}-cost`}>{costLabel}</Label>
+          <Label htmlFor={`${base}-cost`}>{costLabel}</Label>
           <InputGroup>
             <InputGroupInput
-              id={`${channel}-cost`}
+              id={`${base}-cost`}
               type="number"
               min="0"
               step="any"
@@ -130,10 +166,10 @@ export function ChannelPriceBlock({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor={`${channel}-selling`}>{sellingLabel}</Label>
+          <Label htmlFor={`${base}-selling`}>{sellingLabel}</Label>
           <InputGroup>
             <InputGroupInput
-              id={`${channel}-selling`}
+              id={`${base}-selling`}
               type="number"
               min="0"
               step="any"
@@ -151,8 +187,9 @@ export function ChannelPriceBlock({
           {sellingError && <p className="text-sm text-red-500">{sellingError}</p>}
         </div>
       </div>
+      )}
 
-      {margin && (
+      {pricesVisible && margin && (
         <div
           className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border px-2.5 py-1.5 text-xs ${
             margin.isNonPositive

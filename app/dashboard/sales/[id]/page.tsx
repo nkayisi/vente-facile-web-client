@@ -36,7 +36,7 @@ import {
 PackageX,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, formatDecimal, formatDateTime, formatPoints } from "@/lib/format";
+import { formatPrice, formatDecimal, formatDateTime } from "@/lib/format";
 import { PermissionGate } from "@/components/auth/permission-gate";
 import {
   getSale,
@@ -163,6 +163,11 @@ export default function SaleDetailPage() {
           // Une réimpression sort marquée DUPLICATA : un original et sa copie
           // doivent rester distinguables.
           isDuplicate: sale.receipt_printed,
+          // La cagnotte est libellée en devise PRINCIPALE, pas en devise de
+          // facture : sans ce code, le papier l'imprimerait sous le mauvais
+          // symbole.
+          primaryCurrency:
+            orgCurrencies.find(c => c.is_primary)?.currency_code,
         })
       );
 
@@ -587,8 +592,7 @@ export default function SaleDetailPage() {
                         <span className="flex items-center gap-1">
                           <Star className="h-3 w-3" />
                           Remise fidélité
-                          {(sale.loyalty_points_used ?? 0) > 0 &&
-                            ` (${formatPoints(sale.loyalty_points_used)} pts)`}
+  
                         </span>
                         <span>-{formatPrice(loyaltyDiscount)}</span>
                       </div>
@@ -626,35 +630,38 @@ export default function SaleDetailPage() {
                 l'inverse. Les valeurs viennent du registre côté serveur, jamais
                 d'un recalcul de barème. */}
             {sale.loyalty_program_active && sale.customer &&
-              ((sale.loyalty_points_earned ?? 0) > 0 ||
-                (sale.loyalty_points_used ?? 0) > 0 ||
-                sale.loyalty_points_balance !== undefined) && (
+              (Number(sale.loyalty_earned ?? 0) > 0 ||
+                Number(sale.loyalty_used ?? 0) > 0 ||
+                sale.loyalty_balance !== undefined) && (
               <div className="pt-4 border-t">
                 <p className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-1.5">
                   <Star className="h-4 w-4 text-amber-500" />
-                  Points de fidélité
+                  Cagnotte de fidélité
                 </p>
+                {/* ⚠ EN DEVISE PRINCIPALE, celle de la cagnotte : `formatPrice`
+                    sans code emploie la devise de l'établissement, qui est
+                    exactement la bonne ici. */}
                 <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  {(sale.loyalty_points_earned ?? 0) > 0 && (
+                  {Number(sale.loyalty_earned ?? 0) > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-amber-700">Points gagnés</span>
+                      <span className="text-amber-700">Cagnotte gagnée</span>
                       <span className="font-medium text-amber-800">
-                        +{formatPoints(sale.loyalty_points_earned)} pts
+                        +{formatPrice(sale.loyalty_earned ?? 0)}
                       </span>
                     </div>
                   )}
-                  {(sale.loyalty_points_used ?? 0) > 0 && (
+                  {Number(sale.loyalty_used ?? 0) > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-amber-700">Points utilisés</span>
+                      <span className="text-amber-700">Cagnotte utilisée</span>
                       <span className="font-medium text-amber-800">
-                        -{formatPoints(sale.loyalty_points_used)} pts
+                        -{formatPrice(sale.loyalty_used ?? 0)}
                       </span>
                     </div>
                   )}
                   <div className="flex justify-between border-t border-amber-200 pt-2 text-sm">
-                    <span className="text-amber-700">Solde du client</span>
+                    <span className="text-amber-700">Cagnotte du client</span>
                     <span className="font-bold text-amber-800">
-                      {formatPoints(sale.loyalty_points_balance)} pts
+                      {formatPrice(sale.loyalty_balance ?? 0)}
                     </span>
                   </div>
                 </div>

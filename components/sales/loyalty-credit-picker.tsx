@@ -9,10 +9,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { formatPoints } from "@/lib/format";
+import { lireNombre } from "@/lib/stock/nombres";
 
 /**
- * Saisie du nombre de points à déduire d'une facture, en popover.
+ * Saisie du montant de cagnotte à déduire d'une facture, en popover.
  *
  * Le POS gardait un champ déplié dans la modale d'encaissement, qui coûtait
  * trois lignes en permanence pour un geste ponctuel. Le popover rend la place
@@ -20,48 +20,43 @@ import { formatPoints } from "@/lib/format";
  *
  * Le composant ne connaît aucune règle métier : tous les plafonds lui sont
  * passés, calculés par l'appelant, qui reste le miroir du serveur.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ IL SE SAISISSAIT EN POINTS, ET IL N'Y A PLUS DE POINTS.                 │
+ * │                                                                          │
+ * │ Le caissier tapait un nombre de points et lisait la déduction en argent  │
+ * │ dessous : deux unités pour un seul geste, dont une qu'il ne pouvait pas  │
+ * │ convertir de tête. Il tape désormais le MONTANT, et `pointValue` comme   │
+ * │ `minPoints` ont disparu avec les points.                                 │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
 
-/** Arrondi d'une saisie de points au centième (les points sont fractionnaires). */
-function roundPoints(value: number): number {
-  return Math.floor(value * 100) / 100;
-}
-
-interface LoyaltyPointsPickerProps {
+interface LoyaltyCreditPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** L'ancre du popover. Reçoit le `onClick` de bascule via `asChild`. */
   children: React.ReactNode;
-  /** Solde du client, affiché pour situer la saisie. */
+  /** Cagnotte du client, affichée pour situer la saisie. */
   balance: number;
-  /** Seuil du programme en dessous duquel aucune réduction n'est accordée. */
-  minPoints: number;
-  /** Plus grand nombre de points utilisable sur cette facture. */
-  maxPoints: number;
-  /** Valeur monétaire d'un point, en devise principale. */
-  pointValue: number;
-  /** Part de la facture réglable en points, en devise principale. */
+  /** Plus grand montant employable sur cette facture, en devise principale. */
   maxAmount: number;
   /** Formatage monétaire fourni par l'appelant (devise, décimales). */
   formatAmount: (amount: number) => string;
   /** Valeur courante à l'ouverture, pour permettre la reprise. */
   initial?: number;
-  onConfirm: (points: number) => void;
+  onConfirm: (amount: number) => void;
 }
 
-export function LoyaltyPointsPicker({
+export function LoyaltyCreditPicker({
   open,
   onOpenChange,
   children,
   balance,
-  minPoints,
-  maxPoints,
-  pointValue,
   maxAmount,
   formatAmount,
   initial = 0,
   onConfirm,
-}: LoyaltyPointsPickerProps) {
+}: LoyaltyCreditPickerProps) {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
@@ -77,14 +72,11 @@ export function LoyaltyPointsPicker({
         {open && (
           <PickerBody
             balance={balance}
-            minPoints={minPoints}
-            maxPoints={maxPoints}
-            pointValue={pointValue}
             maxAmount={maxAmount}
             formatAmount={formatAmount}
             initial={initial}
-            onConfirm={(points) => {
-              onConfirm(points);
+            onConfirm={(amount) => {
+              onConfirm(amount);
               onOpenChange(false);
             }}
             onCancel={() => onOpenChange(false)}
@@ -96,15 +88,12 @@ export function LoyaltyPointsPicker({
 }
 
 type PickerBodyProps = Omit<
-  LoyaltyPointsPickerProps,
+  LoyaltyCreditPickerProps,
   "open" | "onOpenChange" | "children"
 > & { onCancel: () => void };
 
 function PickerBody({
   balance,
-  minPoints,
-  maxPoints,
-  pointValue,
   maxAmount,
   formatAmount,
   initial = 0,
@@ -127,23 +116,24 @@ function PickerBody({
     return () => clearTimeout(timer);
   }, []);
 
-  const parsed = parseFloat(draft.replace(",", "."));
-  const points = Number.isFinite(parsed) ? roundPoints(parsed) : 0;
-  const amount = points >= minPoints ? Math.min(points * pointValue, maxAmount) : 0;
-  const canSubmit = points >= minPoints && points > 0;
+  // ⚠ `lireNombre` ET NON `parseFloat` : « 12 500 » tapé avec un séparateur de
+  // milliers rend DOUZE à `parseFloat`, en silence.
+  const lu = lireNombre(draft);
+  const amount = lu.ok ? arrondi(lu.valeur ?? 0) : 0;
+  const canSubmit = amount > 0;
 
   /**
    * Filtre la frappe et ramène au plafond.
    *
-   * On garde une saisie libre (chiffres, un séparateur décimal) plutôt qu'un
-   * `type="number"` : le clamp doit se voir dans le champ, pas seulement au
-   * moment de valider.
+   * On garde une saisie libre (chiffres, espaces, un séparateur décimal) plutôt
+   * qu'un `type="number"` : le clamp doit se voir dans le champ, pas seulement
+   * au moment de valider.
    */
   const handleDraft = (raw: string) => {
-    const cleaned = raw.replace(/[^\d.,]/g, "").replace(/[.,](?=.*[.,])/g, "");
-    const value = parseFloat(cleaned.replace(",", "."));
-    if (Number.isFinite(value) && roundPoints(value) > maxPoints) {
-      setDraft(String(maxPoints));
+    const cleaned = raw.replace(/[^\d\s.,]/g, "").replace(/[.,](?=.*[.,])/g, "");
+    const essai = lireNombre(cleaned);
+    if (essai.ok && arrondi(essai.valeur ?? 0) > maxAmount) {
+      setDraft(String(maxAmount));
       setClamped(true);
       return;
     }
@@ -152,7 +142,7 @@ function PickerBody({
   };
 
   const useMaximum = () => {
-    setDraft(String(maxPoints));
+    setDraft(String(maxAmount));
     setClamped(false);
   };
 
@@ -162,14 +152,14 @@ function PickerBody({
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();
-          if (canSubmit) onConfirm(points);
+          if (canSubmit) onConfirm(amount);
         }
       }}
     >
       <div className="flex items-center gap-2 text-amber-800">
         <Star className="h-4 w-4 shrink-0 text-amber-600" />
         <span className="text-sm font-semibold">
-          {formatPoints(balance)} pts disponibles
+          Cagnotte : {formatAmount(balance)}
         </span>
       </div>
 
@@ -181,7 +171,7 @@ function PickerBody({
           value={draft}
           onChange={(e) => handleDraft(e.target.value)}
           placeholder="0"
-          aria-label="Nombre de points à déduire"
+          aria-label="Montant de cagnotte à déduire"
           className="h-11 w-full rounded-lg border border-amber-200 bg-white px-3 text-center text-lg font-bold tabular-nums text-amber-900 outline-none focus:border-amber-500"
         />
         <Button
@@ -199,19 +189,19 @@ function PickerBody({
           Déduction : <span className="font-semibold">{formatAmount(amount)}</span>
         </p>
         <p className="text-amber-500">
-          Maximum {formatPoints(maxPoints)} pts sur cette facture, soit{" "}
-          {formatAmount(maxAmount)}.
+          Au plus {formatAmount(maxAmount)} sur cette facture.
         </p>
         {clamped && (
-          <p className="font-medium text-amber-700">
-            Ramené à {formatPoints(maxPoints)} pts : c&apos;est le plafond de
-            cette facture.
+          <p className="font-sans-medium text-amber-700">
+            Ramené à {formatAmount(maxAmount)} : c&apos;est le plafond de cette
+            facture.
           </p>
         )}
-        {points > 0 && points < minPoints && (
-          <p className="font-medium text-red-600">
-            En dessous de {formatPoints(minPoints)} pts, aucune réduction
-            n&apos;est appliquée.
+        {draft.trim() !== "" && !lu.ok && (
+          <p className="font-sans-medium text-red-600">
+            {lu.motif === "negatif"
+              ? "Un montant négatif ne se déduit pas."
+              : "Montant illisible."}
           </p>
         )}
       </div>
@@ -227,7 +217,7 @@ function PickerBody({
         </Button>
         <Button
           type="button"
-          onClick={() => onConfirm(points)}
+          onClick={() => onConfirm(amount)}
           disabled={!canSubmit}
           className="h-10 flex-[2] rounded-lg bg-amber-600 text-[13px] font-bold text-white transition-transform hover:bg-amber-700 active:scale-[0.96] disabled:opacity-50"
         >
@@ -236,4 +226,9 @@ function PickerBody({
       </div>
     </div>
   );
+}
+
+/** Deux décimales par défaut : on ne propose jamais plus que le solde réel. */
+function arrondi(value: number): number {
+  return Math.floor(value * 100) / 100;
 }

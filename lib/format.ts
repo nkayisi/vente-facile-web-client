@@ -22,7 +22,6 @@ export {
   formatPercent,
   formatDate,
   formatDateTime,
-  formatPoints,
 } from "@vente-facile/core";
 
 /**

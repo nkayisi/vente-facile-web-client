@@ -53,7 +53,7 @@ const LIBELLES: Record<string, string> = {
   "cashbook.CashMovement": "Mouvements de caisse",
   "contacts.CustomerTransaction": "Écritures au compte client",
   "contacts.CustomerBalance": "Soldes clients",
-  "settings.LoyaltyTransaction": "Points de fidélité",
+  "settings.LoyaltyTransaction": "Écritures de cagnotte",
   "core.DocumentSequence": "Compteurs de documents",
   "sync.SyncOperation": "Journal de synchronisation",
 };

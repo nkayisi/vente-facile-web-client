@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import axios from "@/lib/auth/api-helper";
 import { getErrorBody } from "@/lib/api/drf-error";
+import {
+  fetchExportFile,
+  type ExportFile,
+  type ExportFormat,
+} from "@/lib/export/fetch-export";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -668,17 +673,21 @@ export async function getCustomerStats(
 // getCustomersWithBalance is defined above in the CUSTOMER TRANSACTION section
 
 /**
- * Utilise les points de fidélité d'un client pour éponger sa dette.
- * Les points sont convertis en montant puis imputés sur les factures ouvertes.
+ * Emploie la cagnotte de fidélité d'un client pour éponger sa dette.
+ * Le montant est imputé sur les factures ouvertes, de la plus ancienne à la
+ * plus récente.
  */
-export async function redeemCustomerPointsToDebt(
+// ⚠ ELLE NE PEUT PAS S'APPELER `useLoyaltyOnDebt` : `react-hooks/rules-of-hooks`
+// lit tout `useX` comme un hook React, et refuse de le voir appelé depuis un
+// gestionnaire d'événement. Le nom dit l'acte, pas la route (`use-loyalty/`).
+export async function applyLoyaltyToDebt(
   accessToken: string,
   organizationId: string,
   customerId: string,
-  data: { points: number; notes?: string }
+  data: { amount: number; notes?: string }
 ): Promise<
   ApiResponse<{
-    points_used: number;
+    loyalty_amount_used: string;
     amount: string;
     currency: string;
     settled_invoices: string[];
@@ -688,16 +697,124 @@ export async function redeemCustomerPointsToDebt(
 > {
   try {
     const response = await axios.post(
-      `${API_BASE_URL}/customers/${customerId}/redeem-points/`,
+      `${API_BASE_URL}/customers/${customerId}/use-loyalty/`,
       data,
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
   } catch (error: unknown) {
-    console.error("[Contacts] Redeem points error:", getErrorBody(error) || (error as Error)?.message);
+    console.error("[Contacts] Use loyalty error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: getErrorBody(error)?.error || "Erreur lors de l'utilisation des points",
+      message: getErrorBody(error)?.error || "Erreur lors de l'emploi de la cagnotte",
     };
   }
+}
+
+// =============================================================================
+// RAPPORT PAR CLIENT
+// =============================================================================
+
+/**
+ * Le compte d'un client sur une période.
+ *
+ * ⚠ TOUS LES MONTANTS SONT DES CHAÎNES, comme partout ailleurs : un chiffre
+ * d'affaires en CDF atteint sept chiffres, et un `number` JavaScript y perd ses
+ * unités. C'est ce que `pnpm check:api-decimals` exige.
+ */
+export interface CustomerReport {
+  customer: { id: string; name: string; code: string; phone: string };
+  period: {
+    date_from: string | null;
+    date_to: string | null;
+    /** La date d'ARRÊTÉ : ce qui n'a pas de période s'y rapporte. */
+    as_of: string;
+  };
+  /** Devise principale de l'établissement : celle de tous les montants convertis. */
+  currency: string;
+  sales: {
+    count: number;
+    revenue: string;
+    average_basket: string;
+    items_sold: string;
+    collected: string;
+    outstanding: string;
+  };
+  /** Jamais sommée nativement : `native_total` se relit, `primary_total` se compare. */
+  by_currency: {
+    currency: string;
+    native_total: string;
+    primary_total: string;
+    count: number;
+  }[];
+  /** Ce que le client doit AUJOURD'HUI, par devise. Hors période. */
+  debt: { currency: string; amount: string; kind: "debt" | "advance" }[];
+  loyalty: {
+    /** Gagnée SUR LA PÉRIODE. */
+    earned: string;
+    /** Utilisée SUR LA PÉRIODE, rendue positive. */
+    used: string;
+    entries: number;
+    /** ⚠ HORS PÉRIODE : c'est le solde d'aujourd'hui. */
+    balance: string;
+    total_earned: string;
+    total_used: string;
+    has_program: boolean;
+  };
+}
+
+export async function getCustomerReport(
+  accessToken: string,
+  organizationId: string,
+  customerId: string,
+  filters?: { date_from?: string; date_to?: string }
+): Promise<ApiResponse<CustomerReport>> {
+  try {
+    const params = new URLSearchParams();
+    if (filters?.date_from) params.append("date_from", filters.date_from);
+    if (filters?.date_to) params.append("date_to", filters.date_to);
+
+    const response = await axios.get(
+      `${API_BASE_URL}/customers/${customerId}/report/?${params.toString()}`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error(
+      "[contacts] Get customer report error:",
+      getErrorBody(error) || (error as Error)?.message
+    );
+    return {
+      success: false,
+      message:
+        getErrorBody(error)?.detail || "Erreur lors du chargement du rapport",
+      errors: getErrorBody(error),
+    };
+  }
+}
+
+export async function exportCustomerReport(
+  accessToken: string,
+  organizationId: string,
+  customerId: string,
+  format: ExportFormat,
+  filters?: { date_from?: string; date_to?: string }
+): Promise<ExportFile> {
+  // ⚠ LES FILTRES PASSENT PAR `params`, JAMAIS COLLÉS DANS LE CHEMIN.
+  //   `fetchExportFile` ajoute TOUJOURS son propre `?export_format=…` : un
+  //   chemin qui porte déjà un `?` produit une URL à DEUX points
+  //   d'interrogation, et tout ce qui suit le second est avalé par le dernier
+  //   paramètre. Mesuré le 2026-11-08 :
+  //     …/export/?date_from=2026-11-02&date_to=2026-11-08?export_format=pdf
+  //   rend 400 « Date attendue au format AAAA-MM-JJ » - `date_to` valait
+  //   « 2026-11-08?export_format=pdf », et le format demandé n'arrivait jamais.
+  //   Rien ne le signale à la lecture : l'URL se construit sans erreur, et le
+  //   marchand lit un refus sur un bouton d'export qui a l'air correct.
+  return fetchExportFile(
+    `/customers/${customerId}/report/export/`,
+    accessToken,
+    organizationId,
+    format,
+    { date_from: filters?.date_from, date_to: filters?.date_to }
+  );
 }

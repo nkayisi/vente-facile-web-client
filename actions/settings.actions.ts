@@ -49,14 +49,9 @@ export interface LoyaltyProgram {
   id: string;
   name: string;
   is_active: boolean;
-  points_calculation_type: "fixed_per_amount" | "percentage";
-  points_calculation_type_display: string;
-  points_per_unit: number;
-  amount_per_unit: string;
-  points_percentage: string;
-  point_value: string;
-  min_points_to_redeem: number;
-  /** Part maximale d'une facture réglable en points. */
+  /** Part de la facture reversée dans la cagnotte du client, en %. */
+  earn_percent: string;
+  /** Part maximale d'une facture réglable avec la cagnotte. */
   max_redemption_percent: string;
   /**
    * Borne dure imposée par le serveur, que `max_redemption_percent` ne peut
@@ -64,25 +59,7 @@ export interface LoyaltyProgram {
    * nombre JSON (champ calculé), contrairement aux champs Decimal du modèle.
    */
   max_redemption_percent_ceiling: number;
-  points_expiry_days: number;
   only_registered_customers: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface LoyaltyReward {
-  id: string;
-  loyalty_program: string;
-  name: string;
-  description: string;
-  reward_type: "discount_amount" | "discount_percentage" | "free_product" | "custom";
-  reward_type_display: string;
-  points_required: number;
-  discount_amount: string;
-  discount_percentage: string;
-  product: string | null;
-  product_name: string | null;
-  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -92,18 +69,15 @@ export interface CustomerLoyalty {
   customer: string;
   customer_name: string;
   customer_phone: string;
-  total_points_earned: number;
-  total_points_redeemed: number;
-  current_points: number;
+  // ⚠ DES CHAÎNES, pas des nombres : la cagnotte est de l'argent, et un solde
+  // en CDF atteint sept chiffres - un nombre JavaScript y perd ses unités.
+  // Voir `money_field` dans `apps/settings/serializers.py`.
+  total_earned: string;
+  total_used: string;
+  balance: string;
   tier: string;
-  last_points_earned_at: string | null;
-  last_points_redeemed_at: string | null;
-  /** Prochaine échéance de points (null si aucune expiration configurée). */
-  next_expiry_at: string | null;
-  /** Nombre de points concernés par cette échéance. */
-  next_expiry_points: number;
-  /** Durée de vie d'un point sur le programme actif ; 0 = jamais. */
-  points_expiry_days: number;
+  last_earned_at: string | null;
+  last_used_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -115,6 +89,9 @@ export interface LoyaltyTransaction {
   transaction_type:
     | "earn"
     | "redeem"
+    // ⚠ `expire` N'A PLUS AUCUN PRODUCTEUR : l'expiration a disparu avec les
+    // points. Des lignes historiques le portent, et une écriture passée est
+    // une trace.
     | "expire"
     | "adjust"
     | "bonus"
@@ -122,12 +99,10 @@ export interface LoyaltyTransaction {
     | "earn_reversal"
     | "redeem_reversal";
   transaction_type_display: string;
-  points: number;
-  balance_after: number;
+  amount: string;
+  balance_after: string;
   sale: string | null;
   sale_reference: string | null;
-  reward: string | null;
-  reward_name: string | null;
   description: string;
   created_by: string | null;
   created_by_name: string | null;
@@ -139,7 +114,7 @@ export interface OrganizationSettings {
   receipt_header: string;
   receipt_footer: string;
   receipt_paper_width: number;
-  show_loyalty_points_on_receipt: boolean;
+  show_loyalty_on_receipt: boolean;
   low_stock_threshold: number;
   created_at: string;
   updated_at: string;
@@ -392,85 +367,6 @@ export async function toggleLoyaltyProgram(
 // LOYALTY REWARDS
 // ============================================================================
 
-export async function getLoyaltyRewards(
-  accessToken: string,
-  organizationId: string
-): Promise<ApiResponse<LoyaltyReward[]>> {
-  try {
-    const response = await axios.get(
-      `${API_BASE_URL}/settings/loyalty-rewards/`,
-      { headers: getHeaders(accessToken, organizationId), params: { page_size: 200 } }
-    );
-    // L'endpoint est paginé côté DRF : on renvoie toujours un tableau, que la
-    // réponse soit une liste brute ou une enveloppe { count, results }.
-    const list: LoyaltyReward[] = Array.isArray(response.data)
-      ? response.data
-      : response.data?.results || [];
-    return { success: true, data: list };
-  } catch (error: unknown) {
-    console.error("[Settings] Get loyalty rewards error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des récompenses") };
-  }
-}
-
-export async function createLoyaltyReward(
-  accessToken: string,
-  organizationId: string,
-  data: Partial<LoyaltyReward>
-): Promise<ApiResponse<LoyaltyReward>> {
-  try {
-    const response = await axios.post(
-      `${API_BASE_URL}/settings/loyalty-rewards/`,
-      data,
-      { headers: getHeaders(accessToken, organizationId) }
-    );
-    return { success: true, data: response.data };
-  } catch (error: unknown) {
-    console.error("[Settings] Create loyalty reward error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la création de la récompense") };
-  }
-}
-
-export async function updateLoyaltyReward(
-  accessToken: string,
-  organizationId: string,
-  rewardId: string,
-  data: Partial<LoyaltyReward>
-): Promise<ApiResponse<LoyaltyReward>> {
-  try {
-    const response = await axios.patch(
-      `${API_BASE_URL}/settings/loyalty-rewards/${rewardId}/`,
-      data,
-      { headers: getHeaders(accessToken, organizationId) }
-    );
-    return { success: true, data: response.data };
-  } catch (error: unknown) {
-    console.error("[Settings] Update loyalty reward error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la mise à jour de la récompense") };
-  }
-}
-
-export async function deleteLoyaltyReward(
-  accessToken: string,
-  organizationId: string,
-  rewardId: string
-): Promise<ApiResponse<void>> {
-  try {
-    await axios.delete(
-      `${API_BASE_URL}/settings/loyalty-rewards/${rewardId}/`,
-      { headers: getHeaders(accessToken, organizationId) }
-    );
-    return { success: true };
-  } catch (error: unknown) {
-    console.error("[Settings] Delete loyalty reward error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la suppression de la récompense") };
-  }
-}
-
-// ============================================================================
-// CUSTOMER LOYALTY
-// ============================================================================
-
 export async function getCustomerLoyalty(
   accessToken: string,
   organizationId: string,
@@ -481,7 +377,7 @@ export async function getCustomerLoyalty(
       `${API_BASE_URL}/settings/customer-loyalty/?customer=${customerId}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
-    // Même précaution que `getLoyaltyRewards` : la réponse peut être une liste
+    // La réponse peut être une liste
     // brute ou une enveloppe { count, results }. Ne lire que le tableau nu
     // renvoyait `null` en permanence, ce qui masquait tout le panneau fidélité
     // du POS et affichait « 0 pts » sur la fiche client.
@@ -490,51 +386,29 @@ export async function getCustomerLoyalty(
     return { success: true, data: list.length > 0 ? list[0] : null };
   } catch (error: unknown) {
     console.error("[Settings] Get customer loyalty error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération des points de fidélité") };
+    return { success: false, message: formatAxiosErrorMessage(error, "Erreur lors de la récupération de la cagnotte de fidélité") };
   }
 }
 
-export async function adjustCustomerPoints(
+export async function adjustCustomerLoyalty(
   accessToken: string,
   organizationId: string,
   customerId: string,
-  points: number,
+  amount: number,
   description?: string
 ): Promise<ApiResponse<CustomerLoyalty>> {
   try {
     const response = await axios.post(
-      `${API_BASE_URL}/settings/customer-loyalty/adjust_points/`,
-      { customer_id: customerId, points, description },
+      `${API_BASE_URL}/settings/customer-loyalty/adjust-balance/`,
+      { customer_id: customerId, amount, description },
       { headers: getHeaders(accessToken, organizationId) }
     );
     return { success: true, data: response.data };
   } catch (error: unknown) {
-    console.error("[Settings] Adjust customer points error:", getErrorBody(error) || (error as Error)?.message);
+    console.error("[Settings] Adjust customer loyalty error:", getErrorBody(error) || (error as Error)?.message);
     return {
       success: false,
-      message: getErrorBody(error)?.error || "Erreur lors de l'ajustement des points",
-    };
-  }
-}
-
-export async function redeemCustomerPoints(
-  accessToken: string,
-  organizationId: string,
-  loyaltyId: string,
-  data: { reward_id?: string; points?: number }
-): Promise<ApiResponse<{ success: boolean; points_redeemed: number; current_points: number }>> {
-  try {
-    const response = await axios.post(
-      `${API_BASE_URL}/settings/customer-loyalty/${loyaltyId}/redeem/`,
-      data,
-      { headers: getHeaders(accessToken, organizationId) }
-    );
-    return { success: true, data: response.data };
-  } catch (error: unknown) {
-    console.error("[Settings] Redeem customer points error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.error || "Erreur lors de l'utilisation des points",
+      message: getErrorBody(error)?.error || "Erreur lors de l'ajustement de la cagnotte",
     };
   }
 }

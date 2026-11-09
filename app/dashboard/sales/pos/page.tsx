@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LoyaltyPointsPicker } from "@/components/sales/loyalty-points-picker";
+import { LoyaltyCreditPicker } from "@/components/sales/loyalty-credit-picker";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -71,7 +71,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { formatPoints, formatPrice, formatDecimal } from "@/lib/format";
+import { formatPrice, formatDecimal } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { StatValue } from "@/components/shared/StatValue";
 import { ProductThumb } from "@/components/products/product-thumb";
@@ -94,9 +94,8 @@ import {
   lineGross as coreLineGross,
   packagingFactorOf as corePackagingFactorOf,
   looseQuantityOf as coreLooseQuantityOf,
-  pointValue as corePointValue,
   maxLoyaltyAmount as coreMaxLoyaltyAmount,
-  maxUsablePoints as coreMaxUsablePoints,
+  maxUsableCredit as coreMaxUsableCredit,
   loyaltyDiscount as coreLoyaltyDiscount,
   evaluateCredit as coreEvaluateCredit,
   buildSalePayload,
@@ -470,17 +469,18 @@ export default function POSPage() {
   const [orgSettings, setOrgSettings] = useState<OrganizationSettings | null>(null);
   const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
   const printer = useReceiptPrinter();
-  const [usePoints, setUsePoints] = useState(false);
-  const [pointsToUse, setPointsToUse] = useState(0);
-  const [showPointsPicker, setShowPointsPicker] = useState(false);
+  const [useLoyalty, setUseLoyalty] = useState(false);
+  const [loyaltyToUse, setLoyaltyToUse] = useState(0);
+  const [showLoyaltyPicker, setShowLoyaltyPicker] = useState(false);
 
   // Un client sans historique n'a pas encore de compte fidélité : l'endpoint
   // renvoie une liste vide et `customerLoyalty` reste null. Ce n'est pas une
   // absence de programme, c'est un solde de zéro - le panneau doit quand même
   // s'afficher, sinon le vendeur ne sait pas où en est son client.
-  const pointsBalance = customerLoyalty?.current_points ?? 0;
-  const minPointsToRedeem = loyaltyProgram?.min_points_to_redeem ?? 100;
-  const canRedeemPoints = pointsBalance >= minPointsToRedeem;
+  // ⚠ `Number(...)` : la cagnotte arrive en CHAÎNE depuis le serveur, comme
+  // tout montant. La lire telle quelle ferait concaténer au lieu d'additionner.
+  const loyaltyBalance = Number(customerLoyalty?.balance ?? 0) || 0;
+  const canUseLoyalty = loyaltyBalance > 0;
 
   // Inventory lock state
   const [lockedProductIds, setLockedProductIds] = useState<Set<string>>(new Set());
@@ -586,8 +586,8 @@ export default function POSPage() {
     const loadCustomerLoyalty = async () => {
       if (!session?.accessToken || !organization || !selectedCustomer) {
         setCustomerLoyalty(null);
-        setUsePoints(false);
-        setPointsToUse(0);
+        setUseLoyalty(false);
+        setLoyaltyToUse(0);
         return;
       }
       try {
@@ -962,16 +962,15 @@ export default function POSPage() {
     return parts.length > 0 ? parts.join(" · ") : "-";
   };
 
-  const pointValue = () => corePointValue(loyaltyProgram);
   const maxLoyaltyAmount = () => coreMaxLoyaltyAmount(calculateTotal(), loyaltyProgram);
-  const maxUsablePoints = () =>
-    coreMaxUsablePoints(calculateTotal(), pointsBalance, loyaltyProgram);
+  const maxUsableLoyalty = () =>
+    coreMaxUsableCredit(calculateTotal(), loyaltyBalance, loyaltyProgram);
   /**
-   * `usePoints` est un état d'interface, pas une règle : décocher la case se
+   * `useLoyalty` est un état d'interface, pas une règle : décocher la case se
    * dit au paquet en ne lui passant aucun point.
    */
   const calculateLoyaltyDiscount = () =>
-    coreLoyaltyDiscount(calculateTotal(), usePoints ? pointsToUse : 0, loyaltyProgram);
+    coreLoyaltyDiscount(calculateTotal(), useLoyalty ? loyaltyToUse : 0, loyaltyProgram);
   const calculateNetTotal = () => r2(calculateTotal() - calculateLoyaltyDiscount());
 
   // ┌────────────────────────────────────────────────────────────────────────┐
@@ -1135,13 +1134,12 @@ export default function POSPage() {
    * handler appelant ne sont pas encore répercutés au moment de l'appel.
    */
   const syncTenderToTotal = (
-    points: number, enabled: boolean, creditSale = isCreditSale,
+    credit: number, enabled: boolean, creditSale = isCreditSale,
   ) => {
     if (creditSale) return;
-    const discount =
-      enabled && points >= minPointsToRedeem && loyaltyProgram?.is_active
-        ? r2(Math.min(points * pointValue(), maxLoyaltyAmount()))
-        : 0;
+    const discount = enabled
+      ? coreLoyaltyDiscount(calculateTotal(), credit, loyaltyProgram)
+      : 0;
     const netInSale = totalInSale(discount);
     const cur = tenders[0]?.currency || saleCurrency();
     patchPayment({
@@ -1166,8 +1164,8 @@ export default function POSPage() {
     setCreditDueDate("");
     // Les points ne sont pas repris d'une modale précédemment annulée : ils
     // appliqueraient une remise fidélité silencieuse à la vente suivante.
-    setUsePoints(false);
-    setPointsToUse(0);
+    setUseLoyalty(false);
+    setLoyaltyToUse(0);
     // Règlement pré-rempli au total, en espèces, dans la devise principale
     // (= devise de facture par défaut), arrondi à ses décimales.
     const cashMethod = paymentMethods.find(m => m.method_type === "cash");
@@ -1270,7 +1268,7 @@ export default function POSPage() {
       // que son opération `sale.create` et cet appel direct laissent le même
       // état ; cette preuve ne tient que si les deux surfaces envoient la même
       // chose, d'où la construction partagée plutôt que deux copies à surveiller.
-      const pointsDiscount = calculateLoyaltyDiscount();
+      const loyaltyDiscountApplied = calculateLoyaltyDiscount();
 
       const result = await createSale(
         session.accessToken,
@@ -1293,7 +1291,7 @@ export default function POSPage() {
           isCredit: isCreditSale,
           dueDate: creditDueDate,
           loyaltyProgram,
-          pointsToUse: usePoints ? pointsToUse : 0,
+          loyaltyToUse: useLoyalty ? loyaltyToUse : 0,
           isPos: true,
         }),
       );
@@ -1302,7 +1300,7 @@ export default function POSPage() {
         // Valeurs autoritatives renvoyées par le backend (peuvent différer du calcul
         // local en cas d'arrondis Decimal vs float ou de cap des points loyauté).
         const saleAuthoritative = result.data;
-        const backendTotal = parseFloat(saleAuthoritative.total) || (total - pointsDiscount);
+        const backendTotal = parseFloat(saleAuthoritative.total) || (total - loyaltyDiscountApplied);
         const backendDiscount = parseFloat(saleAuthoritative.discount_amount) || 0;
         const backendLoyaltyRedemption = parseFloat(saleAuthoritative.loyalty_redemption_amount || "0") || 0;
         const backendChange = parseFloat(saleAuthoritative.change_amount) || 0;
@@ -1389,18 +1387,20 @@ export default function POSPage() {
             amountDue: backendAmountDue,
             loyalty: {
               show: !!(
-                orgSettings?.show_loyalty_points_on_receipt &&
+                orgSettings?.show_loyalty_on_receipt &&
                 selectedCustomer &&
                 saleAuthoritative.loyalty_program_active
               ),
               // Valeurs telles qu'écrites au registre par le serveur. Le POS
-              // rejouait auparavant le barème avec la seule formule
-              // « pourcentage » en dur : sur un programme `fixed_per_amount`,
-              // qui est le défaut, le reçu annonçait dix fois les points
-              // réellement crédités.
-              earned: saleAuthoritative.loyalty_points_earned ?? 0,
-              used: saleAuthoritative.loyalty_points_used ?? 0,
-              balance: saleAuthoritative.loyalty_points_balance ?? 0,
+              // rejouait auparavant le barème lui-même, et le reçu annonçait
+              // dix fois ce qui était réellement crédité.
+              earned: Number(saleAuthoritative.loyalty_earned ?? 0) || 0,
+              used: Number(saleAuthoritative.loyalty_used ?? 0) || 0,
+              balance: Number(saleAuthoritative.loyalty_balance ?? 0) || 0,
+              // ⚠ LA CAGNOTTE EST EN DEVISE PRINCIPALE, pas en devise de
+              // facture : sous le symbole de la facture, le papier afficherait
+              // un montant faux.
+              currency: primaryCode(),
             },
             loyaltyRedemptionAmount: backendLoyaltyRedemption,
           };
@@ -1440,8 +1440,8 @@ export default function POSPage() {
         setIsCreditSale(false);
         setCreditDueDate("");
         setShowPaymentDialog(false);
-        setUsePoints(false);
-        setPointsToUse(0);
+        setUseLoyalty(false);
+        setLoyaltyToUse(0);
         setCustomerLoyalty(null);
 
         // Refresh products to get updated stock
@@ -1565,8 +1565,8 @@ export default function POSPage() {
       setIsCreditSale(false);
       setCreditDueDate("");
       setShowPaymentDialog(false);
-      setUsePoints(false);
-      setPointsToUse(0);
+      setUseLoyalty(false);
+      setLoyaltyToUse(0);
       setCustomerLoyalty(null);
       setShowMobileCart(false);
     } catch {
@@ -1692,8 +1692,8 @@ export default function POSPage() {
     );
   }
 
-  // Ce que le client doit, points déduits. Hors modale d'encaissement,
-  // `usePoints` est faux et cette valeur vaut le total brut.
+  // Ce que le client doit, cagnotte déduite. Hors modale d'encaissement,
+  // `useLoyalty` est faux et cette valeur vaut le total brut.
   const total = calculateNetTotal();
   const change = getAmountInPrimary() - total;
 
@@ -2491,9 +2491,9 @@ export default function POSPage() {
           // Fermer sans encaisser abandonne la déduction : sinon elle survivait
           // à l'annulation et grevait le panier hors de toute modale (proforma,
           // total du panier) sans plus rien pour l'annoncer.
-          setShowPointsPicker(false);
-          setUsePoints(false);
-          setPointsToUse(0);
+          setShowLoyaltyPicker(false);
+          setUseLoyalty(false);
+          setLoyaltyToUse(0);
         }
       }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
@@ -2509,83 +2509,79 @@ export default function POSPage() {
 
           <div className="space-y-5 overflow-y-auto flex-1 pr-2">
 
-            {/* Points de fidélité : visible dès qu'un client est rattaché et
-                qu'un programme tourne. Le bloc restait invisible tant que le
-                solde n'atteignait pas le minimum : le vendeur ne savait ni que
-                le client avait des points, ni combien il lui en manquait. */}
+            {/* Cagnotte de fidélité : visible dès qu'un client est rattaché et
+                qu'un programme tourne, même à zéro - le vendeur doit pouvoir
+                dire au client où il en est. */}
             {selectedCustomer && loyaltyProgram?.is_active && (
               <div className="space-y-2">
                 <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Points de fidélité ({formatPoints(pointsBalance)} pts)
+                  Cagnotte de fidélité ({formatPrice(loyaltyBalance)})
                 </Label>
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                   {/* La case à cocher EST l'ancre du popover : cocher demande
                       combien, décocher annule sans rien demander. La case ne
                       passe à l'état coché qu'une fois la saisie validée. */}
-                  <LoyaltyPointsPicker
-                    open={showPointsPicker}
-                    onOpenChange={setShowPointsPicker}
-                    balance={pointsBalance}
-                    minPoints={minPointsToRedeem}
-                    maxPoints={Math.max(0, maxUsablePoints())}
-                    pointValue={pointValue()}
-                    maxAmount={maxLoyaltyAmount()}
+                  <LoyaltyCreditPicker
+                    open={showLoyaltyPicker}
+                    onOpenChange={setShowLoyaltyPicker}
+                    balance={loyaltyBalance}
+                    maxAmount={Math.max(0, maxUsableLoyalty())}
                     formatAmount={formatPrice}
-                    initial={pointsToUse}
-                    onConfirm={(points) => {
-                      setUsePoints(points > 0);
-                      setPointsToUse(points);
-                      syncTenderToTotal(points, points > 0);
+                    initial={loyaltyToUse}
+                    onConfirm={(credit) => {
+                      setUseLoyalty(credit > 0);
+                      setLoyaltyToUse(credit);
+                      syncTenderToTotal(credit, credit > 0);
                     }}
                   >
                     <button
                       type="button"
-                      disabled={!canRedeemPoints}
+                      disabled={!canUseLoyalty}
                       // Bouton bascule et non `input[type=checkbox]` : il porte
                       // aussi l'ouverture du popover. `aria-pressed` annonce
                       // l'état que la coche ne dit qu'à l'oeil.
-                      aria-pressed={usePoints}
+                      aria-pressed={useLoyalty}
                       onClick={(e) => {
-                        if (usePoints) {
+                        if (useLoyalty) {
                           // Décocher est une annulation : immédiate, sans
                           // popover. `preventDefault` neutralise le handler du
                           // trigger, que Radix compose après celui de l'enfant.
                           e.preventDefault();
-                          setShowPointsPicker(false);
-                          setUsePoints(false);
-                          setPointsToUse(0);
+                          setShowLoyaltyPicker(false);
+                          setUseLoyalty(false);
+                          setLoyaltyToUse(0);
                           syncTenderToTotal(0, false);
                         }
                       }}
-                      className={`flex w-full items-center gap-2.5 text-left ${canRedeemPoints ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+                      className={`flex w-full items-center gap-2.5 text-left ${canUseLoyalty ? "cursor-pointer" : "cursor-not-allowed opacity-60"
                         }`}
                     >
                       <span
                         aria-hidden
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${usePoints
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${useLoyalty
                           ? "border-amber-600 bg-amber-600 text-white"
                           : "border-amber-300 bg-white"
                           }`}
                       >
-                        {usePoints && <Check className="h-3 w-3" />}
+                        {useLoyalty && <Check className="h-3 w-3" />}
                       </span>
                       <span className="text-sm font-medium text-amber-800">
-                        Déduire mes points sur la facture
+                        Régler une part avec la cagnotte
                       </span>
                     </button>
-                  </LoyaltyPointsPicker>
+                  </LoyaltyCreditPicker>
 
-                  {!canRedeemPoints && (
+                  {!canUseLoyalty && (
                     <p className="mt-2 border-t border-amber-200 pt-2 text-xs text-amber-600">
-                      Encore {formatPoints(minPointsToRedeem - pointsBalance)} pts
-                      avant de pouvoir les utiliser (minimum {formatPoints(minPointsToRedeem)} pts).
+                      Cagnotte vide : elle se remplit de {loyaltyProgram.earn_percent} %
+                      de chaque facture réglée.
                     </p>
                   )}
 
-                  {canRedeemPoints && usePoints && calculateLoyaltyDiscount() > 0 && (
+                  {canUseLoyalty && useLoyalty && calculateLoyaltyDiscount() > 0 && (
                     <div className="mt-2 flex items-center justify-between border-t border-amber-200 pt-2">
                       <span className="text-xs text-amber-700">
-                        {formatPoints(pointsToUse)} pts appliqués ·{" "}
+                        Cagnotte appliquée ·{" "}
                         <span className="font-semibold">
                           -{formatPrice(calculateLoyaltyDiscount())}
                         </span>
@@ -2594,7 +2590,7 @@ export default function POSPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => setShowPointsPicker(true)}
+                        onClick={() => setShowLoyaltyPicker(true)}
                         className="h-7 px-2 text-xs text-amber-700 hover:bg-amber-100 hover:text-amber-800"
                       >
                         Modifier
@@ -2648,8 +2644,8 @@ export default function POSPage() {
                           onClick={() => {
                             setSelectedCustomer(null);
                             setCustomerLoyalty(null);
-                            setUsePoints(false);
-                            setPointsToUse(0);
+                            setUseLoyalty(false);
+                            setLoyaltyToUse(0);
                             setIsCreditSale(false);
                             // Retirer le client annule sa remise fidélité : le
                             // montant à encaisser remonte au total brut.
@@ -2730,7 +2726,7 @@ export default function POSPage() {
                     caissier puisse dire d'où vient l'écart. */}
                 {calculateLoyaltyDiscount() > 0 && (
                   <div className="flex justify-between text-amber-600">
-                    <span>Remise fidélité ({formatPoints(pointsToUse)} pts)</span>
+                    <span>Remise fidélité</span>
                     <span>-{money(convMoney(calculateLoyaltyDiscount(), primaryCode(), saleCurrency()))}</span>
                   </div>
                 )}
@@ -2809,7 +2805,7 @@ export default function POSPage() {
                   // Retour au comptant : le montant reçu redevient le total dû.
                   // `syncTenderToTotal` lit `isCreditSale`, dont la mise à jour
                   // n'est pas encore visible ici : on lui passe `false`.
-                  syncTenderToTotal(pointsToUse, usePoints, false);
+                  syncTenderToTotal(loyaltyToUse, useLoyalty, false);
                 }}
               >
                 <SelectTrigger

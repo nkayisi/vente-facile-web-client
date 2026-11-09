@@ -1557,3 +1557,154 @@ export async function exportRequisition(
 ): Promise<ExportFile> {
   return fetchExportFile(`/requisitions/${id}/export/`, accessToken, organizationId, format);
 }
+
+// =============================================================================
+// APPROVISIONNEMENT DE MASSE
+// =============================================================================
+
+/**
+ * Une ligne de la feuille, telle que le serveur la pré-remplit.
+ *
+ * ⚠ LES NOMBRES VOYAGENT EN CHAÎNES, comme partout ailleurs : un stock en CDF
+ * atteint sept chiffres, et un `number` JavaScript y perd ses unités. C'est ce
+ * que `pnpm check:api-decimals` exige dès qu'un champ est un `DecimalField`.
+ */
+export interface SupplySheetLine {
+  product: string;
+  name: string;
+  sku: string;
+  selling_mode: string;
+  /** `null` : l'article n'est pas vendu par conditionnement. */
+  packaging_factor: number | null;
+  retail_unit_label: string;
+  package_unit_label: string;
+  stock: string;
+  stock_packages: string;
+  stock_loose: string;
+  /** « 15 CASIERS + 10 BOUTEILLES » : c'est lui qui se lit, pas `stock`. */
+  stock_display: string;
+  reorder_point: string;
+  /** Périssable : la date de péremption devient obligatoire sur cette ligne. */
+  has_expiry_date: boolean;
+  cost_price: string;
+  package_cost_price: string;
+  selling_price: string;
+  wholesale_price: string;
+}
+
+export interface SupplySheet {
+  warehouse: string;
+  warehouse_name: string;
+  scope: string;
+  count: number;
+  /** La feuille est bornée : au-delà, l'écran doit le DIRE. */
+  truncated: boolean;
+  limit: number;
+  /**
+   * Les catégories et articles CHOISIS, nommés par le serveur.
+   *
+   * ⚠ Le périmètre voyage en identifiants dans l'URL : sans cet écho, les
+   * puces d'un rechargement afficheraient des UUID nus.
+   */
+  selection: {
+    categories: { id: string; name: string }[];
+    products: { id: string; name: string }[];
+  };
+  lines: SupplySheetLine[];
+}
+
+export type SupplyScope = "all" | "category" | "product" | "low";
+
+export async function getSupplySheet(
+  accessToken: string,
+  organizationId: string,
+  filters: {
+    warehouse: string;
+    scope?: SupplyScope;
+    categories?: string[];
+    products?: string[];
+    search?: string;
+  }
+): Promise<ApiResponse<SupplySheet>> {
+  try {
+    const params = new URLSearchParams({ warehouse: filters.warehouse });
+    if (filters.scope) params.append("scope", filters.scope);
+    if (filters.categories?.length)
+      params.append("categories", filters.categories.join(","));
+    if (filters.products?.length)
+      params.append("products", filters.products.join(","));
+    if (filters.search) params.append("search", filters.search);
+
+    const response = await axios.get(
+      `${API_BASE_URL}/stock-movements/supply-sheet/?${params.toString()}`,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    console.error(
+      "[stock] Get supply sheet error:",
+      getErrorBody(error) || (error as Error)?.message
+    );
+    return {
+      success: false,
+      message:
+        getErrorBody(error)?.detail ||
+        "Erreur lors de la préparation de la feuille",
+      errors: getErrorBody(error),
+    };
+  }
+}
+
+/** Une ligne saisie : ce que le serializer de mouvement accepte déjà. */
+export type BulkSupplyLine = Omit<
+  CreateStockMovementData,
+  "warehouse" | "movement_type"
+>;
+
+export interface BulkSupplyResult {
+  created: number;
+  movements: StockMovement[];
+}
+
+export async function createBulkStockMovement(
+  accessToken: string,
+  organizationId: string,
+  data: {
+    warehouse: string;
+    movement_type: MovementType;
+    notes?: string;
+    lines: BulkSupplyLine[];
+  }
+): Promise<ApiResponse<BulkSupplyResult>> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/stock-movements/bulk/`,
+      data,
+      { headers: getHeaders(accessToken, organizationId) }
+    );
+    revalidatePath("/dashboard/stock");
+    return {
+      success: true,
+      message: `${response.data.created} entrée(s) enregistrée(s)`,
+      data: response.data,
+    };
+  } catch (error: unknown) {
+    const body = getErrorBody(error);
+    console.error(
+      "[stock] Bulk supply error:",
+      body || (error as Error)?.message
+    );
+    return {
+      success: false,
+      // ⚠ LE CORPS D'ERREUR EST RENDU TEL QUEL, et c'est tout l'intérêt : il
+      // porte `{lines: {3: {...}, 11: {...}}}`, donc l'écran peut afficher
+      // chaque refus SUR sa ligne. Un message unique ferait lire « Indiquez une
+      // quantité » sans savoir laquelle.
+      message:
+        body?.detail ||
+        body?.movement_type?.[0] ||
+        "Erreur lors de l'enregistrement de la livraison",
+      errors: body,
+    };
+  }
+}

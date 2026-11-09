@@ -36,6 +36,8 @@ import {
   type PeriodValue,
 } from "@/components/shared/PeriodFilter";
 import { SupplyExportDialog } from "@/components/stock/SupplyExportDialog";
+import { BulkSupplyScopeDialog } from "@/components/stock/BulkSupplyScopeDialog";
+import { versParams } from "@/lib/stock/perimetre-appro";
 import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
@@ -51,14 +53,13 @@ import {
   Search,
   ArrowLeft,
   Loader2,
+  PackagePlus,
   Plus,
   ArrowUpRight,
   ArrowDownLeft,
-  Filter,
   Warehouse as WarehouseIcon,
   Package,
   Truck as TruckIcon,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PermissionGate } from "@/components/auth/permission-gate";
@@ -68,6 +69,12 @@ import { blendedUnitCost } from "@/lib/pricing";
 import { formatPrice, formatDateTime, formatDecimal } from "@/lib/format";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
+import {
+  libelleCanal,
+  motCanal,
+  rappelConditionnement,
+  resumeConversion,
+} from "@/lib/stock/lignes-conditionnees";
 import {
   getStockMovements,
   createStockMovement,
@@ -148,10 +155,10 @@ export default function MovementsPage() {
   /** Requête réellement envoyée : sans délai, chaque frappe déclencherait un appel */
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
-  const [selectedType, setSelectedType] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [period, setPeriod] = useState<PeriodValue>({ mode: "all" });
   const [isSupplyDialogOpen, setIsSupplyDialogOpen] = useState(false);
+  const [showScopeDialog, setShowScopeDialog] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -328,7 +335,6 @@ export default function MovementsPage() {
       ...periodToParams(period),
     };
     if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
-    if (selectedType !== "all") filters.movement_type = selectedType as MovementType;
     if (selectedCategory !== "all") filters.category = selectedCategory;
     if (debouncedSearch) filters.search = debouncedSearch;
 
@@ -346,7 +352,7 @@ export default function MovementsPage() {
     } finally {
       setIsFetching(false);
     }
-  }, [session?.accessToken, organization, currentPage, pageSize, selectedWarehouse, selectedType, selectedCategory, period, debouncedSearch]);
+  }, [session?.accessToken, organization, currentPage, pageSize, selectedWarehouse, selectedCategory, period, debouncedSearch]);
 
   // Refetch when filters or page change
   useEffect(() => {
@@ -365,20 +371,25 @@ export default function MovementsPage() {
   // résultat qui n'en compte plus que 2 afficherait un tableau vide.
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, selectedWarehouse, selectedType, selectedCategory, period, pageSize]);
+  }, [debouncedSearch, selectedWarehouse, selectedCategory, period, pageSize]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
   const hasActiveFilters =
     selectedWarehouse !== "all" ||
-    selectedType !== "all" ||
     selectedCategory !== "all" ||
     period.mode !== "all" ||
     searchQuery.trim() !== "";
 
+  /**
+   * ⚠ LE BOUTON DE LA BARRE A ÉTÉ RETIRÉ, PAS CETTE FONCTION.
+   *
+   * Elle sert désormais au seul ÉTAT VIDE, et c'est ce qui compte : quand un
+   * filtre ne rend aucune ligne, il faut une sortie. Sans elle, un tableau vide
+   * se lit « il n'y a rien » et le marchand n'a plus de chemin de retour.
+   */
   const resetFilters = () => {
     setSearchQuery("");
     setSelectedWarehouse("all");
-    setSelectedType("all");
     setSelectedCategory("all");
     setPeriod({ mode: "all" });
   };
@@ -406,11 +417,10 @@ export default function MovementsPage() {
   const exportFilters = useMemo<StockMovementFilters>(() => {
     const filters: StockMovementFilters = { ...periodToParams(period) };
     if (selectedWarehouse !== "all") filters.warehouse = selectedWarehouse;
-    if (selectedType !== "all") filters.movement_type = selectedType as MovementType;
     if (selectedCategory !== "all") filters.category = selectedCategory;
     if (debouncedSearch) filters.search = debouncedSearch;
     return filters;
-  }, [period, selectedWarehouse, selectedType, selectedCategory, debouncedSearch]);
+  }, [period, selectedWarehouse, selectedCategory, debouncedSearch]);
 
   /** Bornes affichées dans le pied du tableau : « 21 à 40 sur 137 » */
   const rangeStart = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
@@ -448,42 +458,43 @@ export default function MovementsPage() {
 
   const packageWord = selectedProduct?.packaging_unit_name || "conditionnement";
   const retailWord = selectedProduct?.unit_name || "unité";
-  const pluralize = (word: string) => (/[sx]$/i.test(word) ? word : `${word}s`);
-  const packageWordPlural = pluralize(packageWord);
-  const retailWordPlural = pluralize(retailWord);
 
-  /** Récapitulatif de la conversion, affiché avant validation. */
+  /**
+   * Récapitulatif de la conversion, affiché avant validation.
+   *
+   * ⚠ C'EST `resumeConversion` DU MODULE PARTAGÉ, et non une seconde écriture.
+   * La feuille d'approvisionnement de masse dit la MÊME phrase, et elle passe
+   * par `formatUnitQuantity` : une demi-unité y sort « 0,5 BOUTEILLE » et non
+   * « 0.5 BOUTEILLEs », au point décimal anglais et avec un pluriel faux.
+   */
   const conversionSummary = useMemo(() => {
     if (!packagingFactor) return null;
-    const packages = formData.package_quantity ?? 0;
-    const loose = formData.loose_quantity ?? 0;
-    if (packages <= 0 && loose <= 0) return null;
-
-    const total = packages * packagingFactor + loose;
-    const parts: string[] = [];
-    if (packages > 0) {
-      parts.push(`${packages} ${packages > 1 ? packageWordPlural : packageWord}`);
-    }
-    if (loose > 0) {
-      parts.push(`${loose} ${loose > 1 ? retailWordPlural : retailWord}`);
-    }
-    const verb = ["purchase", "initial", "return_in", "transfer_in", "adjustment_in", "production_in"].includes(
-      formData.movement_type
-    )
+    const verbe = [
+      "purchase", "initial", "return_in", "transfer_in", "adjustment_in", "production_in",
+    ].includes(formData.movement_type)
       ? "ajoutez"
       : "retirez";
-    return `Vous ${verb} ${parts.join(" + ")} = ${total} ${
-      total > 1 ? retailWordPlural : retailWord
-    }.`;
+    return resumeConversion(
+      {
+        conditionnement: {
+          factor: packagingFactor,
+          retailWord,
+          packageWord,
+          packageOnly: isPackageOnly,
+        },
+        contenants: formData.package_quantity ?? null,
+        vrac: formData.loose_quantity ?? null,
+      },
+      verbe
+    );
   }, [
     packagingFactor,
+    isPackageOnly,
     formData.package_quantity,
     formData.loose_quantity,
     formData.movement_type,
     packageWord,
-    packageWordPlural,
     retailWord,
-    retailWordPlural,
   ]);
 
   /**
@@ -549,8 +560,8 @@ export default function MovementsPage() {
       if (packages <= 0 && (isPackageOnly || loose <= 0)) {
         toast.error(
           isPackageOnly
-            ? `Indiquez un nombre de ${packageWordPlural}`
-            : `Indiquez un nombre de ${packageWordPlural} ou de ${retailWordPlural}`
+            ? `Indiquez une quantité en ${motCanal(packageWord)}`
+            : `Indiquez une quantité en ${motCanal(packageWord)} ou en ${motCanal(retailWord)}`
         );
         return;
       }
@@ -652,8 +663,26 @@ export default function MovementsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* ┌──────────────────────────────────────────────────────────────────┐
+          │ LES ACTIONS ONT LEUR PROPRE RANGÉE, ET LES QUATRE RESTENT       │
+          │ VISIBLES.                                                        │
+          │                                                                  │
+          │ Elles vivaient à droite du titre et s'enroulaient en escalier    │
+          │ dès ~1 180 px de contenu : « Nouveau mouvement », l'action la    │
+          │ plus fréquente, tombait seule sur une seconde ligne.             │
+          │                                                                  │
+          │ ⚠ AUCUNE BASCULE « À CÔTÉ DU TITRE AU-DELÀ DE TEL SEUIL ». Les  │
+          │   quatre boutons plus le titre réclament ~1 130 px, et la barre │
+          │   latérale retire 256 px à la FENÊTRE : un seuil `xl:` (1 280)   │
+          │   ne laisserait que 976 px de contenu et casserait. Ce piège est │
+          │   déjà documenté ici - « les seuils `sm:` se calent sur la       │
+          │   fenêtre, pas sur la place réelle ».                            │
+          │                                                                  │
+          │ ⚠ UNE SEULE TAILLE POUR LES QUATRE : `ExportMenu` vaut `sm`      │
+          │   (h-8) par défaut quand ses voisins sont en `default` (h-9).    │
+          │   C'est la moitié invisible du défaut d'alignement.              │
+          └──────────────────────────────────────────────────────────────────┘ */}
+      <div className="space-y-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
             <ArrowLeft className="h-5 w-5" />
@@ -665,8 +694,11 @@ export default function MovementsPage() {
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Sous 640 px, une grille à deux colonnes : les boutons s'alignent au
+            lieu de s'enrouler en escalier. */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
           <ExportMenu
+            size="default"
             disabled={!session?.accessToken || !organization?.id || totalCount === 0}
             disabledReason="Aucun mouvement à exporter"
             targets={[
@@ -692,6 +724,20 @@ export default function MovementsPage() {
           >
             <TruckIcon className="h-4 w-4 mr-2" />
             Rapport d&apos;approvisionnement
+          </Button>
+
+          {/* ⚠ LES DEUX GESTES COEXISTENT, ET C'EST VOULU : une livraison
+          entière se saisit en masse, une correction isolée se saisit ici. Le
+          dialogue d'un seul mouvement reste donc, et c'est lui qui porte le cas
+          d'un seul article.
+
+          Le bouton ouvre une MODALE plutôt que de pousser vers une page : on
+          demande le périmètre une fois, puis la feuille s'affiche pleine de ce
+          qu'on reçoit. Pousser d'abord obligeait à relire un formulaire de
+          réglages posé au-dessus de quarante lignes à remplir. */}
+          <Button variant="outline" onClick={() => setShowScopeDialog(true)}>
+            <PackagePlus className="h-4 w-4 mr-2" />
+            Approvisionner en masse
           </Button>
 
           <Button
@@ -746,32 +792,6 @@ export default function MovementsPage() {
             disabled={!session?.accessToken || !organization?.id}
           />
 
-          <Select value={selectedType} onValueChange={setSelectedType}>
-            <SelectTrigger className="max-w-max">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les types</SelectItem>
-              {MOVEMENT_TYPES.map(type => (
-                <SelectItem key={type.value} value={type.value}>
-                  {type.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={resetFilters}
-              className="text-gray-500"
-            >
-              <X className="h-4 w-4 mr-1" />
-              Réinitialiser
-            </Button>
-          )}
         </div>
       </div>
 
@@ -1076,8 +1096,8 @@ export default function MovementsPage() {
                   channel="retail"
                   title={`Au détail · ${retailWord}`}
                   currencySymbol={currencySymbol}
-                  costLabel={`Prix d'achat d'une ${retailWord}`}
-                  sellingLabel={`Prix de vente d'une ${retailWord}`}
+                  costLabel={`Prix payé par ${retailWord}`}
+                  sellingLabel={`Prix de vente par ${retailWord}`}
                   costPrice={isStockIn ? formData.unit_cost ?? null : null}
                   sellingPrice={sellingPrices.selling_price}
                   onCostChange={value =>
@@ -1091,7 +1111,7 @@ export default function MovementsPage() {
                     <div className="space-y-1.5">
                       <Label htmlFor="loose_quantity">
                         {packagingFactor
-                          ? `Nombre de ${retailWordPlural} à l'unité`
+                          ? libelleCanal(retailWord)
                           : "Quantité *"}
                       </Label>
                       <Input
@@ -1123,10 +1143,15 @@ export default function MovementsPage() {
                 <ChannelPriceBlock
                   channel="wholesale"
                   title={`En gros · ${packageWord}`}
-                  conversionHint={`1 ${packageWord} = ${packagingFactor} ${retailWordPlural}`}
+                  conversionHint={rappelConditionnement({
+                    factor: packagingFactor,
+                    retailWord,
+                    packageWord,
+                    packageOnly: isPackageOnly,
+                  })}
                   currencySymbol={currencySymbol}
-                  costLabel={`Prix d'achat d'un ${packageWord}`}
-                  sellingLabel={`Prix de vente d'un ${packageWord}`}
+                  costLabel={`Prix payé par ${packageWord}`}
+                  sellingLabel={`Prix de vente par ${packageWord}`}
                   costPrice={isStockIn ? formData.package_unit_cost ?? null : null}
                   sellingPrice={sellingPrices.wholesale_price}
                   onCostChange={value =>
@@ -1139,7 +1164,7 @@ export default function MovementsPage() {
                   quantitySlot={
                     <div className="space-y-1.5">
                       <Label htmlFor="package_quantity">
-                        Nombre de {packageWordPlural}
+                        {libelleCanal(packageWord)}
                       </Label>
                       <Input
                         id="package_quantity"
@@ -1278,6 +1303,22 @@ export default function MovementsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* ⚠ LA MODALE VIT ICI, PAS SUR LA PAGE D'ARRIVÉE : c'est de cet écran
+          qu'on part en livraison, et le périmètre se demande AVANT d'ouvrir une
+          feuille de trois cents lignes. La feuille le relit dans l'URL. */}
+      {showScopeDialog && (
+      <BulkSupplyScopeDialog
+        open
+        onOpenChange={setShowScopeDialog}
+        accessToken={session?.accessToken as string | undefined}
+        organizationId={organization?.id ?? ""}
+        onSubmit={(perimetre) => {
+          setShowScopeDialog(false);
+          router.push(`/dashboard/stock/supplies?${versParams(perimetre).toString()}`);
+        }}
+      />
+      )}
 
       {session?.accessToken && organization?.id && (
         <SupplyExportDialog

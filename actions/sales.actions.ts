@@ -252,15 +252,18 @@ export interface Sale {
   unpacking_notices?: UnpackingNotice[];
   /**
    * Fidélité, telle qu'elle a réellement été écrite au registre. Le reçu doit
-   * lire ces valeurs et ne jamais rejouer le barème du programme : la formule
-   * n'est pas la même selon `points_calculation_type`.
+   * lire ces valeurs et ne jamais rejouer le pourcentage du programme.
+   *
+   * ⚠ DES CHAÎNES, pas des nombres : la cagnotte est de l'argent, et tout
+   * montant de la plateforme voyage en chaîne - voir `_money_out` dans
+   * `apps/sales/serializers.py`.
    */
-  loyalty_points_earned?: number;
-  loyalty_points_used?: number;
-  loyalty_points_balance?: number;
+  loyalty_earned?: string;
+  loyalty_used?: string;
+  loyalty_balance?: string;
   loyalty_program_active?: boolean;
   /**
-   * Part de cette facture encore réglable en points, dans sa devise, déjà
+   * Part de cette facture encore réglable avec la cagnotte, dans sa devise, déjà
    * bornée par le reste à payer. Calculée par le serveur avec la fonction qu'il
    * applique lui-même : ne jamais rejouer le plafond du programme côté client,
    * l'écran proposerait un maximum que `resolve_redemption` refuserait.
@@ -453,20 +456,22 @@ export interface CreateSaleData {
   is_pos?: boolean;
   items: CreateSaleItemData[];
   payments?: CreatePaymentData[];
-  points_used?: number;
+  /** Part de cagnotte à employer, en devise PRINCIPALE. */
+  loyalty_amount_used?: number;
 }
 
 export interface AddPaymentData {
-  /** Requis dès que `amount` est renseigné ; inutile pour un règlement en points. */
+  /** Requis dès que `amount` est renseigné ; inutile pour un règlement en cagnotte. */
   payment_method?: string;
   /** Montant réellement remis, dans `currency`. */
   amount?: number;
   /**
-   * Points de fidélité à utiliser sur cette facture. Contrairement au POS (où
-   * la remise précède l'émission), le total de la facture ne bouge pas : les
-   * points s'imputent comme un moyen de paiement. Cumulable avec `amount`.
+   * Part de cagnotte à employer sur cette facture, en devise PRINCIPALE.
+   * Contrairement au POS (où la remise précède l'émission), le total de la
+   * facture ne bouge pas : la cagnotte s'impute comme un moyen de paiement.
+   * Cumulable avec `amount`.
    */
-  points_used?: number;
+  loyalty_amount_used?: number;
   /** Devise du paiement (par défaut = devise de la vente). */
   currency?: string;
   /** Taux : devise de la vente pour 1 unité de `currency`. */

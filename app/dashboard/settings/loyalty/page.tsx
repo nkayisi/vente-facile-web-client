@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import Link from "next/link";
 import { toast } from "sonner";
 import { Gift, Edit, Plus, ToggleLeft, ToggleRight, Loader2, Info } from "lucide-react";
 
@@ -19,15 +18,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 import { useOrganization } from "@/components/auth/organization-checker";
+import { formatPrice } from "@/lib/format";
 import {
   LoyaltyProgram,
   OrganizationCurrency,
@@ -37,6 +30,26 @@ import {
   toggleLoyaltyProgram,
   getOrganizationCurrencies,
 } from "@/actions/settings.actions";
+
+/**
+ * Le programme de fidélité : trois nombres, et une phrase qui les dit.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ IL EN DEMANDAIT HUIT, ET PERSONNE NE POUVAIT PRÉVOIR L'EFFET.           │
+ * │                                                                          │
+ * │ Mode de calcul, points par tranche, montant de la tranche, pourcentage,  │
+ * │ valeur d'un point, minimum d'utilisation, plafond, expiration - plus un  │
+ * │ second mécanisme de récompenses sur sa propre page. Il fallait croiser   │
+ * │ trois champs pour savoir ce qu'un achat rapportait.                      │
+ * │                                                                          │
+ * │ Il en reste DEUX à régler, et un APERÇU CHIFFRÉ les explique mieux       │
+ * │ qu'une phrase : « sur une facture de 10 000 FC, le client gagne 200 FC   │
+ * │ et peut en régler jusqu'à 5 000 FC ». La cagnotte est de l'argent.       │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+
+/** Facture témoin de l'aperçu : ronde, et du bon ordre de grandeur. */
+const FACTURE_TEMOIN = 10000;
 
 export default function LoyaltySettingsPage() {
   const { data: session } = useSession();
@@ -50,14 +63,8 @@ export default function LoyaltySettingsPage() {
 
   const [loyaltyForm, setLoyaltyForm] = useState({
     name: "Programme de fidélité",
-    points_calculation_type: "fixed_per_amount" as "fixed_per_amount" | "percentage",
-    points_per_unit: 1,
-    amount_per_unit: "1000",
-    points_percentage: "1",
-    point_value: "1",
-    min_points_to_redeem: 100,
+    earn_percent: "1",
     max_redemption_percent: "50",
-    points_expiry_days: 0,
     only_registered_customers: true,
   });
 
@@ -96,14 +103,8 @@ export default function LoyaltySettingsPage() {
     if (loyaltyProgram) {
       setLoyaltyForm({
         name: loyaltyProgram.name,
-        points_calculation_type: loyaltyProgram.points_calculation_type,
-        points_per_unit: loyaltyProgram.points_per_unit,
-        amount_per_unit: loyaltyProgram.amount_per_unit,
-        points_percentage: loyaltyProgram.points_percentage,
-        point_value: loyaltyProgram.point_value,
-        min_points_to_redeem: loyaltyProgram.min_points_to_redeem,
+        earn_percent: loyaltyProgram.earn_percent,
         max_redemption_percent: loyaltyProgram.max_redemption_percent,
-        points_expiry_days: loyaltyProgram.points_expiry_days,
         only_registered_customers: loyaltyProgram.only_registered_customers,
       });
     }
@@ -149,28 +150,30 @@ export default function LoyaltySettingsPage() {
     );
   }
 
+  // L'aperçu que le dialogue affiche sous les deux champs. Calculé sur les
+  // valeurs du FORMULAIRE, pas sur le programme enregistré : le marchand doit
+  // voir l'effet de ce qu'il tape, avant d'enregistrer.
+  const gainTemoin = (FACTURE_TEMOIN * (Number(loyaltyForm.earn_percent) || 0)) / 100;
+  const reglableTemoin =
+    (FACTURE_TEMOIN *
+      Math.min(Number(loyaltyForm.max_redemption_percent) || 0, redemptionCeiling)) /
+    100;
+
   return (
     <div className="space-y-4">
-      {/* Loyalty Program Card */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Gift className="h-5 w-5 text-orange-500" />
-                Programme de fidélité
+                Cagnotte de fidélité
               </CardTitle>
-              <CardDescription>Récompensez vos clients fidèles avec des points</CardDescription>
+              <CardDescription>
+                Une part de chaque facture revient au client, en argent
+              </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {loyaltyProgram && (
-                <Link href="/dashboard/settings/loyalty/rewards">
-                  <Button variant="outline">
-                    <Gift className="h-4 w-4 mr-2" />
-                    Récompenses
-                  </Button>
-                </Link>
-              )}
               {loyaltyProgram && (
                 <Button
                   variant={loyaltyProgram.is_active ? "outline" : "default"}
@@ -212,7 +215,7 @@ export default function LoyaltySettingsPage() {
         </CardHeader>
         <CardContent>
           {loyaltyProgram ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
                 <div className="text-sm text-orange-600 font-medium">Statut</div>
                 <div className="flex items-center gap-2 mt-1">
@@ -225,38 +228,17 @@ export default function LoyaltySettingsPage() {
                 </div>
               </div>
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
-                <div className="text-sm text-orange-600 font-medium">Calcul des points</div>
+                <div className="text-sm text-orange-600 font-medium">Le client récupère</div>
                 <div className="font-medium mt-1">
-                  {loyaltyProgram.points_calculation_type === "fixed_per_amount"
-                    ? `${loyaltyProgram.points_per_unit} pts / ${Number(
-                        loyaltyProgram.amount_per_unit
-                      ).toLocaleString()} ${primaryCurrency?.currency_symbol || "FC"}`
-                    : `${loyaltyProgram.points_percentage}% du montant`}
+                  {Number(loyaltyProgram.earn_percent)} % de chaque facture
                 </div>
               </div>
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
-                <div className="text-sm text-orange-600 font-medium">Valeur d&apos;un point</div>
-                <div className="font-medium mt-1">
-                  {Number(loyaltyProgram.point_value).toLocaleString()}{" "}
-                  {primaryCurrency?.currency_symbol || "FC"}
+                <div className="text-sm text-orange-600 font-medium">
+                  Part réglable avec la cagnotte
                 </div>
-              </div>
-              <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
-                <div className="text-sm text-orange-600 font-medium">Minimum pour utiliser</div>
-                <div className="font-medium mt-1">{loyaltyProgram.min_points_to_redeem} points</div>
-              </div>
-              <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
-                <div className="text-sm text-orange-600 font-medium">Part réglable en points</div>
                 <div className="font-medium mt-1">
                   {Number(loyaltyProgram.max_redemption_percent)} % de la facture
-                </div>
-              </div>
-              <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
-                <div className="text-sm text-orange-600 font-medium">Expiration</div>
-                <div className="font-medium mt-1">
-                  {loyaltyProgram.points_expiry_days > 0
-                    ? `${loyaltyProgram.points_expiry_days} jours`
-                    : "Jamais"}
                 </div>
               </div>
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
@@ -271,33 +253,42 @@ export default function LoyaltySettingsPage() {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <Gift className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-              <p>Aucun programme de fidélité configuré</p>
-              <p className="text-sm">Créez un programme pour récompenser vos clients</p>
+              <p>Aucune cagnotte de fidélité configurée</p>
+              <p className="text-sm">
+                Créez un programme pour rendre une part de chaque facture à vos clients
+              </p>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Info Card */}
+      {/* Ce que le marchand doit pouvoir expliquer à son client, en trois lignes. */}
       {loyaltyProgram && (
         <Card className="bg-blue-50 border-blue-200">
           <CardContent className="pt-4">
             <div className="flex items-start gap-3">
               <Info className="h-5 w-5 text-blue-500 mt-0.5" />
               <div className="text-sm text-blue-800">
-                <p className="font-medium">Comment utiliser les points de fidélité ?</p>
+                <p className="font-medium">Comment la cagnotte fonctionne</p>
                 <ul className="list-disc list-inside mt-1 space-y-1">
-                  <li>Les clients gagnent des points à chaque achat selon la configuration</li>
-                  <li>Les points peuvent être utilisés comme de l&apos;argent lors des achats</li>
                   <li>
-                    1 point = {Number(loyaltyProgram.point_value).toLocaleString()}{" "}
-                    {primaryCurrency?.currency_symbol || "FC"}
+                    Sur une facture de {formatPrice(FACTURE_TEMOIN)} réglée, le client
+                    récupère{" "}
+                    {formatPrice(
+                      (FACTURE_TEMOIN * Number(loyaltyProgram.earn_percent)) / 100,
+                    )}{" "}
+                    dans sa cagnotte.
                   </li>
-                  <li>Minimum requis pour utiliser : {loyaltyProgram.min_points_to_redeem} points</li>
                   <li>
-                    Les points couvrent au plus{" "}
-                    {Number(loyaltyProgram.max_redemption_percent)} % d&apos;une
-                    facture : le client règle toujours le reste en monnaie
+                    Il peut la dépenser sur n&apos;importe quelle facture, comme de
+                    l&apos;argent.
+                  </li>
+                  <li>
+                    Au plus {Number(loyaltyProgram.max_redemption_percent)} % d&apos;une
+                    facture : le client règle toujours le reste en monnaie.
+                  </li>
+                  <li>
+                    Une vente à crédit ne crédite rien avant d&apos;être soldée.
                   </li>
                 </ul>
               </div>
@@ -306,12 +297,11 @@ export default function LoyaltySettingsPage() {
         </Card>
       )}
 
-      {/* Loyalty Program Dialog */}
       <Dialog open={showLoyaltyDialog} onOpenChange={setShowLoyaltyDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>
-              {loyaltyProgram ? "Modifier le programme de fidélité" : "Créer un programme de fidélité"}
+              {loyaltyProgram ? "Modifier la cagnotte de fidélité" : "Créer une cagnotte de fidélité"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -324,80 +314,19 @@ export default function LoyaltySettingsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Type de calcul des points</Label>
-              <Select
-                value={loyaltyForm.points_calculation_type}
-                onValueChange={(value: "fixed_per_amount" | "percentage") =>
-                  setLoyaltyForm({ ...loyaltyForm, points_calculation_type: value })
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fixed_per_amount">Points fixes par montant</SelectItem>
-                  <SelectItem value="percentage">Pourcentage du montant</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {loyaltyForm.points_calculation_type === "fixed_per_amount" ? (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Points gagnés</Label>
-                  <Input
-                    type="number"
-                    value={loyaltyForm.points_per_unit}
-                    onChange={(e) =>
-                      setLoyaltyForm({ ...loyaltyForm, points_per_unit: parseInt(e.target.value) || 0 })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Pour chaque montant de ({primaryCurrency?.currency_symbol || "FC"})</Label>
-                  <Input
-                    type="number"
-                    value={loyaltyForm.amount_per_unit}
-                    onChange={(e) => setLoyaltyForm({ ...loyaltyForm, amount_per_unit: e.target.value })}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label>Pourcentage du montant converti en points (%)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={loyaltyForm.points_percentage}
-                  onChange={(e) => setLoyaltyForm({ ...loyaltyForm, points_percentage: e.target.value })}
-                />
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Valeur d&apos;un point ({primaryCurrency?.currency_symbol || "FC"})</Label>
-                <Input
-                  type="number"
-                  step="any"
-                  value={loyaltyForm.point_value}
-                  onChange={(e) => setLoyaltyForm({ ...loyaltyForm, point_value: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Minimum de points pour utiliser</Label>
-                <Input
-                  type="number"
-                  value={loyaltyForm.min_points_to_redeem}
-                  onChange={(e) =>
-                    setLoyaltyForm({ ...loyaltyForm, min_points_to_redeem: parseInt(e.target.value) || 0 })
-                  }
-                />
-              </div>
+              <Label>Part de la facture reversée au client (%)</Label>
+              <Input
+                type="number"
+                min={0.01}
+                max={100}
+                step="0.01"
+                value={loyaltyForm.earn_percent}
+                onChange={(e) => setLoyaltyForm({ ...loyaltyForm, earn_percent: e.target.value })}
+              />
             </div>
 
             <div className="space-y-2">
-              <Label>Part maximale d&apos;une facture réglable en points (%)</Label>
+              <Label>Part maximale d&apos;une facture réglable avec la cagnotte (%)</Label>
               <Input
                 type="number"
                 min={1}
@@ -409,36 +338,32 @@ export default function LoyaltySettingsPage() {
                 }
               />
               <p className="text-sm text-gray-500">
-                Les points ne soldent jamais toute une facture : au delà de
-                cette part, le client règle le reste en monnaie. Maximum{" "}
-                {redemptionCeiling} %, une facture garde toujours une part à
-                encaisser.
+                La cagnotte ne solde jamais toute une facture : au delà de cette
+                part, le client règle le reste en monnaie. Maximum{" "}
+                {redemptionCeiling} %.
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label>Expiration des points (jours, 0 = jamais)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={loyaltyForm.points_expiry_days}
-                onChange={(e) =>
-                  setLoyaltyForm({ ...loyaltyForm, points_expiry_days: parseInt(e.target.value) || 0 })
-                }
-              />
-              <p className="text-sm text-gray-500">
-                Chaque point a sa propre durée de vie, comptée depuis le jour où
-                il a été gagné. Les points les plus anciens sont utilisés en
-                premier, et le contrôle passe chaque nuit. Désactiver le
-                programme gèle les points au lieu de les faire expirer.
+            {/* ⚠ UN APERÇU CHIFFRÉ VAUT MIEUX QU'UNE EXPLICATION. Deux
+                pourcentages ne disent rien tant qu'on ne les voit pas posés sur
+                une facture ; c'est cet encart qui remplace les six champs
+                retirés. */}
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm">
+              <p className="font-medium text-orange-800">
+                Sur une facture de {formatPrice(FACTURE_TEMOIN)}
+                {primaryCurrency ? "" : ""} :
               </p>
+              <ul className="mt-1 space-y-0.5 text-orange-700">
+                <li>le client gagne {formatPrice(gainTemoin)} dans sa cagnotte ;</li>
+                <li>il peut en régler jusqu&apos;à {formatPrice(reglableTemoin)}.</li>
+              </ul>
             </div>
 
             <div className="flex items-center justify-between">
               <div>
                 <Label>Clients enregistrés uniquement</Label>
                 <p className="text-sm text-gray-500">
-                  Seuls les clients enregistrés peuvent accumuler des points
+                  Seuls les clients enregistrés peuvent accumuler une cagnotte
                 </p>
               </div>
               <Switch

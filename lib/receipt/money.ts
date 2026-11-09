@@ -15,7 +15,6 @@ export {
   formatAmount,
   formatMoney,
   formatBare,
-  formatPoints,
   formatQuantity,
   deaccent,
 } from "@vente-facile/core/receipt";
