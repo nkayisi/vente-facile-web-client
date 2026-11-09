@@ -93,8 +93,27 @@ function LoginForm() {
       });
 
       if (result?.error) {
-        // Vérifier que c'est bien une erreur de credentials et non un résidu d'URL
-        if (result.error === "CredentialsSignin" || result.status === 401) {
+        /**
+         * ⚠ C'EST LE `code` QUI DIT LA CAUSE, PAS L'`error`.
+         *
+         * Toute défaillance de `authorize` arrive ici sous le même
+         * `error: "CredentialsSignin"` - c'est ainsi qu'Auth.js est fait. Tant
+         * qu'on ne lisait que ce champ, un backend à terre accusait le mot de
+         * passe du marchand : il le retapait, le changeait, appelait le
+         * support, et le serveur était simplement arrêté. Les trois `code` sont
+         * posés dans [lib/auth/config.ts](../../../lib/auth/config.ts).
+         */
+        if (result.code === "service_indisponible") {
+          toast.error(
+            "Le service est momentanément indisponible. Vos identifiants " +
+              "n'y sont pour rien : réessayez dans quelques minutes.",
+          );
+        } else if (result.code === "trop_de_tentatives") {
+          toast.error(
+            "Trop de tentatives depuis cette connexion. Patientez quelques " +
+              "minutes avant de réessayer.",
+          );
+        } else if (result.error === "CredentialsSignin" || result.status === 401) {
           toast.error("Email ou mot de passe incorrect");
         } else {
           console.warn("[Login] signIn error:", result.error);

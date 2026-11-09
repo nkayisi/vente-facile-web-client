@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { CredentialsSignin } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import { refreshWithMutex } from "./refresh-mutex";
 
@@ -128,6 +129,54 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
   return refreshWithMutex(token, refreshAccessTokenInternal);
 }
 
+/**
+ * Pourquoi la connexion a échoué, et surtout : la faute est-elle celle du
+ * marchand ?
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ `authorize` RENDAIT `null` POUR TOUT, DONC LA PAGE DISAIT TOUJOURS       │
+ * │ « Email ou mot de passe incorrect ».                                     │
+ * │                                                                          │
+ * │ Un backend arrêté, un 500, une route absente derrière le proxy : les     │
+ * │ trois se présentaient au marchand comme un mot de passe erroné. Il       │
+ * │ retapait son mot de passe, le changeait, appelait le support - et le     │
+ * │ serveur, lui, était simplement à terre. Mesuré pendant la panne du       │
+ * │ 9 novembre 2026 : la migration de la cagnotte échouait, `entrypoint.sh`  │
+ * │ est en `set -e`, donc Gunicorn ne démarrait pas, et l'écran de connexion │
+ * │ accusait les identifiants de chaque marchand.                            │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ⚠ LE `code` VOYAGE DANS L'URL, donc il ne nomme JAMAIS la cause précise :
+ *   `@auth/core` le dit dans sa propre docstring, et on ne veut pas publier
+ *   « base de données injoignable » dans une barre d'adresse. Trois valeurs
+ *   suffisent, parce que trois GESTES suffisent : corriger sa saisie, attendre,
+ *   ou prévenir l'exploitant.
+ *
+ * ⚠ LE CAS DES IDENTIFIANTS GARDE SON `return null`, donc son `code` par
+ *   défaut (`credentials`) : rien ne change pour le chemin de loin le plus
+ *   fréquent, et c'est ce qui rend ce lot sûr à déployer pendant une panne.
+ */
+class ServiceIndisponible extends CredentialsSignin {
+  code = "service_indisponible";
+}
+
+class TropDeTentatives extends CredentialsSignin {
+  code = "trop_de_tentatives";
+}
+
+/**
+ * Un statut qui ne peut PAS vouloir dire « mot de passe erroné ».
+ *
+ * ⚠ LE 404 EN FAIT PARTIE, et c'est contre-intuitif. Un proxy inverse qui n'a
+ *   plus de route vers l'API répond 404 sur TOUS les chemins - c'est ce que
+ *   `backend.vente-facile.net` a rendu pendant la panne, sur `/` comme sur
+ *   `/auth/token/`. Un 404 sur l'endpoint de jeton est une faute de
+ *   déploiement, jamais une faute de saisie.
+ */
+function estUnePanne(statut: number): boolean {
+  return statut >= 500 || statut === 404;
+}
+
 export const authConfig: NextAuthConfig = {
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
   debug: process.env.NODE_ENV === "development",
@@ -160,6 +209,11 @@ export const authConfig: NextAuthConfig = {
 
           if (!response.ok) {
             console.log("[Auth] Échec de connexion:", response.status);
+            // ⚠ 429 : le backend throttle les tentatives anonymes en
+            //   production. Dire « mot de passe incorrect » à quelqu'un qui est
+            //   limité le fait réessayer, donc rester limité.
+            if (response.status === 429) throw new TropDeTentatives();
+            if (estUnePanne(response.status)) throw new ServiceIndisponible();
             return null;
           }
 
@@ -184,7 +238,14 @@ export const authConfig: NextAuthConfig = {
           return null;
         } catch (error) {
           console.error("[Auth] Erreur de connexion:", error);
-          return null;
+          // ⚠ ON NE RAVALE PAS NOS PROPRES VERDICTS. Sans ce relais, le `throw`
+          //   posé juste au-dessus retomberait ici et redeviendrait un `null`,
+          //   c'est-à-dire le défaut qu'on referme.
+          if (error instanceof CredentialsSignin) throw error;
+          // Tout ce qui reste est un échec de TRANSPORT : `fetch` ne lève que
+          // pour ça (DNS, connexion refusée, délai dépassé). Le serveur est
+          // injoignable, le mot de passe n'a jamais été examiné.
+          throw new ServiceIndisponible();
         }
       },
     }),
