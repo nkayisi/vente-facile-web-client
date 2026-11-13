@@ -89,7 +89,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" suppressHydrationWarning>
+    // `data-scroll-behavior` : `globals.css` pose `scroll-behavior: smooth` pour
+    // les ancres de la page d'accueil. Depuis Next 16, sans cet attribut, chaque
+    // changement de route défilerait lui aussi en douceur au lieu de sauter en
+    // haut de la page, et Next le signale à chaque chargement.
+    <html lang="fr" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`}>
         <ThemeProvider
           attribute="class"

@@ -91,16 +91,31 @@ export interface SubscriptionQuotas {
   can_upgrade: boolean;
 }
 
+/**
+ * Ce qu'un membre SANS `subscription.view` reçoit de son abonnement : de quoi
+ * se savoir bloqué, rien de plus. Le prix, le plan complet et les quotas
+ * restent derrière ce droit.
+ */
+export type SubscriptionResume = Pick<Subscription, "plan_name" | "is_trial">;
+
+/**
+ * GET /subscriptions/status/ : le VERDICT se lit par tout membre, le DÉTAIL
+ * par qui a `subscription.view`. Pour lire l'abonnement complet, passer par
+ * `abonnementComplet()` (`lib/subscription/abonnement.ts`).
+ */
 export interface SubscriptionStatus {
   has_subscription: boolean;
   is_active: boolean;
   is_blocked: boolean;
   status: string;
   message: string | null;
+  /** Régler l'abonnement est réservé au propriétaire (`moko/initiate/`). */
+  can_manage: boolean;
   days_remaining?: number;
   days_remaining_grace?: number;
-  subscription: Subscription | null;
-  plan: Plan | null;
+  subscription: Subscription | SubscriptionResume | null;
+  /** Absents sans `subscription.view`. */
+  plan?: Plan | null;
   quotas?: SubscriptionQuotas;
 }
 

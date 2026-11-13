@@ -11,20 +11,17 @@ import {
 import {
   Loader2,
   ShieldAlert,
-  Crown,
   Clock,
   Lock,
   Sparkles,
   AlertTriangle,
   LogOut,
   CreditCard,
-  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { reportClientError } from "@/lib/observability/report-error";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
-import Image from "next/image";
 
 interface SubscriptionContextValue {
   subscriptionStatus: SubscriptionStatus | null;
@@ -120,7 +117,6 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
         <SubscriptionBlockedOverlay
           status={subscriptionStatus}
           onRefresh={loadSubscriptionStatus}
-          organizationName={organization?.name}
         />
       ) : (
         <>
@@ -138,11 +134,9 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
 function SubscriptionBlockedOverlay({
   status,
   onRefresh,
-  organizationName,
 }: {
   status: SubscriptionStatus | null;
   onRefresh: () => Promise<void>;
-  organizationName?: string;
 }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -161,6 +155,9 @@ function SubscriptionBlockedOverlay({
   const isExpired = status.status === "expired";
   const isSuspended = status.status === "suspended";
   const isNone = status.status === "none";
+  // Seul le propriétaire règle (`moko/initiate/`), et seul lui ouvre la page
+  // Abonnement : y envoyer un caissier le mènerait à un refus.
+  const peutRegler = status.can_manage;
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
@@ -227,27 +224,37 @@ function SubscriptionBlockedOverlay({
             </div>
 
             {/* Ce qui reste accessible */}
-            <div className="bg-green-50 border border-green-100 rounded-xl p-4 mb-6">
-              <h3 className="font-semibold text-green-800 mb-3 flex items-center gap-2">
-                <Sparkles className="h-4 w-4" />
-                Toujours accessible
-              </h3>
-              <ul className="space-y-2 text-sm text-green-700">
-                <li className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
-                  Page de gestion de l&apos;abonnement
-                </li>
-              </ul>
-            </div>
+            {peutRegler ? (
+              <div className="bg-green-50 border border-green-100 rounded-xl p-4 mb-6">
+                <h3 className="font-semibold text-green-800 mb-3 flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  Toujours accessible
+                </h3>
+                <ul className="space-y-2 text-sm text-green-700">
+                  <li className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
+                    Page de gestion de l&apos;abonnement
+                  </li>
+                </ul>
+              </div>
+            ) : (
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 text-sm text-gray-700">
+                Seul le propriétaire de l&apos;établissement peut régler
+                l&apos;abonnement. Prévenez-le : vos données sont intactes, et
+                tout rouvrira dès le règlement.
+              </div>
+            )}
 
             {/* Actions */}
             <div className="space-y-3">
-              <Link href="/dashboard/subscription" className="block">
-                <Button className="w-full h-12 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-base font-semibold shadow-lg shadow-orange-500/25">
-                  <CreditCard className="h-5 w-5 mr-2" />
-                  Gérer mon abonnement
-                </Button>
-              </Link>
+              {peutRegler && (
+                <Link href="/dashboard/subscription" className="block">
+                  <Button className="w-full h-12 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-base font-semibold shadow-lg shadow-orange-500/25">
+                    <CreditCard className="h-5 w-5 mr-2" />
+                    Gérer mon abonnement
+                  </Button>
+                </Link>
+              )}
 
               <div className="flex gap-3">
                 <Button
@@ -329,15 +336,18 @@ function SubscriptionWarningBanner({
           </>
         )}
       </span>
-      <Link
-        href="/dashboard/subscription"
-        className={`ml-2 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${isPastDue
-          ? "bg-white/20 hover:bg-white/30 text-white"
-          : "bg-orange-600 hover:bg-orange-700 text-white"
-          }`}
-      >
-        {status.subscription?.is_trial ? "Passer au payant" : "Renouveler"}
-      </Link>
+      {/* Le lien mène au règlement, réservé au propriétaire. */}
+      {status.can_manage && (
+        <Link
+          href="/dashboard/subscription"
+          className={`ml-2 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${isPastDue
+            ? "bg-white/20 hover:bg-white/30 text-white"
+            : "bg-orange-600 hover:bg-orange-700 text-white"
+            }`}
+        >
+          {status.subscription?.is_trial ? "Passer au payant" : "Renouveler"}
+        </Link>
+      )}
     </div>
   );
 }

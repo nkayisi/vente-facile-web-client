@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { useSubscription } from "@/components/auth/subscription-guard";
+import { abonnementComplet } from "@/lib/subscription/abonnement";
 import {
   getPlans,
   getSubscriptionPayments,
@@ -103,7 +104,7 @@ export default function SubscriptionPage() {
     router.push(`/payment/checkout?${q.toString()}`);
   }
 
-  const subscription = subscriptionStatus?.subscription;
+  const subscription = abonnementComplet(subscriptionStatus);
   const quotas = subscriptionStatus?.quotas;
 
   function getPlanAction(plan: Plan): {

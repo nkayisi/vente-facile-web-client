@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { abonnementComplet } from "@/lib/subscription/abonnement";
 
 const POLL_INTERVAL_MS = 12000;
 const POLL_TIMEOUT_MS = 180000;
@@ -162,8 +163,9 @@ function CheckoutContent() {
       } else {
         toast.error(plansRes.error || "Impossible de charger les plans");
       }
-      if (statusRes.success && statusRes.data?.subscription?.current_period_end) {
-        setCurrentPeriodEnd(statusRes.data.subscription.current_period_end);
+      const enCours = statusRes.success ? abonnementComplet(statusRes.data) : null;
+      if (enCours?.current_period_end) {
+        setCurrentPeriodEnd(enCours.current_period_end);
       } else {
         setCurrentPeriodEnd(null);
       }
