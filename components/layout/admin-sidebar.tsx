@@ -12,19 +12,41 @@ import {
   Receipt,
   Smartphone,
   X,
-  ArrowLeft,
   LogOut,
+  Siren,
+  TrendingUp,
+  ScrollText,
+  ShieldCheck,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { signOut } from "next-auth/react";
+import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
 
-const adminMenuItems = [
-  { title: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { title: "Établissements", href: "/admin/organizations", icon: Building2 },
-  { title: "Utilisateurs", href: "/admin/users", icon: Users },
-  { title: "Plans", href: "/admin/plans", icon: CreditCard },
-  { title: "Abonnements", href: "/admin/subscriptions", icon: Receipt },
-  { title: "Application mobile", href: "/admin/application", icon: Smartphone },
+interface EntreeMenu {
+  title: string;
+  href: string;
+  icon: LucideIcon;
+  /** Le code du catalogue PLATEFORME qui ouvre l'entrée. */
+  platformPermission: string;
+}
+
+/**
+ * ⚠ Une entrée qu'un rôle ne peut pas ouvrir DISPARAÎT, elle ne mène pas à un
+ * écran qui répondrait « rôle insuffisant ». Les codes sont vérifiés par
+ * `pnpm check:permissions` contre le catalogue de la plateforme.
+ */
+const adminMenuItems: EntreeMenu[] = [
+  { title: "Tableau de bord", href: "/admin", icon: LayoutDashboard, platformPermission: "organizations.view" },
+  { title: "Incidents", href: "/admin/incidents", icon: Siren, platformPermission: "incidents.view" },
+  { title: "Établissements", href: "/admin/organizations", icon: Building2, platformPermission: "organizations.view" },
+  { title: "Utilisateurs", href: "/admin/users", icon: Users, platformPermission: "users.view" },
+  { title: "Abonnements", href: "/admin/subscriptions", icon: Receipt, platformPermission: "subscriptions.view" },
+  { title: "Plans", href: "/admin/plans", icon: CreditCard, platformPermission: "plans.view" },
+  { title: "Statistiques", href: "/admin/statistiques", icon: TrendingUp, platformPermission: "metrics.view" },
+  { title: "Journal d'audit", href: "/admin/audit-log", icon: ScrollText, platformPermission: "audit_log.view" },
+  { title: "Administrateurs", href: "/admin/administrators", icon: ShieldCheck, platformPermission: "platform_admins.view" },
+  { title: "Application mobile", href: "/admin/application", icon: Smartphone, platformPermission: "app_release.view" },
 ];
 
 interface AdminSidebarProps {
@@ -34,6 +56,8 @@ interface AdminSidebarProps {
 
 export function AdminSidebar({ isMobileOpen = false, onMobileClose }: AdminSidebarProps) {
   const pathname = usePathname();
+  const { hasPlatformPermission, me } = useAdminPermissions();
+  const entrees = adminMenuItems.filter((item) => hasPlatformPermission(item.platformPermission));
 
   return (
     <>
@@ -67,7 +91,7 @@ export function AdminSidebar({ isMobileOpen = false, onMobileClose }: AdminSideb
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {adminMenuItems.map((item) => {
+          {entrees.map((item) => {
             const isActive = item.href === "/admin"
               ? pathname === "/admin"
               : pathname?.startsWith(item.href);
@@ -91,7 +115,12 @@ export function AdminSidebar({ isMobileOpen = false, onMobileClose }: AdminSideb
           })}
         </nav>
 
-        <div className="p-3 border-t border-border">
+        <div className="p-3 border-t border-border space-y-2">
+          {me?.role_display && (
+            <p className="px-1 text-xs text-muted-foreground">
+              Rôle : <span className="font-medium text-foreground">{me.role_display}</span>
+            </p>
+          )}
           <Button variant="outline"
             onClick={() => signOut({ callbackUrl: "/" })}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"

@@ -1,6 +1,17 @@
 import { DefaultSession, DefaultUser } from "next-auth";
 import { JWT, DefaultJWT } from "next-auth/jwt";
 
+/** Ce que la page sait d'une prise en main : jamais les jetons de l'administrateur. */
+export interface ImpersonationInfo {
+  sessionId: string;
+  /** Échéance (ms epoch). */
+  expiresAt: number;
+  targetEmail: string;
+  targetName: string;
+  organizationId: string;
+  organizationName: string;
+}
+
 declare module "next-auth" {
   interface Session extends DefaultSession {
     accessToken?: string;
@@ -9,6 +20,8 @@ declare module "next-auth" {
     accessTokenExpires?: number;
     error?: string;
     isStaff?: boolean;
+    /** Présent pendant une prise en main par le support. */
+    impersonation?: ImpersonationInfo;
     user: {
       id?: string;
       email?: string;
@@ -33,5 +46,19 @@ declare module "next-auth/jwt" {
     refreshTokenExpires?: number;
     error?: string;
     isStaff?: boolean;
+    impersonation?: ImpersonationInfo;
+    /**
+     * Les jetons de l'administrateur, mis de côté pendant une prise en main.
+     * ⚠ Ne sortent JAMAIS du cookie chiffré : le callback `session` ne les copie pas.
+     */
+    adminStash?: {
+      accessToken?: string;
+      refreshToken?: string;
+      accessTokenExpires?: number;
+      refreshTokenExpires?: number;
+      /** Le nom et l'adresse de l'administrateur, que la prise en main remplace. */
+      name?: string | null;
+      email?: string | null;
+    };
   }
 }

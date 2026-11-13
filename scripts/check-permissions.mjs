@@ -23,6 +23,21 @@ import { join, relative } from "node:path";
 
 const RACINE = process.cwd();
 const CATALOGUE = join(RACINE, "..", "backend", "apps", "core", "permissions_catalog.py");
+/**
+ * ⚠ LE CATALOGUE DE LA PLATEFORME EST UN AUTRE CATALOGUE. Un même mot y désigne
+ * autre chose (`users.view` du marchand lit son équipe, celui de la plateforme
+ * lit tous les comptes). Ses codes ne s'écrivent QUE par `hasPlatformPermission`
+ * et `platformPermission:`, et c'est contre lui seul qu'ils sont vérifiés : un
+ * code de la plateforme validé par le catalogue du marchand passerait au vert
+ * pour une raison qui n'est pas la sienne.
+ */
+const CATALOGUE_PLATEFORME = join(
+  RACINE, "..", "backend", "apps", "platform_admin", "permissions_catalog.py"
+);
+const FORMES_PLATEFORME = [
+  /\bhasPlatformPermission\(\s*"([a-z_]+\.[a-z_]+)"/g,
+  /\bplatformPermission:\s*"([a-z_]+\.[a-z_]+)"/g,
+];
 const DOSSIERS = ["app", "components", "hooks", "lib", "actions"];
 
 /**
@@ -43,19 +58,19 @@ const FORMES = [
 /** La suite d'une liste littérale. */
 const DANS_LISTE = /"([a-z_]+\.[a-z_]+)"/g;
 
-function codesDuCatalogue() {
+function codesDuCatalogue(chemin = CATALOGUE, plancher = 50) {
   let brut;
   try {
-    brut = readFileSync(CATALOGUE, "utf8");
+    brut = readFileSync(chemin, "utf8");
   } catch {
     // Un catalogue introuvable fait ÉCHOUER, il ne fait pas passer : sans lui
     // ce contrôle ne prouve plus rien, et un contrôle muet est pire qu'aucun.
-    console.error(`permissions : catalogue introuvable (${CATALOGUE}).`);
+    console.error(`permissions : catalogue introuvable (${chemin}).`);
     process.exit(2);
   }
   const codes = new Set();
   for (const m of brut.matchAll(/"([a-z_]+\.[a-z_]+)"/g)) codes.add(m[1]);
-  if (codes.size < 50) {
+  if (codes.size < plancher) {
     console.error(
       `permissions : ${codes.size} codes lus dans le catalogue, c'est trop peu. ` +
         "Le balayage ne balaie plus rien."
@@ -114,6 +129,32 @@ for (const dossier of DOSSIERS) {
   }
 }
 
+const plateforme = codesDuCatalogue(CATALOGUE_PLATEFORME, 15);
+let vusPlateforme = 0;
+for (const dossier of DOSSIERS) {
+  for (const f of fichiers(join(RACINE, dossier))) {
+    const code = readFileSync(f, "utf8");
+    for (const forme of FORMES_PLATEFORME) {
+      for (const m of code.matchAll(forme)) {
+        vusPlateforme += 1;
+        if (!plateforme.has(m[1])) {
+          fautifs.push(
+            `${relative(RACINE, f)} : « ${m[1]} » n'existe pas au catalogue de la PLATEFORME`
+          );
+        }
+      }
+    }
+  }
+}
+
+if (vusPlateforme < 8) {
+  console.error(
+    `permissions : seulement ${vusPlateforme} codes de la plateforme trouvés. ` +
+      "Le balayage de l'administration ne balaie plus rien."
+  );
+  process.exit(2);
+}
+
 if (vus < 25) {
   console.error(
     `permissions : seulement ${vus} codes trouvés dans le code. ` +
@@ -132,4 +173,6 @@ if (fautifs.length > 0) {
   process.exit(1);
 }
 
-console.log(`permissions : ${vus} codes vérifiés contre le catalogue serveur, aucun inventé.`);
+console.log(
+  `permissions : ${vus} codes du marchand et ${vusPlateforme} de la plateforme vérifiés, aucun inventé.`
+);

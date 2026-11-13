@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
 
 /** Les huit champs, dans l'ordre. Une seule liste : deux finiraient par diverger. */
 const CHAMPS = [
@@ -106,9 +107,18 @@ function erreurDe(erreurs: Record<string, unknown> | null, champ: string): strin
   return null;
 }
 
+function phraseModifications(n: number): string {
+  if (n === 0) return "Aucune modification.";
+  if (n === 1) return "1 champ modifié. Seul lui sera envoyé.";
+  return `${n} champs modifiés. Seuls eux seront envoyés.`;
+}
+
 export default function AdminApplicationPage() {
   const { data: session } = useSession();
   const jeton = session?.accessToken;
+  // Le support LIT la porte (c'est lui qui répond au marchand bloqué), il ne la
+  // règle pas : un seuil mal posé bloque tout le parc.
+  const peutEditer = useAdminPermissions().hasPlatformPermission("app_release.edit");
 
   /** La valeur CHARGÉE. `null` tant qu'on ne l'a pas lue : rien à comparer. */
   const [reference, setReference] = useState<AppRelease | null>(null);
@@ -372,17 +382,18 @@ export default function AdminApplicationPage() {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <fieldset disabled={!peutEditer} className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
             {bloc("android")}
             {bloc("ios")}
-          </div>
+          </fieldset>
+          {!peutEditer ? (
+            <p className="text-right text-sm text-muted-foreground">
+              Lecture seule : seul un super-administrateur règle la porte de mise à jour.
+            </p>
+          ) : (
           <div className="flex flex-wrap items-center justify-end gap-3">
             <p className="text-xs text-muted-foreground">
-              {nbModifications === 0
-                ? "Aucune modification."
-                : nbModifications === 1
-                  ? "1 champ modifié. Seul lui sera envoyé."
-                  : `${nbModifications} champs modifiés. Seuls eux seront envoyés.`}
+              {phraseModifications(nbModifications)}
             </p>
             <Button
               onClick={() => void enregistrer()}
@@ -396,6 +407,7 @@ export default function AdminApplicationPage() {
               Enregistrer
             </Button>
           </div>
+          )}
         </>
       )}
     </div>

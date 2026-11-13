@@ -9,6 +9,7 @@ import { PermissionsProvider } from "@/components/auth/permissions-provider";
 import { SubscriptionGuard } from "@/components/auth/subscription-guard";
 import { RoutePermissionGuard } from "@/components/auth/route-permission-guard";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { ImpersonationBanner } from "@/components/admin/impersonation-banner";
 
 export default function DashboardLayout({
   children,
@@ -51,6 +52,8 @@ export default function DashboardLayout({
 
               {/* Main Content */}
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                {/* Bandeau d'une prise en main par le support : rien sinon. */}
+                <ImpersonationBanner />
                 {/* Header */}
                 <DashboardHeader onMenuClick={() => setIsMobileSidebarOpen(true)} />
 

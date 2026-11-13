@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,9 +25,12 @@ import {
 import {
   getAdminOrganizations,
   toggleOrganizationActive,
-  activateOrganizationSubscription,
   AdminOrganization,
 } from "@/actions/admin.actions";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { ActivateSubscriptionDialog } from "@/components/admin/activate-subscription-dialog";
+import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   Search,
   Eye,
@@ -39,6 +42,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
+import { dateCourte } from "@/lib/admin/format";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,23 +61,14 @@ export default function AdminOrganizationsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
-  const [isActionLoading, setIsActionLoading] = useState(false);
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedSearch = useDebouncedValue(searchQuery);
+  const { hasPlatformPermission } = useAdminPermissions();
+  const [cibleToggle, setCibleToggle] = useState<AdminOrganization | null>(null);
+  const [cibleAbonnement, setCibleAbonnement] = useState<AdminOrganization | null>(null);
 
-  useEffect(() => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-      setCurrentPage(1);
-    }, 350);
-    return () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-    };
-  }, [searchQuery]);
-
+  const jeton = session?.accessToken;
   const fetchOrganizations = useCallback(() => {
-    if (!session?.accessToken) {
+    if (!jeton) {
       setIsLoading(false);
       return;
     }
@@ -88,7 +83,7 @@ export default function AdminOrganizationsPage() {
     if (statusFilter !== "all") filters.is_active = statusFilter === "active";
     if (businessTypeFilter !== "all") filters.business_type = businessTypeFilter;
 
-    getAdminOrganizations(session.accessToken, filters).then((result) => {
+    getAdminOrganizations(jeton, filters).then((result) => {
       if (result.success && result.data) {
         setOrganizations(result.data.results);
         setTotalCount(result.data.count);
@@ -97,42 +92,20 @@ export default function AdminOrganizationsPage() {
       }
       setIsLoading(false);
     });
-  }, [session?.accessToken, debouncedSearch, statusFilter, businessTypeFilter, currentPage, pageSize]);
+  }, [jeton, debouncedSearch, statusFilter, businessTypeFilter, currentPage, pageSize]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(fetchOrganizations, [fetchOrganizations]);
 
-  async function handleToggleActive(orgId: string) {
-    if (!session?.accessToken) return;
-
-    setIsActionLoading(true);
-    const result = await toggleOrganizationActive(session.accessToken, orgId);
-    if (result.success) {
-      toast.success(result.message);
-      fetchOrganizations();
-    } else {
+  async function handleToggleActive(reason: string) {
+    if (!session?.accessToken || !cibleToggle) return false;
+    const result = await toggleOrganizationActive(session.accessToken, cibleToggle.id, reason);
+    if (!result.success) {
       toast.error(result.message || "Erreur lors de la modification");
+      return false;
     }
-    setIsActionLoading(false);
-  }
-
-  async function handleActivateSubscription(orgId: string) {
-    if (!session?.accessToken) return;
-
-    setIsActionLoading(true);
-    const result = await activateOrganizationSubscription(session.accessToken, orgId, {
-      plan_id: "default-plan-id", // TODO: Get actual plan ID
-      billing_cycle: "monthly",
-      notes: "Activation par admin",
-    });
-
-    if (result.success) {
-      toast.success(result.message);
-      fetchOrganizations();
-    } else {
-      toast.error(result.message || "Erreur lors de l'activation");
-    }
-    setIsActionLoading(false);
+    toast.success(result.message);
+    fetchOrganizations();
   }
 
   const businessTypes = [
@@ -159,7 +132,10 @@ export default function AdminOrganizationsPage() {
           <Input
             placeholder="Rechercher..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="pl-9"
           />
         </div>
@@ -253,7 +229,7 @@ export default function AdminOrganizationsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {new Date(org.created_at).toLocaleDateString()}
+                      {dateCourte(org.created_at)}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -268,13 +244,16 @@ export default function AdminOrganizationsPage() {
                               <Eye className="mr-2 h-4 w-4" /> Voir
                             </Link>
                           </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleToggleActive(org.id)} disabled={isActionLoading}>
-                            <Power className="mr-2 h-4 w-4" /> {org.is_active ? "Désactiver" : "Activer"}
-                          </DropdownMenuItem>
-                          {org.subscription_plan === "-" && (
-                            <DropdownMenuItem onClick={() => handleActivateSubscription(org.id)} disabled={isActionLoading}>
-                              <CreditCard className="mr-2 h-4 w-4" /> Activer abonnement
+                          {(hasPlatformPermission("organizations.toggle_active") ||
+                            hasPlatformPermission("organizations.activate_subscription")) && <DropdownMenuSeparator />}
+                          {hasPlatformPermission("organizations.toggle_active") && (
+                            <DropdownMenuItem onClick={() => setCibleToggle(org)}>
+                              <Power className="mr-2 h-4 w-4" /> {org.is_active ? "Désactiver" : "Réactiver"}
+                            </DropdownMenuItem>
+                          )}
+                          {hasPlatformPermission("organizations.activate_subscription") && (
+                            <DropdownMenuItem onClick={() => setCibleAbonnement(org)}>
+                              <CreditCard className="mr-2 h-4 w-4" /> Activer un abonnement
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
@@ -301,6 +280,32 @@ export default function AdminOrganizationsPage() {
           </>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={cibleToggle !== null}
+        onOpenChange={(o) => !o && setCibleToggle(null)}
+        title={cibleToggle?.is_active ? "Désactiver l'établissement" : "Réactiver l'établissement"}
+        entityName={cibleToggle?.name}
+        description={
+          cibleToggle?.is_active
+            ? "L'établissement est marqué inactif dans l'administration, pour le suivi. Ce marquage ne bloque pas encore le marchand : pour l'arrêter, annulez son abonnement. Ses données ne sont pas touchées."
+            : "L'établissement redevient actif."
+        }
+        confirmLabel={cibleToggle?.is_active ? "Désactiver" : "Réactiver"}
+        destructive={Boolean(cibleToggle?.is_active)}
+        reason={cibleToggle?.is_active ? "required" : "optional"}
+        onConfirm={handleToggleActive}
+      />
+
+      {cibleAbonnement && (
+        <ActivateSubscriptionDialog
+          open
+          onOpenChange={(o) => !o && setCibleAbonnement(null)}
+          organizationId={cibleAbonnement.id}
+          organizationName={cibleAbonnement.name}
+          onDone={fetchOrganizations}
+        />
+      )}
     </div>
   );
 }

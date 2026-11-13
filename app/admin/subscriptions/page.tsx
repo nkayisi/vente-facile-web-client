@@ -2,7 +2,8 @@
 
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,10 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { dateCourte, montant, tonEcheance } from "@/lib/admin/format";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -116,14 +121,44 @@ const BILLING_CYCLES = [
   { value: "yearly", label: "Annuel" },
 ];
 
+/**
+ * `useSearchParams` exige une frontière de suspension : sans elle, Next refuse
+ * de rendre la page côté serveur et le build échoue. Le filtre par
+ * établissement arrive par l'URL (`?organization=`), depuis la fiche d'un
+ * établissement.
+ */
 export default function AdminSubscriptionsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <ListeAbonnements />
+    </Suspense>
+  );
+}
+
+function ListeAbonnements() {
   const { data: session } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const organisationFiltre = searchParams.get("organization");
+  const { hasPlatformPermission } = useAdminPermissions();
+  const peutCreer = hasPlatformPermission("subscriptions.create");
+  const peutProlonger = hasPlatformPermission("subscriptions.extend");
+  const peutAnnuler = hasPlatformPermission("subscriptions.cancel");
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [billingCycleFilter, setBillingCycleFilter] = useState<string>("all");
-  const [planFilter] = useState<string>("all");
+  const [planFilter, setPlanFilter] = useState<string>("all");
+  const [planOptions, setPlanOptions] = useState<AdminPlan[]>([]);
+  const [aAnnuler, setAAnnuler] = useState<AdminSubscription | null>(null);
+  const [extendReason, setExtendReason] = useState("");
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
@@ -152,21 +187,11 @@ export default function AdminSubscriptionsPage() {
   });
   const [selectedOrg, setSelectedOrg] = useState<AdminOrganization | null>(null);
   const orgSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedSearch = useDebouncedValue(searchQuery);
 
-  useEffect(() => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 350);
-    return () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-    };
-  }, [searchQuery]);
-
+  const jeton = session?.accessToken;
   const fetchSubscriptions = useCallback(() => {
-    if (!session?.accessToken) return;
+    if (!jeton) return;
 
     setIsLoading(true);
     const filters: Record<string, string | number> = {
@@ -178,8 +203,9 @@ export default function AdminSubscriptionsPage() {
     if (statusFilter !== "all") filters.status = statusFilter;
     if (billingCycleFilter !== "all") filters.billing_cycle = billingCycleFilter;
     if (planFilter !== "all") filters.plan = planFilter;
+    if (organisationFiltre) filters.organization = organisationFiltre;
 
-    getAdminSubscriptions(session.accessToken, filters).then((result) => {
+    getAdminSubscriptions(jeton, filters).then((result) => {
       if (result.success && result.data) {
         setSubscriptions(result.data.results);
         setTotalCount(result.data.count);
@@ -188,17 +214,36 @@ export default function AdminSubscriptionsPage() {
       }
       setIsLoading(false);
     });
-  }, [session?.accessToken, debouncedSearch, statusFilter, billingCycleFilter, planFilter, currentPage, pageSize]);
+  }, [jeton, debouncedSearch, statusFilter, billingCycleFilter, planFilter, organisationFiltre, currentPage, pageSize]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(fetchSubscriptions, [fetchSubscriptions]);
+
+  // Les plans du filtre, une fois : le filtre de plan était déclaré sans
+  // setter, donc toujours « tous », et aucune liste ne l'alimentait.
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    let annule = false;
+    getAdminPlans(session.accessToken).then((r) => {
+      if (!annule && r.success && r.data) setPlanOptions(r.data);
+    });
+    return () => {
+      annule = true;
+    };
+  }, [session?.accessToken]);
+
+  // Un filtre change la liste : on repart de la première page.
+  const filtrer = (poser: (v: string) => void) => (v: string) => {
+    poser(v);
+    setCurrentPage(1);
+  };
 
   
   async function handleExtend(subscriptionId: string) {
     if (!session?.accessToken) return;
 
     setIsActionLoading(true);
-    const result = await extendSubscription(session.accessToken, subscriptionId, extendDays);
+    const result = await extendSubscription(session.accessToken, subscriptionId, extendDays, extendReason.trim());
     if (result.success) {
       toast.success(result.message);
       setExtendDialogOpen(false);
@@ -210,24 +255,21 @@ export default function AdminSubscriptionsPage() {
     setIsActionLoading(false);
   }
 
-  async function handleCancel(subscriptionId: string) {
-    if (!session?.accessToken) return;
-    if (!confirm("Êtes-vous sûr de vouloir annuler cet abonnement ?")) return;
-
-    setIsActionLoading(true);
-    const result = await cancelSubscription(session.accessToken, subscriptionId);
-    if (result.success) {
-      toast.success(result.message);
-      fetchSubscriptions();
-    } else {
+  async function annuler(motif: string) {
+    if (!session?.accessToken || !aAnnuler) return false;
+    const result = await cancelSubscription(session.accessToken, aAnnuler.id, motif);
+    if (!result.success) {
       toast.error(result.message || "Erreur lors de l'annulation");
+      return false;
     }
-    setIsActionLoading(false);
+    toast.success(result.message);
+    fetchSubscriptions();
   }
 
   function openExtendDialog(subscription: AdminSubscription) {
     setSelectedSubscription(subscription);
     setExtendDays(30);
+    setExtendReason("");
     setExtendDialogOpen(true);
   }
 
@@ -324,10 +366,12 @@ export default function AdminSubscriptionsPage() {
           <h1 className="text-2xl font-semibold">Abonnements</h1>
           <p className="text-muted-foreground">{totalCount} abonnement{totalCount > 1 ? "s" : ""}</p>
         </div>
-        <Button onClick={openCreateDialog}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nouvel abonnement
-        </Button>
+        {peutCreer && (
+          <Button onClick={openCreateDialog}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nouvel abonnement
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-col sm:flex-row justify-between gap-3">
@@ -335,11 +379,11 @@ export default function AdminSubscriptionsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Rechercher..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+        <Select value={statusFilter} onValueChange={filtrer(setStatusFilter)}>
           <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Statut" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tous</SelectItem>
+            <SelectItem value="all">Tous les statuts</SelectItem>
             <SelectItem value="trial">Essai</SelectItem>
             <SelectItem value="active">Actif</SelectItem>
             <SelectItem value="past_due">En retard</SelectItem>
@@ -347,17 +391,35 @@ export default function AdminSubscriptionsPage() {
             <SelectItem value="cancelled">Annulé</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={billingCycleFilter} onValueChange={setBillingCycleFilter}>
+        <Select value={billingCycleFilter} onValueChange={filtrer(setBillingCycleFilter)}>
           <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Cycle" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tous</SelectItem>
+            <SelectItem value="all">Tous les cycles</SelectItem>
             <SelectItem value="monthly">Mensuel</SelectItem>
             <SelectItem value="quarterly">Trimestriel</SelectItem>
             <SelectItem value="yearly">Annuel</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={planFilter} onValueChange={filtrer(setPlanFilter)}>
+          <SelectTrigger className="col-span-2 w-full sm:w-44"><SelectValue placeholder="Plan" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tous les plans</SelectItem>
+            {planOptions.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         </div>
       </div>
+
+      {organisationFiltre && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Filtré sur un établissement</span>
+          <Button variant="outline" size="sm" onClick={() => router.push("/admin/subscriptions")}>
+            <X className="mr-1 h-3.5 w-3.5" /> Retirer le filtre
+          </Button>
+        </div>
+      )}
 
       <Card className="border">
         {isLoading ? (
@@ -390,14 +452,14 @@ export default function AdminSubscriptionsPage() {
                     <TableCell>
                       <Badge variant="outline">{sub.billing_cycle_display}</Badge>
                     </TableCell>
-                    <TableCell>{parseFloat(sub.price).toLocaleString()} {sub.currency}</TableCell>
+                    <TableCell>{montant(sub.price, sub.currency)}</TableCell>
                     <TableCell>
-                      <span className={sub.days_remaining <= 5 ? "text-amber-600 font-medium" : sub.days_remaining <= 0 ? "text-red-600 font-medium" : ""}>
+                      <span className={`font-medium ${tonEcheance(sub.days_remaining)}`}>
                         {sub.days_remaining > 0 ? `${sub.days_remaining} jours` : "Expiré"}
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
-                      {new Date(sub.current_period_start).toLocaleDateString()} - {new Date(sub.current_period_end).toLocaleDateString()}
+                      {dateCourte(sub.current_period_start)} - {dateCourte(sub.current_period_end)}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -417,7 +479,7 @@ export default function AdminSubscriptionsPage() {
                               <Building2 className="mr-2 h-4 w-4" /> Établissement
                             </Link>
                           </DropdownMenuItem>
-                          {sub.status === "active" && (
+                          {peutProlonger && sub.status !== "cancelled" && (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => openExtendDialog(sub)}>
@@ -425,10 +487,10 @@ export default function AdminSubscriptionsPage() {
                               </DropdownMenuItem>
                             </>
                           )}
-                          {["active", "trial", "past_due"].includes(sub.status) && (
+                          {peutAnnuler && ["active", "trial", "past_due"].includes(sub.status) && (
                             <>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => handleCancel(sub.id)} disabled={isActionLoading} className="text-destructive">
+                              <DropdownMenuItem onClick={() => setAAnnuler(sub)} className="text-destructive">
                                 <X className="mr-2 h-4 w-4" /> Annuler
                               </DropdownMenuItem>
                             </>
@@ -497,16 +559,27 @@ export default function AdminSubscriptionsPage() {
               <div className="p-3 bg-muted rounded-lg">
                 <p className="font-medium">{selectedSubscription.organization_name}</p>
                 <p className="text-sm text-muted-foreground">
-                  {selectedSubscription.plan_name} - expire le {new Date(selectedSubscription.current_period_end).toLocaleDateString()}
+                  {selectedSubscription.plan_name} - expire le {dateCourte(selectedSubscription.current_period_end)}
                 </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="extendDays">Jours à ajouter</Label>
-                <Input id="extendDays" type="number" min="1" max="365" value={extendDays} onChange={(e) => setExtendDays(parseInt(e.target.value))} />
+                <Input id="extendDays" type="number" min="1" max="365" value={extendDays} onChange={(e) => setExtendDays(parseInt(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="extendReason">Motif</Label>
+                <Textarea
+                  id="extendReason"
+                  rows={2}
+                  placeholder="Geste commercial, panne de paiement, erreur de facturation…"
+                  value={extendReason}
+                  onChange={(e) => setExtendReason(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Gardé au journal d&apos;audit avec la prolongation.</p>
               </div>
               <div className="flex justify-end gap-3">
                 <Button variant="outline" onClick={() => setExtendDialogOpen(false)}>Annuler</Button>
-                <Button onClick={() => handleExtend(selectedSubscription.id)} disabled={isActionLoading}>
+                <Button onClick={() => handleExtend(selectedSubscription.id)} disabled={isActionLoading || extendDays < 1 || extendDays > 365}>
                   {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Prolonger
                 </Button>
@@ -633,7 +706,7 @@ export default function AdminSubscriptionsPage() {
                           <p className="text-amber-700 mt-0.5">
                             Cet établissement a un abonnement <strong>{selectedOrg.subscription_plan}</strong> ({selectedOrg.subscription_status}).
                             {selectedOrg.subscription_end && (
-                              <> Expire le {new Date(selectedOrg.subscription_end).toLocaleDateString()}.</>
+                              <> Expire le {dateCourte(selectedOrg.subscription_end)}.</>
                             )}
                           </p>
                           <p className="text-amber-600 mt-1">
@@ -723,6 +796,17 @@ export default function AdminSubscriptionsPage() {
           )}
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={aAnnuler !== null}
+        onOpenChange={(o) => !o && setAAnnuler(null)}
+        title="Annuler l'abonnement"
+        entityName={aAnnuler?.organization_name}
+        description="L'établissement est bloqué en écriture : il ne peut plus enregistrer de vente tant qu'un nouvel abonnement n'est pas activé. Ses données restent."
+        confirmLabel="Annuler l'abonnement"
+        destructive
+        reason="required"
+        onConfirm={annuler}
+      />
     </div>
   );
 }

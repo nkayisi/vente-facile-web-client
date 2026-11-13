@@ -130,6 +130,53 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
 }
 
 /**
+ * Un jeton porte-t-il la revendication `imp` ? Lu sans vérifier la signature :
+ * c'est le serveur qui la vérifie à chaque requête. Ce contrôle n'empêche qu'une
+ * chose, qu'un jeton ordinaire soit rangé comme une prise en main.
+ */
+function estJetonDePriseEnMain(jeton: unknown): jeton is string {
+  if (typeof jeton !== "string") return false;
+  const corps = jeton.split(".")[1];
+  if (!corps) return false;
+  try {
+    // `atob` et non `Buffer` : ce module est aussi chargé par le middleware, qui
+    // peut tourner hors de Node. Les revendications lues ici sont en ASCII.
+    const json = JSON.parse(atob(corps.replace(/-/g, "+").replace(/_/g, "/")));
+    return json?.imp === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ramène la session à l'administrateur, depuis les jetons mis de côté.
+ *
+ * ⚠ Par un RAFRAÎCHISSEMENT, pas en reposant l'ancien jeton d'accès : il a pu
+ * échoir pendant la prise en main. Un échec ici déconnecte (`RefreshAccessTokenError`),
+ * ce qui est le bon côté de l'erreur : mieux vaut se reconnecter que rester dans
+ * la peau d'un marchand.
+ */
+async function restaurerAdministrateur(token: JWT): Promise<JWT> {
+  const stash = token.adminStash;
+  const base: JWT = {
+    ...token,
+    impersonation: undefined,
+    adminStash: undefined,
+    name: stash ? stash.name : token.name,
+    email: stash ? stash.email : token.email,
+    isStaff: true,
+    refreshToken: stash?.refreshToken,
+    refreshTokenExpires: stash?.refreshTokenExpires,
+    accessToken: stash?.accessToken,
+    accessTokenExpires: 0,
+  };
+  if (!stash?.refreshToken) {
+    return { ...base, accessToken: undefined, error: "RefreshAccessTokenError" };
+  }
+  return refreshAccessToken(base);
+}
+
+/**
  * Pourquoi la connexion a échoué, et surtout : la faute est-elle celle du
  * marchand ?
  *
@@ -251,7 +298,7 @@ export const authConfig: NextAuthConfig = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user, trigger, session }) {
       // Connexion initiale : stocker les tokens
       if (user) {
         console.log("[Auth] Nouvelle session créée");
@@ -265,6 +312,67 @@ export const authConfig: NextAuthConfig = {
           isStaff: user.isStaff,
           error: undefined,
         };
+      }
+
+      // ── Prise en main : ENTRÉE ────────────────────────────────────────────
+      // Le jeton vient du serveur (`/platform-admin/users/{id}/impersonate/`).
+      // ⚠ Refusée si la session n'est pas celle d'un administrateur, ou si une
+      // prise en main est déjà en cours : on ne met pas de côté un jeton de
+      // marchand, on ne s'en remettrait jamais.
+      const demande = session as
+        | { impersonation?: { access?: string; expires_at?: string; session_id?: string;
+            target_user?: { email?: string; full_name?: string };
+            organization?: { id?: string; name?: string } };
+            endImpersonation?: boolean }
+        | undefined;
+      if (trigger === "update" && demande?.impersonation) {
+        const imp = demande.impersonation;
+        if (token.impersonation || !token.isStaff || !token.refreshToken || !estJetonDePriseEnMain(imp.access)) {
+          return token;
+        }
+        const echeance = Date.parse(imp.expires_at ?? "") || Date.now() + 20 * 60 * 1000;
+        return {
+          ...token,
+          adminStash: {
+            accessToken: token.accessToken,
+            refreshToken: token.refreshToken,
+            accessTokenExpires: token.accessTokenExpires,
+            refreshTokenExpires: token.refreshTokenExpires,
+            name: token.name,
+            email: token.email,
+          },
+          // ⚠ Le NOM suit la prise en main : l'en-tête du tableau de bord lit
+          // `session.user.name`, et voir l'application « comme Caissier One »
+          // sous le nom de l'administrateur fait douter de ce qu'on regarde.
+          name: imp.target_user?.full_name || imp.target_user?.email || token.name,
+          email: imp.target_user?.email || token.email,
+          accessToken: imp.access,
+          // ⚠ AUCUN jeton de rafraîchissement : la prise en main ne se prolonge pas.
+          refreshToken: undefined,
+          accessTokenExpires: echeance,
+          refreshTokenExpires: echeance,
+          isStaff: false,
+          impersonation: {
+            sessionId: imp.session_id ?? "",
+            expiresAt: echeance,
+            targetEmail: imp.target_user?.email ?? "",
+            targetName: imp.target_user?.full_name ?? "",
+            organizationId: imp.organization?.id ?? "",
+            organizationName: imp.organization?.name ?? "",
+          },
+          error: undefined,
+        };
+      }
+
+      // ── Prise en main : SORTIE ────────────────────────────────────────────
+      // Demandée, ou imposée par l'échéance : un jeton de prise en main ne se
+      // rafraîchit pas, et tenter de le faire déconnecterait l'administrateur.
+      if (token.impersonation) {
+        const echu = Date.now() >= (token.accessTokenExpires as number || 0) - REFRESH_BUFFER;
+        if ((trigger === "update" && demande?.endImpersonation) || echu) {
+          return restaurerAdministrateur(token);
+        }
+        return token;
       }
 
       // Si le token a une erreur de rafraîchissement, le propager
@@ -314,6 +422,9 @@ export const authConfig: NextAuthConfig = {
       session.accessTokenExpires = token.accessTokenExpires as number | undefined;
       session.error = token.error as string | undefined;
       session.isStaff = token.isStaff as boolean | undefined;
+      // ⚠ L'information seulement, jamais `adminStash` : les jetons de
+      // l'administrateur restent dans le cookie chiffré.
+      session.impersonation = token.impersonation;
 
       if (session.user && token.email) {
         session.user.email = token.email as string;

@@ -29,7 +29,7 @@ import {
   getAdminPlans,
   createAdminPlan,
   updateAdminPlan,
-  deleteAdminPlan,
+  togglePlanActive,
   getSettingsCurrencies,
   AdminPlan,
   CreatePlanData,
@@ -45,7 +45,7 @@ import {
 import {
   Plus,
   Edit,
-  Trash2,
+  Power,
   Users,
   Building2,
   Warehouse,
@@ -56,10 +56,18 @@ import {
   Layers,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 
 function defaultCurrencyId(currencies: SettingsCurrency[]): string {
   const usd = currencies.find((c) => c.code === "USD");
   return usd?.id ?? currencies[0]?.id ?? "";
+}
+
+function phraseAbonnes(n: number): string {
+  if (n === 0) return "Aucun abonné ne l'emploie.";
+  if (n === 1) return "Son abonné le garde jusqu'à son échéance.";
+  return `Ses ${n} abonnés le gardent jusqu'à leur échéance.`;
 }
 
 export default function AdminPlansPage() {
@@ -71,6 +79,11 @@ export default function AdminPlansPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [currencies, setCurrencies] = useState<SettingsCurrency[]>([]);
+  const [bascule, setBascule] = useState<AdminPlan | null>(null);
+  const { hasPlatformPermission } = useAdminPermissions();
+  const peutCreer = hasPlatformPermission("plans.create");
+  const peutEditer = hasPlatformPermission("plans.edit");
+  const peutBasculer = hasPlatformPermission("plans.toggle_active");
 
   const [formData, setFormData] = useState<CreatePlanData>({
     name: "",
@@ -210,17 +223,19 @@ export default function AdminPlansPage() {
     setIsSubmitting(false);
   }
 
-  async function handleDelete(planId: string) {
-    if (!session?.accessToken) return;
-    if (!confirm("Êtes-vous sûr de vouloir supprimer ce plan ?")) return;
-
-    const result = await deleteAdminPlan(session.accessToken, planId);
-    if (result.success) {
-      toast.success(result.message);
-      fetchPlans();
-    } else {
-      toast.error(result.message || "Erreur lors de la suppression");
+  /**
+   * Un plan ne se supprime pas : une facture passée le désigne peut-être
+   * encore, et ses abonnés le gardent. Il se retire de la vente, et y revient.
+   */
+  async function basculerPlan(motif: string) {
+    if (!session?.accessToken || !bascule) return false;
+    const result = await togglePlanActive(session.accessToken, bascule.id, motif);
+    if (!result.success) {
+      toast.error(result.message || "Erreur lors de la modification");
+      return false;
     }
+    toast.success(bascule.is_active ? "Plan retiré de la vente." : "Plan remis en vente.");
+    fetchPlans();
   }
 
   function handleInputChange(
@@ -246,11 +261,13 @@ export default function AdminPlansPage() {
           <p className="text-muted-foreground">{plans.length} plan{plans.length > 1 ? "s" : ""} configuré{plans.length > 1 ? "s" : ""}</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" /> Nouveau plan
-            </Button>
-          </DialogTrigger>
+          {peutCreer && (
+            <DialogTrigger asChild>
+              <Button onClick={openCreateDialog}>
+                <Plus className="mr-2 h-4 w-4" /> Nouveau plan
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent
             showCloseButton
             className="flex max-h-[82vh] w-[calc(100%-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden sm:max-w-2xl"
@@ -614,22 +631,28 @@ export default function AdminPlansPage() {
                   </div>
                   <p className="text-sm text-muted-foreground">{plan.code}</p>
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openEditDialog(plan)}>
-                      <Edit className="mr-2 h-4 w-4" /> Modifier
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => handleDelete(plan.id)} className="text-destructive">
-                      <Trash2 className="mr-2 h-4 w-4" /> Supprimer
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {(peutEditer || peutBasculer) && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions pour ${plan.name}`}>
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {peutEditer && (
+                        <DropdownMenuItem onClick={() => openEditDialog(plan)}>
+                          <Edit className="mr-2 h-4 w-4" /> Modifier
+                        </DropdownMenuItem>
+                      )}
+                      {peutEditer && peutBasculer && <DropdownMenuSeparator />}
+                      {peutBasculer && (
+                        <DropdownMenuItem onClick={() => setBascule(plan)}>
+                          <Power className="mr-2 h-4 w-4" /> {plan.is_active ? "Retirer de la vente" : "Remettre en vente"}
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -667,8 +690,8 @@ export default function AdminPlansPage() {
               </div>
 
               <div className="flex items-center justify-between pt-3 border-t">
-                <Badge variant={plan.is_active ? "default" : "secondary"} className={plan.is_active ? "bg-green-100 text-green-700" : ""}>
-                  {plan.is_active ? "Actif" : "Inactif"}
+                <Badge variant={plan.is_active ? "default" : "outline"}>
+                  {plan.is_active ? "En vente" : "Retiré de la vente"}
                 </Badge>
                 <span className="text-sm text-muted-foreground">{plan.subscribers_count} abonnés</span>
               </div>
@@ -676,6 +699,21 @@ export default function AdminPlansPage() {
           </Card>
         ))}
       </div>
+      <ConfirmDialog
+        open={bascule !== null}
+        onOpenChange={(o) => !o && setBascule(null)}
+        title={bascule?.is_active ? "Retirer le plan de la vente" : "Remettre le plan en vente"}
+        entityName={bascule?.name}
+        description={
+          bascule?.is_active
+            ? `Le plan disparaît de la page des tarifs et ne peut plus être souscrit. ${phraseAbonnes(bascule.subscribers_count)}`
+            : "Le plan redevient souscriptible depuis la page des tarifs."
+        }
+        confirmLabel={bascule?.is_active ? "Retirer de la vente" : "Remettre en vente"}
+        destructive={Boolean(bascule?.is_active)}
+        reason="optional"
+        onConfirm={basculerPlan}
+      />
     </div>
   );
 }

@@ -1,175 +1,182 @@
 "use client";
 
+/**
+ * Tous les comptes de la plateforme.
+ *
+ * ⚠ Aucun compte ne se supprime : il porte des ventes, des clôtures de caisse et
+ * des écritures comptables signées de son nom. On le désactive, avec un motif,
+ * et le journal d'audit garde qui l'a fait.
+ */
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Eye, Loader2, MoreHorizontal, Plus, Power, Search, Shield, ShieldOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  getAdminUsers,
-  toggleUserActive,
-  toggleUserStaff,
-  AdminUser,
-} from "@/actions/admin.actions";
-import {
-  Search,
-  Eye,
-  Power,
-  Shield,
-  Loader2,
-  MoreHorizontal,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
-import { toast } from "sonner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { getAdminUsers, revokePlatformRole, toggleUserActive, type AdminUser } from "@/actions/admin.actions";
+import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
+import { AdminPagination } from "@/components/admin/admin-pagination";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { RoleDialog } from "@/components/admin/role-dialog";
+import { UserCreateDialog } from "@/components/admin/user-dialogs";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { dateCourte } from "@/lib/admin/format";
+
+const TAILLE = 20;
+
+function initiales(nom?: string | null, email?: string) {
+  if (nom) return nom.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+  return email?.charAt(0).toUpperCase() || "U";
+}
+
+type Geste = { type: "bascule" | "role" | "retrait"; user: AdminUser } | null;
 
 export default function AdminUsersPage() {
   const { data: session } = useSession();
+  const jeton = session?.accessToken;
+  const { hasPlatformPermission, me } = useAdminPermissions();
+
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [totalCount, setTotalCount] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(20);
-  const [isActionLoading, setIsActionLoading] = useState(false);
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recherche, setRecherche] = useState("");
+  const [statut, setStatut] = useState("all");
+  const [role, setRole] = useState("all");
+  const [page, setPage] = useState(1);
+  const [tour, setTour] = useState(0);
+  const [geste, setGeste] = useState<Geste>(null);
+  const [creation, setCreation] = useState(false);
+
+  const terme = useDebouncedValue(recherche);
+  const actualiser = useCallback(() => setTour((t) => t + 1), []);
 
   useEffect(() => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 350);
-    return () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-    };
-  }, [searchQuery]);
-
-  const fetchUsers = useCallback(() => {
-    if (!session?.accessToken) return;
-
-    setIsLoading(true);
-    const filters: Record<string, string | number | boolean> = {
-      page: currentPage,
-      page_size: pageSize,
-    };
-
-    if (debouncedSearch) filters.search = debouncedSearch;
-    if (statusFilter !== "all") filters.is_active = statusFilter === "active";
-    if (roleFilter !== "all") filters.is_staff = roleFilter === "staff";
-
-    getAdminUsers(session.accessToken, filters).then((result) => {
-      if (result.success && result.data) {
-        setUsers(result.data.results);
-        setTotalCount(result.data.count);
+    if (!jeton) return;
+    let annule = false;
+    (async () => {
+      const filtres: Record<string, string | number | boolean> = { page, page_size: TAILLE };
+      if (terme) filtres.search = terme;
+      if (statut !== "all") filtres.is_active = statut === "active";
+      if (role !== "all") filtres.is_staff = role === "staff";
+      const r = await getAdminUsers(jeton, filtres);
+      if (annule) return;
+      if (r.success && r.data) {
+        setUsers(r.data.results);
+        setTotal(r.data.count);
       } else {
-        toast.error(result.message || "Erreur lors du chargement");
+        toast.error(r.message || "Erreur lors du chargement");
       }
       setIsLoading(false);
-    });
-  }, [session?.accessToken, debouncedSearch, statusFilter, roleFilter, currentPage, pageSize]);
+    })();
+    return () => {
+      annule = true;
+    };
+  }, [jeton, terme, statut, role, page, tour]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(fetchUsers, [fetchUsers]);
-
-  async function handleToggleActive(userId: string) {
-    if (!session?.accessToken) return;
-
-    setIsActionLoading(true);
-    const result = await toggleUserActive(session.accessToken, userId);
-    if (result.success) {
-      toast.success(result.message);
-      fetchUsers();
-    } else {
-      toast.error(result.message || "Erreur lors de la modification");
-    }
-    setIsActionLoading(false);
-  }
-
-  async function handleToggleStaff(userId: string) {
-    if (!session?.accessToken) return;
-
-    setIsActionLoading(true);
-    const result = await toggleUserStaff(session.accessToken, userId);
-    if (result.success) {
-      toast.success(result.message);
-      fetchUsers();
-    } else {
-      toast.error(result.message || "Erreur lors de la modification");
-    }
-    setIsActionLoading(false);
-  }
-
-  const totalPages = Math.ceil(totalCount / pageSize);
-
-  const getInitials = (name?: string | null, email?: string) => {
-    if (name) return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-    return email?.charAt(0).toUpperCase() || "U";
+  // Un filtre change la liste : on repart de la première page, sinon la page 3
+  // d'un résultat qui n'en a qu'une rendrait un tableau vide.
+  const filtrer = <T,>(poser: (v: T) => void) => (v: T) => {
+    poser(v);
+    setPage(1);
   };
+
+  const basculer = async (motif: string) => {
+    if (!jeton || geste?.type !== "bascule") return false;
+    const r = await toggleUserActive(jeton, geste.user.id, motif);
+    if (!r.success) {
+      toast.error(r.message);
+      return false;
+    }
+    toast.success(r.message);
+    actualiser();
+  };
+
+  const retirer = async (motif: string) => {
+    if (!jeton || geste?.type !== "retrait") return false;
+    const r = await revokePlatformRole(jeton, geste.user.id, motif);
+    if (!r.success) {
+      toast.error(r.message);
+      return false;
+    }
+    toast.success("Rôle retiré.");
+    actualiser();
+  };
+
+  const peutBasculer = hasPlatformPermission("users.toggle_active");
+  const peutGererRoles = hasPlatformPermission("platform_admins.manage");
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Utilisateurs</h1>
-        <p className="text-muted-foreground">{totalCount} compte{totalCount > 1 ? "s" : ""} enregistré{totalCount > 1 ? "s" : ""}</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Utilisateurs</h1>
+          <p className="text-muted-foreground">
+            {total} compte{total > 1 ? "s" : ""} enregistré{total > 1 ? "s" : ""}
+          </p>
+        </div>
+        {hasPlatformPermission("users.create") && (
+          <Button onClick={() => setCreation(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Nouveau compte
+          </Button>
+        )}
       </div>
 
-      <div className="flex flex-col justify-between sm:flex-row gap-3">
-        <div className="flex-1 max-w-sm relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Rechercher..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" />
+      <div className="flex flex-col justify-between gap-3 sm:flex-row">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Nom, e-mail, téléphone…"
+            value={recherche}
+            onChange={(e) => {
+              setRecherche(e.target.value);
+              setPage(1);
+            }}
+            className="pl-9"
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Statut" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Tous</SelectItem>
-            <SelectItem value="active">Actifs</SelectItem>
-            <SelectItem value="inactive">Inactifs</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Rôle" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Tous</SelectItem>
-            <SelectItem value="staff">Admins</SelectItem>
-            <SelectItem value="user">Utilisateurs</SelectItem>
-          </SelectContent>
-        </Select>
+          <Select value={statut} onValueChange={filtrer(setStatut)}>
+            <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Statut" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les statuts</SelectItem>
+              <SelectItem value="active">Actifs</SelectItem>
+              <SelectItem value="inactive">Inactifs</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={role} onValueChange={filtrer(setRole)}>
+            <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="Rôle" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les comptes</SelectItem>
+              <SelectItem value="staff">Administrateurs</SelectItem>
+              <SelectItem value="user">Marchands</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       <Card className="border">
         {isLoading ? (
-          <div className="flex items-center justify-center h-64">
+          <div className="flex h-64 items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : users.length === 0 ? (
+          <div className="py-16 text-center text-sm text-muted-foreground">
+            {terme || statut !== "all" || role !== "all"
+              ? "Aucun compte pour ces filtres."
+              : "Aucun compte."}
           </div>
         ) : (
           <>
@@ -177,101 +184,133 @@ export default function AdminUsersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Utilisateur</TableHead>
-                  <TableHead>Organisations</TableHead>
+                  <TableHead>Établissements</TableHead>
                   <TableHead>Statut</TableHead>
-                  <TableHead>Rôle</TableHead>
-                  <TableHead>Email vérifié</TableHead>
+                  <TableHead>Rôle plateforme</TableHead>
                   <TableHead>Dernière connexion</TableHead>
                   <TableHead>Inscrit le</TableHead>
-                  <TableHead className="w-10"></TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                            {getInitials(user.full_name, user.email)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <Link href={`/admin/users/${user.id}`} className="font-medium hover:text-primary transition-colors">{user.full_name || user.email.split("@")[0]}</Link>
-                          <p className="text-sm text-muted-foreground">{user.email}</p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <p>{user.organizations_count} org{user.organizations_count > 1 ? "s" : ""}</p>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={user.is_active ? "default" : "secondary"} className={user.is_active ? "bg-green-100 text-green-700" : ""}>
-                        {user.is_active ? "Actif" : "Inactif"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {user.is_staff ? (
-                        <Badge className="bg-primary text-primary-foreground">Admin</Badge>
-                      ) : (
-                        <Badge variant="outline">Utilisateur</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className={user.is_email_verified ? "text-green-600" : "text-muted-foreground"}>
-                        {user.is_email_verified ? "Oui" : "Non"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {user.last_login ? new Date(user.last_login).toLocaleDateString() : "Jamais"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(user.date_joined).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/admin/users/${user.id}`}>
-                              <Eye className="mr-2 h-4 w-4" /> Voir
+                {users.map((u) => {
+                  const soiMeme = u.id === me?.id;
+                  return (
+                    <TableRow key={u.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="bg-primary text-xs text-primary-foreground">
+                              {initiales(u.full_name, u.email)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <Link href={`/admin/users/${u.id}`} className="font-medium hover:text-primary">
+                              {u.full_name || u.email.split("@")[0]}
                             </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleToggleActive(user.id)} disabled={isActionLoading || user.id === session?.user?.id}>
-                            <Power className="mr-2 h-4 w-4" /> {user.is_active ? "Désactiver" : "Activer"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleToggleStaff(user.id)} disabled={isActionLoading || user.id === session?.user?.id}>
-                            <Shield className="mr-2 h-4 w-4" /> {user.is_staff ? "Retirer admin" : "Promouvoir"}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                            <p className="text-sm text-muted-foreground">{u.email}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>{u.organizations_count}</TableCell>
+                      <TableCell>
+                        <Badge variant={u.is_active ? "default" : "outline"}>{u.is_active ? "Actif" : "Inactif"}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {u.platform_role ? (
+                          <Badge variant="outline" className="border-primary/40 text-primary">
+                            {u.platform_role_display}
+                          </Badge>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {u.last_login ? dateCourte(u.last_login) : "Jamais"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{dateCourte(u.date_joined)}</TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions pour ${u.email}`}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                              <Link href={`/admin/users/${u.id}`}>
+                                <Eye className="mr-2 h-4 w-4" /> Voir la fiche
+                              </Link>
+                            </DropdownMenuItem>
+                            {(peutBasculer || peutGererRoles) && !soiMeme && <DropdownMenuSeparator />}
+                            {peutBasculer && !soiMeme && (
+                              <DropdownMenuItem onClick={() => setGeste({ type: "bascule", user: u })}>
+                                <Power className="mr-2 h-4 w-4" /> {u.is_active ? "Désactiver" : "Réactiver"}
+                              </DropdownMenuItem>
+                            )}
+                            {peutGererRoles && !soiMeme && (
+                              <DropdownMenuItem onClick={() => setGeste({ type: "role", user: u })}>
+                                <Shield className="mr-2 h-4 w-4" />
+                                {u.platform_role ? "Changer le rôle" : "Nommer administrateur"}
+                              </DropdownMenuItem>
+                            )}
+                            {peutGererRoles && !soiMeme && u.platform_role && (
+                              <DropdownMenuItem onClick={() => setGeste({ type: "retrait", user: u })}>
+                                <ShieldOff className="mr-2 h-4 w-4" /> Retirer le rôle
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
-
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between p-4 border-t">
-                <p className="text-sm text-muted-foreground">Page {currentPage} sur {totalPages}</p>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
+            <AdminPagination page={page} total={total} taille={TAILLE} onPage={setPage} />
           </>
         )}
       </Card>
+
+      {creation && (
+        <UserCreateDialog open onOpenChange={(o) => !o && setCreation(false)} onCreated={actualiser} />
+      )}
+      {geste?.type === "role" && (
+        <RoleDialog
+          open
+          onOpenChange={(o) => !o && setGeste(null)}
+          userId={geste.user.id}
+          userLabel={geste.user.full_name || geste.user.email}
+          roleActuel={geste.user.platform_role}
+          onDone={actualiser}
+        />
+      )}
+      <ConfirmDialog
+        open={geste?.type === "bascule"}
+        onOpenChange={(o) => !o && setGeste(null)}
+        title={geste?.user.is_active ? "Désactiver le compte" : "Réactiver le compte"}
+        entityName={geste?.user.email}
+        description={
+          geste?.user.is_active
+            ? "Le titulaire ne pourra plus se connecter, ni au back-office ni sur un terminal. Ses ventes et ses écritures restent."
+            : "Le titulaire pourra de nouveau se connecter."
+        }
+        confirmLabel={geste?.user.is_active ? "Désactiver" : "Réactiver"}
+        destructive={Boolean(geste?.user.is_active)}
+        reason={geste?.user.is_active ? "required" : "optional"}
+        onConfirm={basculer}
+      />
+      <ConfirmDialog
+        open={geste?.type === "retrait"}
+        onOpenChange={(o) => !o && setGeste(null)}
+        title="Retirer le rôle plateforme"
+        entityName={geste?.user.email}
+        description="Le compte perd tout accès à l'administration. Son compte marchand, s'il en a un, n'est pas touché."
+        confirmLabel="Retirer le rôle"
+        destructive
+        reason="required"
+        onConfirm={retirer}
+      />
     </div>
   );
 }

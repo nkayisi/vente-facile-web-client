@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { Menu, LogOut, User, Settings, ChevronDown } from "lucide-react";
+import { Menu, LogOut, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -11,7 +11,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import Link from "next/link";
 
 interface AdminHeaderProps {
   onMenuClick: () => void;
@@ -58,19 +57,6 @@ export function AdminHeader({ onMenuClick }: AdminHeaderProps) {
             <p className="text-sm font-medium">{session?.user?.name}</p>
             <p className="text-xs text-muted-foreground">{session?.user?.email}</p>
           </div>
-          {/* <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link href="/dashboard/profil" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Mon profil
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/dashboard/settings" className="flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              Paramètres
-            </Link>
-          </DropdownMenuItem> */}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => signOut({ callbackUrl: "/" })}

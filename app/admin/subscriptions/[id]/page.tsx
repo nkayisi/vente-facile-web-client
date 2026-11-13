@@ -1,107 +1,121 @@
 "use client";
 
+/**
+ * La fiche d'un abonnement.
+ *
+ * Deux gestes, et chacun laisse une trace : prolonger (un geste commercial, une
+ * panne de paiement) et annuler. L'annulation demande un motif, parce qu'elle
+ * bloque l'établissement en écriture et qu'on viendra demander pourquoi.
+ */
 import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
+import { ArrowLeft, Building2, Calendar, Clock, CreditCard, Loader2, ScrollText, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  getAdminSubscription,
-  extendSubscription,
-  cancelSubscription,
-  AdminSubscription,
-} from "@/actions/admin.actions";
-import {
-  ArrowLeft,
-  Building2,
-  CreditCard,
-  Calendar,
-  Clock,
-  Loader2,
-  X,
-} from "lucide-react";
-import { toast } from "sonner";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  cancelSubscription,
+  extendSubscription,
+  getAdminAuditLog,
+  getAdminSubscription,
+  type AdminActionLogEntry,
+  type AdminSubscription,
+} from "@/actions/admin.actions";
+import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { dateCourte, dateHeure, montant, tonEcheance } from "@/lib/admin/format";
+
+function Ligne({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-1.5 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right">{children}</span>
+    </div>
+  );
+}
 
 export default function AdminSubscriptionDetailPage() {
   const { data: session } = useSession();
+  const jeton = session?.accessToken;
   const params = useParams();
   const router = useRouter();
+  const subId = params.id as string;
+  const { hasPlatformPermission } = useAdminPermissions();
+
   const [sub, setSub] = useState<AdminSubscription | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isActionLoading, setIsActionLoading] = useState(false);
-  const [extendDialogOpen, setExtendDialogOpen] = useState(false);
-  const [extendDays, setExtendDays] = useState(30);
+  const [journal, setJournal] = useState<AdminActionLogEntry[]>([]);
+  const [tour, setTour] = useState(0);
+  const [prolongation, setProlongation] = useState(false);
+  const [jours, setJours] = useState(30);
+  const [motif, setMotif] = useState("");
+  const [enCours, setEnCours] = useState(false);
+  const [annulation, setAnnulation] = useState(false);
 
-  const subId = params.id as string;
+  const voitJournal = hasPlatformPermission("audit_log.view");
+  const actualiser = useCallback(() => setTour((t) => t + 1), []);
 
   useEffect(() => {
-    fetchSubscription();
-  }, [session?.accessToken, subId]);
-
-  async function fetchSubscription() {
-    if (!session?.accessToken || !subId) return;
-    setIsLoading(true);
-    const result = await getAdminSubscription(session.accessToken, subId);
-    if (result.success && result.data) {
-      setSub(result.data);
-    } else {
-      toast.error(result.message || "Abonnement introuvable");
-    }
-    setIsLoading(false);
-  }
-
-  async function handleExtend() {
-    if (!session?.accessToken || !subId) return;
-    setIsActionLoading(true);
-    const result = await extendSubscription(session.accessToken, subId, extendDays);
-    if (result.success) {
-      toast.success(result.message);
-      setExtendDialogOpen(false);
-      fetchSubscription();
-    } else {
-      toast.error(result.message || "Erreur");
-    }
-    setIsActionLoading(false);
-  }
-
-  async function handleCancel() {
-    if (!session?.accessToken || !subId) return;
-    if (!confirm("Êtes-vous sûr de vouloir annuler cet abonnement ?")) return;
-    setIsActionLoading(true);
-    const result = await cancelSubscription(session.accessToken, subId);
-    if (result.success) {
-      toast.success(result.message);
-      fetchSubscription();
-    } else {
-      toast.error(result.message || "Erreur");
-    }
-    setIsActionLoading(false);
-  }
-
-  const getStatusStyle = (status: string) => {
-    const styles: Record<string, string> = {
-      active: "bg-green-100 text-green-700",
-      trial: "bg-blue-100 text-blue-700",
-      past_due: "bg-amber-100 text-amber-700",
-      expired: "bg-red-100 text-red-700",
-      cancelled: "bg-red-100 text-red-700",
+    if (!jeton || !subId) return;
+    let annule = false;
+    (async () => {
+      const [r, j] = await Promise.all([
+        getAdminSubscription(jeton, subId),
+        voitJournal ? getAdminAuditLog(jeton, { target_id: subId, page_size: 10 }) : Promise.resolve(null),
+      ]);
+      if (annule) return;
+      if (r.success && r.data) setSub(r.data);
+      else toast.error(r.message || "Abonnement introuvable");
+      if (j?.success && j.data) setJournal(j.data.results);
+      setIsLoading(false);
+    })();
+    return () => {
+      annule = true;
     };
-    return styles[status] || "";
+  }, [jeton, subId, tour, voitJournal]);
+
+  const prolonger = async () => {
+    if (!jeton || !sub) return;
+    setEnCours(true);
+    const r = await extendSubscription(jeton, sub.id, jours, motif.trim());
+    setEnCours(false);
+    if (!r.success) {
+      toast.error(r.message);
+      return;
+    }
+    toast.success(r.message);
+    setProlongation(false);
+    actualiser();
+  };
+
+  const annuler = async (raison: string) => {
+    if (!jeton || !sub) return false;
+    const r = await cancelSubscription(jeton, sub.id, raison);
+    if (!r.success) {
+      toast.error(r.message);
+      return false;
+    }
+    toast.success(r.message);
+    actualiser();
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -113,172 +127,194 @@ export default function AdminSubscriptionDetailPage() {
         <Button variant="ghost" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Retour
         </Button>
-        <p className="text-muted-foreground text-center py-12">Abonnement introuvable.</p>
+        <p className="py-12 text-center text-muted-foreground">Abonnement introuvable.</p>
       </div>
     );
   }
 
-  const canExtend = sub.status === "active";
-  const canCancel = ["active", "trial", "past_due"].includes(sub.status);
+  // Le serveur prolonge tout ce qui n'est pas annulé : un abonnement échu ou en
+  // retard y redevient actif, et c'est précisément le geste du support.
+  const peutProlonger = hasPlatformPermission("subscriptions.extend") && sub.status !== "cancelled";
+  const peutAnnuler =
+    hasPlatformPermission("subscriptions.cancel") && ["active", "trial", "past_due"].includes(sub.status);
+  const joursValides = Number.isInteger(jours) && jours >= 1 && jours <= 365;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="h-5 w-5" />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Retour">
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-semibold">Abonnement - {sub.plan_name}</h1>
-            <p className="text-muted-foreground">{sub.organization_name}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold">{sub.plan_name}</h1>
+              <Badge variant="outline">{sub.status_display}</Badge>
+            </div>
+            <Link href={`/admin/organizations/${sub.organization}`} className="text-muted-foreground hover:underline">
+              {sub.organization_name}
+            </Link>
           </div>
         </div>
-        <Badge className={getStatusStyle(sub.status)}>{sub.status_display}</Badge>
+        <div className="flex flex-wrap gap-2">
+          {peutProlonger && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setJours(30);
+                setMotif("");
+                setProlongation(true);
+              }}
+            >
+              <Calendar className="mr-2 h-4 w-4" /> Prolonger
+            </Button>
+          )}
+          {peutAnnuler && (
+            <Button variant="outline" onClick={() => setAnnulation(true)} className="text-destructive hover:text-destructive">
+              <X className="mr-2 h-4 w-4" /> Annuler l&apos;abonnement
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Organization */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              Établissement
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-medium">
+              <Building2 className="h-4 w-4 text-muted-foreground" /> Établissement
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Nom</span>
-              <Link
-                href={`/admin/organizations/${sub.organization}`}
-                className="font-medium hover:text-primary transition-colors"
-              >
+          <CardContent className="divide-y">
+            <Ligne label="Nom">
+              <Link href={`/admin/organizations/${sub.organization}`} className="font-medium hover:text-primary">
                 {sub.organization_name}
               </Link>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">ID</span>
-              <span className="text-xs text-muted-foreground font-mono">{sub.organization.slice(0, 12)}...</span>
-            </div>
+            </Ligne>
+            <Ligne label="Autres abonnements">
+              <Link href={`/admin/subscriptions?organization=${sub.organization}`} className="text-primary hover:underline">
+                Historique
+              </Link>
+            </Ligne>
           </CardContent>
         </Card>
 
-        {/* Plan & pricing */}
         <Card className="border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-muted-foreground" />
-              Plan & Tarification
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-medium">
+              <CreditCard className="h-4 w-4 text-muted-foreground" /> Plan et tarif
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Plan</span>
-              <span className="font-medium">{sub.plan_name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Cycle</span>
-              <Badge variant="outline">{sub.billing_cycle_display}</Badge>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Prix</span>
-              <span className="font-medium">{parseFloat(sub.price).toLocaleString()} {sub.currency}</span>
-            </div>
+          <CardContent className="divide-y">
+            <Ligne label="Plan">{sub.plan_name}</Ligne>
+            <Ligne label="Cycle">{sub.billing_cycle_display}</Ligne>
+            <Ligne label="Prix"><span className="font-medium">{montant(sub.price, sub.currency)}</span></Ligne>
           </CardContent>
         </Card>
 
-        {/* Period */}
         <Card className="border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              Période
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-medium">
+              <Calendar className="h-4 w-4 text-muted-foreground" /> Période
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Début</span>
-              <span>{new Date(sub.current_period_start).toLocaleDateString()}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Fin</span>
-              <span>{new Date(sub.current_period_end).toLocaleDateString()}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Jours restants</span>
-              <span className={`flex items-center gap-1.5 font-medium ${
-                sub.days_remaining <= 0 ? "text-red-600" : sub.days_remaining <= 5 ? "text-amber-600" : "text-green-600"
-              }`}>
+          <CardContent className="divide-y">
+            <Ligne label="Début">{dateCourte(sub.current_period_start)}</Ligne>
+            <Ligne label="Fin">{dateCourte(sub.current_period_end)}</Ligne>
+            <Ligne label="Reste">
+              <span
+                className={`inline-flex items-center gap-1.5 font-medium ${tonEcheance(sub.days_remaining)}`}
+              >
                 <Clock className="h-3.5 w-3.5" />
-                {sub.days_remaining > 0 ? `${sub.days_remaining} jours` : "Expiré"}
+                {sub.days_remaining > 0 ? `${sub.days_remaining} jour${sub.days_remaining > 1 ? "s" : ""}` : "Échu"}
               </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Créé le</span>
-              <span>{new Date(sub.created_at).toLocaleString()}</span>
-            </div>
+            </Ligne>
+            <Ligne label="Créé le">{dateHeure(sub.created_at)}</Ligne>
           </CardContent>
         </Card>
       </div>
 
-      {/* Actions */}
-      {(canExtend || canCancel) && (
+      {voitJournal && (
         <Card className="border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium">Actions</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-medium">
+              <ScrollText className="h-4 w-4 text-muted-foreground" /> Actes d&apos;administration
+            </CardTitle>
+            <Link href="/admin/audit-log" className="text-sm text-primary hover:underline">Journal complet</Link>
           </CardHeader>
-          <CardContent className="flex gap-3">
-            {canExtend && (
-              <Button
-                variant="outline"
-                onClick={() => { setExtendDays(30); setExtendDialogOpen(true); }}
-              >
-                <Calendar className="mr-2 h-4 w-4" />
-                Prolonger
-              </Button>
-            )}
-            {canCancel && (
-              <Button
-                variant="outline"
-                onClick={handleCancel}
-                disabled={isActionLoading}
-                className="text-destructive hover:text-destructive"
-              >
-                <X className="mr-2 h-4 w-4" />
-                Annuler l'abonnement
-              </Button>
+          <CardContent className="divide-y">
+            {journal.length === 0 ? (
+              <p className="py-4 text-sm text-muted-foreground">Aucun acte sur cet abonnement.</p>
+            ) : (
+              journal.map((l) => (
+                <div key={l.id} className="py-2 text-sm">
+                  <p>
+                    <span className="font-medium">{l.actor_name || l.actor_email || "Système"}</span> · {l.action_display}
+                  </p>
+                  {l.reason && <p className="text-muted-foreground">« {l.reason} »</p>}
+                  <p className="text-xs text-muted-foreground">{dateHeure(l.created_at)}</p>
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* Extend Dialog */}
-      <Dialog open={extendDialogOpen} onOpenChange={setExtendDialogOpen}>
-        <DialogContent>
+      <Dialog open={prolongation} onOpenChange={(o) => !enCours && setProlongation(o)}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Prolonger l'abonnement</DialogTitle>
+            <DialogTitle>Prolonger l&apos;abonnement</DialogTitle>
+            <DialogDescription>
+              {sub.organization_name} · {sub.plan_name} · fin actuelle le {dateCourte(sub.current_period_end)}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="p-3 bg-muted rounded-lg text-sm">
-              <p className="font-medium">{sub.organization_name}</p>
-              <p className="text-muted-foreground">
-                {sub.plan_name} - expire le {new Date(sub.current_period_end).toLocaleDateString()}
-              </p>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="sub-jours">Jours à ajouter</Label>
+              <Input
+                id="sub-jours"
+                type="number"
+                min={1}
+                max={365}
+                value={Number.isNaN(jours) ? "" : jours}
+                onChange={(e) => setJours(parseInt(e.target.value, 10))}
+              />
+              {!joursValides && <p className="text-xs text-destructive">Entre 1 et 365 jours.</p>}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="extendDays">Jours à ajouter</Label>
-              <Input id="extendDays" type="number" min="1" max="365" value={extendDays} onChange={(e) => setExtendDays(parseInt(e.target.value))} />
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setExtendDialogOpen(false)}>Annuler</Button>
-              <Button onClick={handleExtend} disabled={isActionLoading}>
-                {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Prolonger
-              </Button>
+              <Label htmlFor="sub-motif">Motif</Label>
+              <Textarea
+                id="sub-motif"
+                rows={2}
+                placeholder="Geste commercial, panne de paiement, erreur de facturation…"
+                value={motif}
+                onChange={(e) => setMotif(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Gardé au journal d&apos;audit avec la prolongation.</p>
             </div>
           </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProlongation(false)} disabled={enCours}>
+              Fermer
+            </Button>
+            <Button onClick={prolonger} disabled={enCours || !joursValides}>
+              {enCours && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Prolonger
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={annulation}
+        onOpenChange={setAnnulation}
+        title="Annuler l'abonnement"
+        entityName={sub.organization_name}
+        description="L'établissement est bloqué en écriture : il ne peut plus enregistrer de vente tant qu'un nouvel abonnement n'est pas activé. Ses données restent."
+        confirmLabel="Annuler l'abonnement"
+        destructive
+        reason="required"
+        onConfirm={annuler}
+      />
     </div>
   );
 }

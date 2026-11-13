@@ -1,71 +1,113 @@
 "use client";
 
+/**
+ * La fiche d'un établissement, vue par le support.
+ *
+ * Elle réunit ce qu'on cherche avant d'agir : qui contacter, où en est
+ * l'abonnement, qui est dans l'équipe, et ce que l'administration a déjà fait
+ * pour cet établissement. La prise en main se fait d'ici, membre par membre.
+ */
 import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
+import {
+  ArrowLeft,
+  Building2,
+  CreditCard,
+  Eye,
+  Loader2,
+  Mail,
+  MapPin,
+  Pencil,
+  Phone,
+  Power,
+  ScrollText,
+  Users,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  getAdminAuditLog,
   getAdminOrganization,
+  getImpersonationSessions,
   toggleOrganizationActive,
-  AdminOrganization,
+  type AdminActionLogEntry,
+  type AdminOrganization,
+  type AdminOrganizationMember,
+  type ImpersonationSessionEntry,
 } from "@/actions/admin.actions";
-import {
-  ArrowLeft,
-  Building2,
-  Users,
-  Mail,
-  Phone,
-  MapPin,
-  Power,
-  Loader2,
-  Calendar,
-  CreditCard,
-  FileText,
-  Globe,
-} from "lucide-react";
-import { toast } from "sonner";
+import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { ActivateSubscriptionDialog } from "@/components/admin/activate-subscription-dialog";
+import { OrganizationEditDialog, TYPES_ETABLISSEMENT } from "@/components/admin/organization-edit-dialog";
+import { ImpersonateDialog } from "@/components/admin/impersonate-dialog";
+import { dateCourte, dateHeure, montant, raisonSansPriseEnMain } from "@/lib/admin/format";
+
+function Ligne({ label, valeur }: { label: string; valeur?: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-4 py-1.5 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right font-medium break-words">{valeur || "-"}</span>
+    </div>
+  );
+}
 
 export default function AdminOrganizationDetailPage() {
   const { data: session } = useSession();
+  const jeton = session?.accessToken;
   const params = useParams();
   const router = useRouter();
+  const orgId = params.id as string;
+  const { hasPlatformPermission } = useAdminPermissions();
+
   const [org, setOrg] = useState<AdminOrganization | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [journal, setJournal] = useState<AdminActionLogEntry[]>([]);
+  const [prises, setPrises] = useState<ImpersonationSessionEntry[]>([]);
+  const [tour, setTour] = useState(0);
 
-  const orgId = params.id as string;
+  const [edition, setEdition] = useState(false);
+  const [bascule, setBascule] = useState(false);
+  const [activation, setActivation] = useState(false);
+  const [priseSur, setPriseSur] = useState<AdminOrganizationMember | null>(null);
+
+  const voitJournal = hasPlatformPermission("audit_log.view");
+  const actualiser = useCallback(() => setTour((t) => t + 1), []);
 
   useEffect(() => {
-    fetchOrganization();
-  }, [session?.accessToken, orgId]);
+    if (!jeton || !orgId) return;
+    let annule = false;
+    (async () => {
+      const [r, j, p] = await Promise.all([
+        getAdminOrganization(jeton, orgId),
+        voitJournal ? getAdminAuditLog(jeton, { target_id: orgId, page_size: 10 }) : Promise.resolve(null),
+        voitJournal ? getImpersonationSessions(jeton, { organization: orgId }) : Promise.resolve(null),
+      ]);
+      if (annule) return;
+      if (r.success && r.data) setOrg(r.data);
+      else toast.error(r.message || "Établissement introuvable");
+      if (j?.success && j.data) setJournal(j.data.results);
+      if (p?.success && p.data) setPrises(p.data.results.slice(0, 10));
+      setIsLoading(false);
+    })();
+    return () => {
+      annule = true;
+    };
+  }, [jeton, orgId, tour, voitJournal]);
 
-  async function fetchOrganization() {
-    if (!session?.accessToken || !orgId) return;
-    setIsLoading(true);
-    const result = await getAdminOrganization(session.accessToken, orgId);
-    if (result.success && result.data) {
-      setOrg(result.data);
-    } else {
-      toast.error(result.message || "Établissement introuvable");
+  const basculer = async (motif: string) => {
+    if (!jeton || !org) return false;
+    const r = await toggleOrganizationActive(jeton, org.id, motif);
+    if (!r.success) {
+      toast.error(r.message);
+      return false;
     }
-    setIsLoading(false);
-  }
-
-  async function handleToggleActive() {
-    if (!session?.accessToken || !orgId) return;
-    setIsActionLoading(true);
-    const result = await toggleOrganizationActive(session.accessToken, orgId);
-    if (result.success) {
-      toast.success(result.message);
-      fetchOrganization();
-    } else {
-      toast.error(result.message || "Erreur");
-    }
-    setIsActionLoading(false);
-  }
+    toast.success(r.message);
+    actualiser();
+  };
 
   if (isLoading) {
     return (
@@ -86,192 +128,275 @@ export default function AdminOrganizationDetailPage() {
     );
   }
 
+  const sub = org.subscription;
+  const type = TYPES_ETABLISSEMENT.find((t) => t.value === org.business_type)?.label ?? org.business_type;
+  const peutPrendreLaMain = hasPlatformPermission("impersonation.start");
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="h-5 w-5" />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <Button variant="ghost" size="icon" onClick={() => router.push("/admin/organizations")} aria-label="Retour">
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-semibold">{org.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold">{org.name}</h1>
+              <Badge variant={org.is_active ? "default" : "outline"}>{org.is_active ? "Actif" : "Inactif"}</Badge>
+            </div>
             <p className="text-muted-foreground">
-              Créé le {new Date(org.created_at).toLocaleDateString()}
+              {type} · {[org.city, org.country].filter(Boolean).join(", ")} · créé le {dateCourte(org.created_at)}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={org.is_active ? "default" : "secondary"} className={org.is_active ? "bg-green-100 text-green-700" : ""}>
-            {org.is_active ? "Actif" : "Inactif"}
-          </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleToggleActive}
-            disabled={isActionLoading}
-          >
-            <Power className="mr-2 h-4 w-4" />
-            {org.is_active ? "Désactiver" : "Activer"}
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          {hasPlatformPermission("organizations.edit") && (
+            <Button variant="outline" onClick={() => setEdition(true)}>
+              <Pencil className="mr-2 h-4 w-4" /> Modifier
+            </Button>
+          )}
+          {hasPlatformPermission("organizations.activate_subscription") && (
+            <Button variant="outline" onClick={() => setActivation(true)}>
+              <CreditCard className="mr-2 h-4 w-4" /> Activer un abonnement
+            </Button>
+          )}
+          {hasPlatformPermission("organizations.toggle_active") && (
+            <Button variant={org.is_active ? "outline" : "default"} onClick={() => setBascule(true)}>
+              <Power className="mr-2 h-4 w-4" /> {org.is_active ? "Désactiver" : "Réactiver"}
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Info cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* General info */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              Informations
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-medium">
+              <Building2 className="h-4 w-4 text-muted-foreground" /> Fiche
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Type</span>
-              <Badge variant="secondary">{org.business_type}</Badge>
-            </div>
-            {org.email && (
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Email</span>
-                <span className="flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                  {org.email}
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Téléphone (contact)</span>
-              <span className="flex items-center gap-1.5 text-right">
-                <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {org.phone?.trim() ? org.phone : "-"}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Localisation</span>
-              <span className="flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                {org.city}, {org.country}
-              </span>
-            </div>
-            {org.address && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Adresse</span>
-                <span className="text-right max-w-[200px]">{org.address}</span>
-              </div>
-            )}
-            {org.tax_id && (
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">NIF</span>
-                <span className="flex items-center gap-1.5">
-                  <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                  {org.tax_id}
-                </span>
-              </div>
-            )}
-            {org.currency && (
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Devise</span>
-                <span className="flex items-center gap-1.5">
-                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                  {org.currency}
-                </span>
-              </div>
-            )}
+          <CardContent className="divide-y">
+            <Ligne label="E-mail" valeur={org.email && <a href={`mailto:${org.email}`} className="hover:underline">{org.email}</a>} />
+            <Ligne label="Téléphone" valeur={org.phone && <a href={`tel:${org.phone}`} className="hover:underline">{org.phone}</a>} />
+            <Ligne label="Adresse" valeur={org.address} />
+            <Ligne label="NIF" valeur={org.tax_id} />
+            <Ligne label="RCCM" valeur={org.rccm} />
+            <Ligne label="ID Nat" valeur={org.id_nat} />
+            <Ligne label="Devise principale" valeur={org.currency} />
           </CardContent>
         </Card>
 
-        {/* Owner */}
         <Card className="border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              Propriétaire & Équipe
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-medium">
+              <CreditCard className="h-4 w-4 text-muted-foreground" /> Abonnement
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Propriétaire</span>
-              <span className="font-medium">{org.owner_name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Email</span>
-              <span>{org.owner_email}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Membres</span>
-              <span className="font-medium">{org.members_count}</span>
+          <CardContent>
+            {sub ? (
+              <div className="divide-y">
+                <Ligne label="Plan" valeur={sub.plan_name} />
+                <Ligne label="Statut" valeur={<Badge variant="outline">{sub.status_display}</Badge>} />
+                <Ligne label="Prix" valeur={montant(sub.price, sub.currency)} />
+                <Ligne label="Échéance" valeur={`${dateCourte(sub.current_period_end)} (${sub.days_remaining} j)`} />
+                <div className="pt-3">
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/admin/subscriptions/${sub.id}`}>Ouvrir l&apos;abonnement</Link>
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="py-4 text-sm text-muted-foreground">
+                Aucun abonnement en cours : l&apos;établissement est bloqué en écriture.
+              </p>
+            )}
+            <div className="pt-3">
+              <Link href={`/admin/subscriptions?organization=${org.id}`} className="text-sm text-primary hover:underline">
+                Historique des abonnements
+              </Link>
             </div>
           </CardContent>
         </Card>
 
-        {/* Subscription */}
         <Card className="border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-muted-foreground" />
-              Abonnement
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-medium">
+              <Phone className="h-4 w-4 text-muted-foreground" /> Contact
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Plan</span>
-              <span className="font-medium">{org.subscription_plan || "-"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Statut</span>
-              <Badge variant="secondary">{org.subscription_status || "Aucun"}</Badge>
-            </div>
-            {org.subscription_end && (
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Expiration</span>
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                  {new Date(org.subscription_end).toLocaleDateString()}
-                </span>
-              </div>
+          <CardContent className="space-y-2 text-sm">
+            <p className="font-medium">{org.owner_name}</p>
+            {org.owner_email !== "-" && (
+              <a href={`mailto:${org.owner_email}`} className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
+                <Mail className="h-4 w-4" /> {org.owner_email}
+              </a>
+            )}
+            {org.city && (
+              <p className="flex items-center gap-2 text-muted-foreground">
+                <MapPin className="h-4 w-4" /> {org.city}
+              </p>
+            )}
+            {org.owner_name === "-" && (
+              <p className="text-destructive">Aucun propriétaire actif : personne ne peut régler l&apos;abonnement.</p>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent activity */}
+      <Card className="border">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base font-medium">
+            <Users className="h-4 w-4 text-muted-foreground" /> Équipe ({org.members?.length ?? 0})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="divide-y">
+          {(org.members ?? []).map((m) => {
+            const fermeture = raisonSansPriseEnMain(m.is_active, m.is_platform_admin, "Compte ou adhésion inactif");
+            return (
+              <div key={m.user_id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href={`/admin/users/${m.user_id}`} className="font-medium hover:underline">{m.name || m.email}</Link>
+                    <Badge variant="outline">{m.role_display}</Badge>
+                    {!m.is_active && <Badge variant="outline">Inactif</Badge>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{m.email}</p>
+                </div>
+                {peutPrendreLaMain && (
+                  <div className="flex flex-col items-start gap-1 sm:items-end">
+                    <Button size="sm" variant="outline" disabled={fermeture !== null} onClick={() => setPriseSur(m)}>
+                      <Eye className="mr-2 h-4 w-4" /> Prendre la main
+                    </Button>
+                    {fermeture && <p className="text-xs text-muted-foreground">{fermeture}</p>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {voitJournal && (
+          <Card className="border">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="flex items-center gap-2 text-base font-medium">
+                <ScrollText className="h-4 w-4 text-muted-foreground" /> Actes d&apos;administration
+              </CardTitle>
+              <Link href="/admin/audit-log" className="text-sm text-primary hover:underline">Journal complet</Link>
+            </CardHeader>
+            <CardContent className="divide-y">
+              {journal.length === 0 ? (
+                <p className="py-4 text-sm text-muted-foreground">Aucun acte sur cette fiche.</p>
+              ) : (
+                journal.map((l) => (
+                  <div key={l.id} className="py-2 text-sm">
+                    <p>
+                      <span className="font-medium">{l.actor_name || l.actor_email || "Système"}</span> · {l.action_display}
+                    </p>
+                    {l.reason && <p className="text-muted-foreground">« {l.reason} »</p>}
+                    <p className="text-xs text-muted-foreground">{dateHeure(l.created_at)}</p>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {voitJournal && (
+          <Card className="border">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base font-medium">
+                <Eye className="h-4 w-4 text-muted-foreground" /> Prises en main
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="divide-y">
+              {prises.length === 0 ? (
+                <p className="py-4 text-sm text-muted-foreground">Aucune prise en main sur cet établissement.</p>
+              ) : (
+                prises.map((p) => (
+                  <div key={p.id} className="py-2 text-sm">
+                    <p>
+                      <span className="font-medium">{p.impersonator_email}</span> → {p.target_email}
+                      {p.is_live && <Badge className="ml-2" variant="default">En cours</Badge>}
+                    </p>
+                    <p className="text-muted-foreground">« {p.reason} »</p>
+                    <p className="text-xs text-muted-foreground">
+                      {dateHeure(p.started_at)}
+                      {p.ended_at ? ` · ${p.ended_reason_display.toLowerCase()} ${dateHeure(p.ended_at)}` : ""}
+                    </p>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       {org.recent_activity && org.recent_activity.length > 0 && (
         <Card className="border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium">Activité récente</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-medium">Activité récente dans l&apos;établissement</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="divide-y">
-              {org.recent_activity.map((activity, idx) => (
-                <div key={idx} className="flex items-center justify-between py-3 text-sm">
-                  <div>
-                    <span className="font-medium">{activity.user}</span>
-                    <span className="text-muted-foreground"> - {activity.action}</span>
-                    {activity.resource_type && (
-                      <Badge variant="outline" className="ml-2 text-xs">{activity.resource_type}</Badge>
-                    )}
-                  </div>
-                  <span className="text-muted-foreground text-xs">
-                    {new Date(activity.created_at).toLocaleString()}
-                  </span>
-                </div>
-              ))}
-            </div>
+          <CardContent className="divide-y">
+            {org.recent_activity.map((a, i) => (
+              <div key={i} className="flex justify-between gap-3 py-2 text-sm">
+                <span>
+                  <span className="font-medium">{a.user}</span> · {a.action}
+                  {a.resource_type ? ` · ${a.resource_type}` : ""}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">{dateHeure(a.created_at)}</span>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
 
-      {/* Dates */}
-      <Card className="border">
-        <CardContent className="py-4">
-          <div className="flex gap-8 text-sm text-muted-foreground">
-            <span>Créé le {new Date(org.created_at).toLocaleString()}</span>
-            {org.updated_at && <span>Modifié le {new Date(org.updated_at).toLocaleString()}</span>}
-          </div>
-        </CardContent>
-      </Card>
+      {edition && (
+        <OrganizationEditDialog
+          open
+          onOpenChange={(o) => !o && setEdition(false)}
+          organization={org}
+          onSaved={(o) => {
+            setOrg(o);
+            actualiser();
+          }}
+        />
+      )}
+      {activation && (
+        <ActivateSubscriptionDialog
+          open
+          onOpenChange={(o) => !o && setActivation(false)}
+          organizationId={org.id}
+          organizationName={org.name}
+          onDone={actualiser}
+        />
+      )}
+      {priseSur && (
+        <ImpersonateDialog
+          open
+          onOpenChange={(o) => !o && setPriseSur(null)}
+          userId={priseSur.user_id}
+          userLabel={priseSur.name || priseSur.email}
+          organizationId={org.id}
+          organizationName={org.name}
+        />
+      )}
+      <ConfirmDialog
+        open={bascule}
+        onOpenChange={setBascule}
+        title={org.is_active ? "Désactiver l'établissement" : "Réactiver l'établissement"}
+        entityName={org.name}
+        description={
+          org.is_active
+            ? "L'établissement est marqué inactif dans l'administration, pour le suivi. Ce marquage ne bloque pas encore le marchand : pour l'arrêter, annulez son abonnement. Ses données ne sont pas touchées."
+            : "L'établissement redevient actif."
+        }
+        confirmLabel={org.is_active ? "Désactiver" : "Réactiver"}
+        destructive={org.is_active}
+        reason={org.is_active ? "required" : "optional"}
+        onConfirm={basculer}
+      />
     </div>
   );
 }

@@ -14,8 +14,8 @@ export interface AdminDashboardStats {
   active_organizations: number;
   total_users: number;
   new_users_this_month: number;
-  total_revenue: string;
-  revenue_this_month: string;
+  /** L'encaissé, PAR DEVISE : il n'existe pas de total inter-devises. */
+  revenue_by_currency: Array<{ currency: string; total: string; this_month: string }>;
   subscriptions_by_status: Record<string, number>;
   subscriptions_by_plan: Array<{ plan__name: string; count: number }>;
   recent_organizations: Array<{
@@ -26,7 +26,16 @@ export interface AdminDashboardStats {
   }>;
   growth_trend: Array<{ month: string; count: number }>;
   users_trend: Array<{ month: string; count: number }>;
-  revenue_trend: Array<{ month: string; total: string }>;
+  revenue_trend: Array<{ month: string; by_currency: Record<string, string> }>;
+  /** MRR dans la devise principale de la plateforme (`mrr_currency`). */
+  mrr: string;
+  mrr_currency: string | null;
+  mrr_by_currency: Array<{ currency: string; mrr: string; paying_organizations: number }>;
+  arpu: string;
+  paying_organizations: number;
+  trialing_organizations: number;
+  /** `null` quand il n'y avait personne à perdre : ce n'est pas « 0 % ». */
+  churn_rate_30d: string | null;
 }
 
 export interface AdminOrganization {
@@ -42,12 +51,19 @@ export interface AdminOrganization {
   owner_email: string;
   members_count: number;
   subscription_status: string;
+  subscription_status_code: string | null;
   subscription_plan: string;
   subscription_end?: string;
   created_at: string;
   address?: string;
   tax_id?: string;
+  rccm?: string;
+  id_nat?: string;
+  timezone?: string;
+  subscription_floor_tier?: number;
   currency?: string;
+  members?: AdminOrganizationMember[];
+  subscription?: AdminOrganizationSubscription | null;
   recent_activity?: Array<{
     user: string;
     action: string;
@@ -56,6 +72,34 @@ export interface AdminOrganization {
   }>;
   updated_at: string;
 }
+
+export interface AdminOrganizationMember {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
+  role_display: string;
+  is_active: boolean;
+  /** On ne prend jamais la main sur un administrateur : le bouton se ferme. */
+  is_platform_admin: boolean;
+  joined_at: string;
+}
+
+export interface AdminOrganizationSubscription {
+  id: string;
+  plan_id: string;
+  plan_name: string;
+  status: string;
+  status_display: string;
+  billing_cycle: string;
+  price: string;
+  currency: string;
+  current_period_start: string;
+  current_period_end: string;
+  days_remaining: number;
+}
+
+export type PlatformRole = "support" | "super_admin";
 
 export interface AdminUser {
   id: string;
@@ -66,12 +110,17 @@ export interface AdminUser {
   phone?: string;
   is_active: boolean;
   is_staff: boolean;
+  is_superuser: boolean;
   is_email_verified: boolean;
+  platform_role: PlatformRole | null;
+  platform_role_display: string | null;
+  platform_profile?: PlatformAdminProfile | null;
   organizations_count: number;
   organizations: Array<{
     id: string;
     name: string;
     role: string;
+    role_code: string;
   }>;
   date_joined: string;
   last_login?: string;
@@ -131,6 +180,7 @@ export interface AdminSubscription {
   current_period_start: string;
   current_period_end: string;
   days_remaining: number;
+  cancelled_at: string | null;
   created_at: string;
 }
 
@@ -162,6 +212,11 @@ export interface UpdatePlanData extends Partial<CreatePlanData> { }
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+/** Le message à montrer, champ par champ quand le serveur en désigne un. */
+function messageDe(error: unknown, repli: string): string {
+  return formatAxiosErrorMessage(error, repli);
+}
 
 function getHeaders(accessToken: string) {
   return {
@@ -257,12 +312,13 @@ export async function getAdminOrganization(
 
 export async function toggleOrganizationActive(
   accessToken: string,
-  organizationId: string
+  organizationId: string,
+  reason = ""
 ): Promise<{ success: boolean; message?: string }> {
   try {
     const response = await axios.post(
       `${API_BASE_URL}/platform-admin/organizations/${organizationId}/toggle_active/`,
-      {},
+      { reason },
       { headers: getHeaders(accessToken) }
     );
 
@@ -271,7 +327,7 @@ export async function toggleOrganizationActive(
     console.error("Error toggling organization:", error);
     return {
       success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la modification de l'organisation",
+      message: messageDe(error, "Erreur lors de la modification de l'organisation"),
     };
   }
 }
@@ -297,7 +353,7 @@ export async function activateOrganizationSubscription(
     console.error("Error activating subscription:", error);
     return {
       success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de l'activation de l'abonnement",
+      message: messageDe(error, "Erreur lors de l'activation de l'abonnement"),
     };
   }
 }
@@ -314,6 +370,7 @@ export async function getAdminUsers(
     search?: string;
     is_active?: boolean;
     is_staff?: boolean;
+    ordering?: string;
   }
 ): Promise<{ success: boolean; data?: { results: AdminUser[]; count: number; next: string | null; previous: string | null }; message?: string }> {
   try {
@@ -381,12 +438,13 @@ export async function getAdminSubscription(
 
 export async function toggleUserActive(
   accessToken: string,
-  userId: string
+  userId: string,
+  reason = ""
 ): Promise<{ success: boolean; message?: string }> {
   try {
     const response = await axios.post(
       `${API_BASE_URL}/platform-admin/users/${userId}/toggle_active/`,
-      {},
+      { reason },
       { headers: getHeaders(accessToken) }
     );
 
@@ -395,29 +453,93 @@ export async function toggleUserActive(
     console.error("Error toggling user:", error);
     return {
       success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la modification de l'utilisateur",
+      message: messageDe(error, "Erreur lors de la modification de l'utilisateur"),
     };
   }
 }
 
-export async function toggleUserStaff(
-  accessToken: string,
-  userId: string
-): Promise<{ success: boolean; message?: string }> {
-  try {
-    const response = await axios.post(
-      `${API_BASE_URL}/platform-admin/users/${userId}/toggle_staff/`,
-      {},
-      { headers: getHeaders(accessToken) }
-    );
+export interface CreateAdminUserData {
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  password: string;
+  password_confirm: string;
+}
 
-    return { success: true, message: response.data.message };
+/**
+ * Crée un compte. Le mot de passe passe par `create_user` côté serveur : le
+ * compte naissait jusqu'ici sans mot de passe haché, donc inutilisable.
+ */
+export async function createAdminUser(
+  accessToken: string,
+  data: CreateAdminUserData
+): Promise<{ success: boolean; data?: AdminUser; message?: string; errors?: Record<string, unknown> }> {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/platform-admin/users/`, data, {
+      headers: getHeaders(accessToken),
+    });
+    return { success: true, data: response.data };
   } catch (error: unknown) {
-    console.error("Error toggling user staff:", error);
     return {
       success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la modification du statut admin",
+      message: messageDe(error, "Erreur lors de la création du compte"),
+      errors: getErrorBody(error),
     };
+  }
+}
+
+export async function updateAdminUser(
+  accessToken: string,
+  userId: string,
+  data: { first_name?: string; last_name?: string; phone?: string }
+): Promise<{ success: boolean; data?: AdminUser; message?: string; errors?: Record<string, unknown> }> {
+  try {
+    const response = await axios.patch(`${API_BASE_URL}/platform-admin/users/${userId}/`, data, {
+      headers: getHeaders(accessToken),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: messageDe(error, "Erreur lors de la mise à jour du compte"),
+      errors: getErrorBody(error),
+    };
+  }
+}
+
+/** Accorde ou change le rôle plateforme. Réservé à `platform_admins.manage`. */
+export async function grantPlatformRole(
+  accessToken: string,
+  userId: string,
+  data: { role: PlatformRole; extra_permissions?: string[]; notes?: string }
+): Promise<{ success: boolean; data?: AdminUser; message?: string }> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/platform-admin/users/${userId}/grant_role/`,
+      data,
+      { headers: getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Erreur lors de l'attribution du rôle") };
+  }
+}
+
+export async function revokePlatformRole(
+  accessToken: string,
+  userId: string,
+  reason = ""
+): Promise<{ success: boolean; data?: AdminUser; message?: string }> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/platform-admin/users/${userId}/revoke_role/`,
+      { reason },
+      { headers: getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Erreur lors du retrait du rôle") };
   }
 }
 
@@ -470,26 +592,6 @@ export async function getAdminPlans(
   }
 }
 
-export async function getAdminPlan(
-  accessToken: string,
-  planId: string
-): Promise<{ success: boolean; data?: AdminPlan; message?: string }> {
-  try {
-    const response = await axios.get(
-      `${API_BASE_URL}/platform-admin/plans/${planId}/`,
-      { headers: getHeaders(accessToken) }
-    );
-
-    return { success: true, data: response.data };
-  } catch (error: unknown) {
-    console.error("Error fetching admin plan:", error);
-    return {
-      success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors du chargement du plan",
-    };
-  }
-}
-
 export async function createAdminPlan(
   accessToken: string,
   data: CreatePlanData
@@ -510,7 +612,7 @@ export async function createAdminPlan(
     console.error("Error creating plan:", error);
     return {
       success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la création du plan",
+      message: messageDe(error, "Erreur lors de la création du plan"),
     };
   }
 }
@@ -536,27 +638,29 @@ export async function updateAdminPlan(
     console.error("Error updating plan:", error);
     return {
       success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la mise à jour du plan",
+      message: messageDe(error, "Erreur lors de la mise à jour du plan"),
     };
   }
 }
 
-export async function deleteAdminPlan(
+/**
+ * Retire un plan de la vente, ou l'y remet. Un plan ne se supprime pas : une
+ * facture passée le désigne peut-être encore, et ses abonnés le gardent.
+ */
+export async function togglePlanActive(
   accessToken: string,
-  planId: string
-): Promise<{ success: boolean; message?: string }> {
+  planId: string,
+  reason = ""
+): Promise<{ success: boolean; data?: AdminPlan; message?: string }> {
   try {
-    await axios.delete(`${API_BASE_URL}/platform-admin/plans/${planId}/`, {
-      headers: getHeaders(accessToken),
-    });
-
-    return { success: true, message: "Plan supprimé avec succès" };
+    const response = await axios.post(
+      `${API_BASE_URL}/platform-admin/plans/${planId}/toggle_active/`,
+      { reason },
+      { headers: getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
   } catch (error: unknown) {
-    console.error("Error deleting plan:", error);
-    return {
-      success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la suppression du plan",
-    };
+    return { success: false, message: messageDe(error, "Erreur lors de la modification du plan") };
   }
 }
 
@@ -573,6 +677,8 @@ export async function getAdminSubscriptions(
     status?: string;
     billing_cycle?: string;
     plan?: string;
+    organization?: string;
+    ordering?: string;
   }
 ): Promise<{ success: boolean; data?: { results: AdminSubscription[]; count: number; next: string | null; previous: string | null }; message?: string }> {
   try {
@@ -603,12 +709,13 @@ export async function getAdminSubscriptions(
 export async function extendSubscription(
   accessToken: string,
   subscriptionId: string,
-  days: number
+  days: number,
+  reason = ""
 ): Promise<{ success: boolean; message?: string }> {
   try {
     const response = await axios.post(
       `${API_BASE_URL}/platform-admin/subscriptions/${subscriptionId}/extend/`,
-      { days },
+      { days, reason },
       { headers: getHeaders(accessToken) }
     );
 
@@ -617,19 +724,20 @@ export async function extendSubscription(
     console.error("Error extending subscription:", error);
     return {
       success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la prolongation de l'abonnement",
+      message: messageDe(error, "Erreur lors de la prolongation de l'abonnement"),
     };
   }
 }
 
 export async function cancelSubscription(
   accessToken: string,
-  subscriptionId: string
+  subscriptionId: string,
+  reason = ""
 ): Promise<{ success: boolean; message?: string }> {
   try {
     const response = await axios.post(
       `${API_BASE_URL}/platform-admin/subscriptions/${subscriptionId}/cancel/`,
-      {},
+      { reason },
       { headers: getHeaders(accessToken) }
     );
 
@@ -638,7 +746,7 @@ export async function cancelSubscription(
     console.error("Error canceling subscription:", error);
     return {
       success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de l'annulation de l'abonnement",
+      message: messageDe(error, "Erreur lors de l'annulation de l'abonnement"),
     };
   }
 }
@@ -665,10 +773,7 @@ export async function createAdminSubscription(
     return { success: true, data: response.data, message: "Abonnement créé avec succès" };
   } catch (error: unknown) {
     console.error("Error creating subscription:", error);
-    const detail = getErrorBody(error)?.detail
-      || Object.values(getErrorBody(error) || {}).flat().join(", ")
-      || "Erreur lors de la création de l'abonnement";
-    return { success: false, message: detail };
+    return { success: false, message: messageDe(error, "Erreur lors de la création de l'abonnement") };
   }
 }
 
@@ -745,5 +850,404 @@ export async function updateAppRelease(
       message: formatAxiosErrorMessage(error, "Erreur lors de l'enregistrement"),
       errors: getErrorBody(error),
     };
+  }
+}
+
+// =============================================================================
+// QUI SUIS-JE
+// =============================================================================
+
+export interface AdminMe {
+  id: string;
+  email: string;
+  full_name: string;
+  role: PlatformRole | null;
+  role_display: string | null;
+  is_super_admin: boolean;
+  is_support: boolean;
+  /** Codes du catalogue `apps/platform_admin/permissions_catalog.py`. */
+  permissions: string[];
+}
+
+/**
+ * Le rôle et les permissions de l'instant.
+ *
+ * ⚠ Lus ici et non dans le jeton : un rôle posé dans le JWT resterait figé
+ * jusqu'à la reconnexion, et un support rétrogradé garderait des boutons que le
+ * serveur lui refuse. `status` distingue « pas d'accès » (403) d'une panne.
+ */
+export async function getAdminMe(
+  accessToken: string
+): Promise<{ success: boolean; data?: AdminMe; status?: number; message?: string }> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/platform-admin/me/`, {
+      headers: getHeaders(accessToken),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    const statut = (error as { response?: { status?: number } })?.response?.status;
+    return { success: false, status: statut, message: messageDe(error, "Erreur lors du chargement du profil") };
+  }
+}
+
+// =============================================================================
+// ORGANISATION : ÉDITION
+// =============================================================================
+
+export interface UpdateAdminOrganizationData {
+  name?: string;
+  business_type?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  tax_id?: string;
+  rccm?: string;
+  id_nat?: string;
+}
+
+export async function updateAdminOrganization(
+  accessToken: string,
+  organizationId: string,
+  data: UpdateAdminOrganizationData
+): Promise<{ success: boolean; data?: AdminOrganization; message?: string; errors?: Record<string, unknown> }> {
+  try {
+    const response = await axios.patch(
+      `${API_BASE_URL}/platform-admin/organizations/${organizationId}/`,
+      data,
+      { headers: getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: messageDe(error, "Erreur lors de la mise à jour de l'organisation"),
+      errors: getErrorBody(error),
+    };
+  }
+}
+
+// =============================================================================
+// ADMINISTRATEURS DE LA PLATEFORME
+// =============================================================================
+
+export interface PlatformAdminProfile {
+  id: string;
+  user_id: string;
+  email: string;
+  full_name: string;
+  user_is_active: boolean;
+  role: PlatformRole;
+  role_display: string;
+  is_active: boolean;
+  extra_permissions: string[];
+  granted_by_email: string | null;
+  granted_at: string;
+  revoked_by_email: string | null;
+  revoked_at: string | null;
+  notes: string;
+}
+
+export async function getPlatformAdmins(
+  accessToken: string,
+  filters?: { is_active?: boolean; role?: PlatformRole; search?: string; page?: number }
+): Promise<{ success: boolean; data?: { results: PlatformAdminProfile[]; count: number }; message?: string }> {
+  try {
+    const params = new URLSearchParams();
+    Object.entries(filters || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") params.append(k, String(v));
+    });
+    const response = await axios.get(`${API_BASE_URL}/platform-admin/platform-admins/?${params}`, {
+      headers: getHeaders(accessToken),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Erreur lors du chargement des administrateurs") };
+  }
+}
+
+// =============================================================================
+// JOURNAL D'AUDIT
+// =============================================================================
+
+export interface AdminActionLogEntry {
+  id: string;
+  created_at: string;
+  actor: string | null;
+  actor_email: string;
+  actor_name: string | null;
+  action: string;
+  action_display: string;
+  target_type: string;
+  target_type_display: string;
+  target_id: string;
+  target_repr: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  reason: string;
+  ip_address: string | null;
+}
+
+export interface AdminActionLogFilters {
+  page?: number;
+  page_size?: number;
+  search?: string;
+  action?: string;
+  target_type?: string;
+  target_id?: string;
+  actor?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export async function getAdminAuditLog(
+  accessToken: string,
+  filters?: AdminActionLogFilters
+): Promise<{ success: boolean; data?: { results: AdminActionLogEntry[]; count: number }; message?: string }> {
+  try {
+    const params = new URLSearchParams();
+    Object.entries(filters || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") params.append(k, String(v));
+    });
+    const response = await axios.get(`${API_BASE_URL}/platform-admin/audit-log/?${params}`, {
+      headers: getHeaders(accessToken),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Erreur lors du chargement du journal") };
+  }
+}
+
+// =============================================================================
+// MÉTRIQUES RÉCURRENTES
+// =============================================================================
+
+export interface AdminMetrics {
+  currency: string | null;
+  multi_currency: boolean;
+  mrr: string;
+  mrr_by_currency: Array<{ currency: string; mrr: string; paying_organizations: number }>;
+  arpu: string;
+  paying_organizations: number;
+  trialing_organizations: number;
+  new_paying_30d: number;
+  churned_30d: number;
+  churn_rate_30d: string | null;
+  trend: Array<{
+    month: string;
+    mrr_by_currency: Record<string, string>;
+    paying_organizations: number;
+    /** `null` pour le premier mois : il n'y a rien à quoi le comparer. */
+    new: number | null;
+    churned: number | null;
+  }>;
+}
+
+export async function getAdminMetrics(
+  accessToken: string,
+  months = 12
+): Promise<{ success: boolean; data?: AdminMetrics; message?: string }> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/platform-admin/metrics/?months=${months}`, {
+      headers: getHeaders(accessToken),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Erreur lors du chargement des métriques") };
+  }
+}
+
+// =============================================================================
+// INCIDENTS
+// =============================================================================
+
+export type IncidentSeverity = "critical" | "high" | "medium";
+
+interface IncidentContact {
+  owner_name?: string | null;
+  owner_email?: string | null;
+  phone?: string | null;
+}
+
+export interface SubscriptionIncident extends IncidentContact {
+  subscription_id: string;
+  organization_id: string;
+  organization_name: string;
+  plan_name: string;
+  status: string;
+  status_display: string;
+  current_period_end: string;
+  days_remaining: number;
+  days_overdue: number;
+  severity: IncidentSeverity;
+  reason: string;
+}
+
+export interface PaymentIncident extends IncidentContact {
+  payment_id: string;
+  reference: string;
+  organization_id: string;
+  organization_name: string;
+  amount: string;
+  currency: string;
+  status: string;
+  status_display: string;
+  created_at: string;
+  age_minutes: number;
+  reconcile_attempts: number;
+  last_reconciled_at: string | null;
+  plan_id: string | null;
+  billing_cycle: string | null;
+  severity: IncidentSeverity;
+}
+
+export interface OrphanOrganizationIncident {
+  organization_id: string;
+  organization_name: string;
+  phone: string | null;
+  email: string | null;
+  created_at: string;
+  severity: IncidentSeverity;
+}
+
+export interface AdminIncidents {
+  generated_at: string;
+  counts: {
+    subscriptions_at_risk: number;
+    payments_to_review: number;
+    organizations_without_owner: number;
+    critical: number;
+  };
+  subscriptions_at_risk: SubscriptionIncident[];
+  payments_to_review: PaymentIncident[];
+  organizations_without_owner: OrphanOrganizationIncident[];
+  /** Les listes s'arrêtent à `limit` ; les décomptes, eux, sont exacts. */
+  limit: number;
+}
+
+export async function getAdminIncidents(
+  accessToken: string
+): Promise<{ success: boolean; data?: AdminIncidents; message?: string }> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/platform-admin/incidents/`, {
+      headers: getHeaders(accessToken),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Erreur lors du chargement des incidents") };
+  }
+}
+
+export interface ReconcileReport {
+  checked: number;
+  reconciled: number;
+  still_pending: number;
+  really_failed: number;
+  unresolved: number;
+  dry_run: boolean;
+  skipped: number;
+  details: Record<"reconciled" | "still_pending" | "really_failed" | "unresolved", Array<{ reference: string; detail: string }>>;
+}
+
+/** Interroge l'opérateur pour un paiement (ou le lot), et active ce qui a été encaissé. */
+export async function reconcilePayments(
+  accessToken: string,
+  options: { reference?: string; dry_run?: boolean } = {}
+): Promise<{ success: boolean; data?: ReconcileReport; message?: string }> {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/platform-admin/incidents/reconcile/`, options, {
+      headers: getHeaders(accessToken),
+      // L'opérateur peut répondre lentement : un lot entier se compte en dizaines de secondes.
+      timeout: 120_000,
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Erreur lors de la réconciliation") };
+  }
+}
+
+// =============================================================================
+// PRISE EN MAIN
+// =============================================================================
+
+export interface ImpersonationStart {
+  /** Jeton d'accès de vingt minutes, lecture seule. Il n'y a PAS de jeton de rafraîchissement. */
+  access: string;
+  session_id: string;
+  expires_at: string;
+  target_user: { id: string; email: string; full_name: string };
+  organization: { id: string; name: string };
+}
+
+export async function startImpersonation(
+  accessToken: string,
+  userId: string,
+  organizationId: string,
+  reason: string
+): Promise<{ success: boolean; data?: ImpersonationStart; message?: string }> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/platform-admin/users/${userId}/impersonate/`,
+      { organization: organizationId, reason },
+      { headers: getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Impossible de prendre la main") };
+  }
+}
+
+/** ⚠ Appelée avec le jeton de PRISE EN MAIN, c'est le seul que le navigateur tient alors. */
+export async function endImpersonation(
+  impersonationToken: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    await axios.post(`${API_BASE_URL}/platform-admin/impersonation/end/`, {}, {
+      headers: getHeaders(impersonationToken),
+    });
+    return { success: true };
+  } catch (error: unknown) {
+    // Une session déjà close ou échue n'est pas un échec de la sortie.
+    const statut = (error as { response?: { status?: number } })?.response?.status;
+    if (statut === 401) return { success: true };
+    return { success: false, message: messageDe(error, "Impossible de terminer la prise en main") };
+  }
+}
+
+export interface ImpersonationSessionEntry {
+  id: string;
+  impersonator: string;
+  impersonator_email: string;
+  target_user: string;
+  target_email: string;
+  target_name: string;
+  organization: string;
+  organization_name: string;
+  reason: string;
+  started_at: string;
+  expires_at: string;
+  ended_at: string | null;
+  ended_reason: string;
+  ended_reason_display: string;
+  is_live: boolean;
+  ip_address: string | null;
+}
+
+export async function getImpersonationSessions(
+  accessToken: string,
+  filters?: { organization?: string; target_user?: string; impersonator?: string; page?: number }
+): Promise<{ success: boolean; data?: { results: ImpersonationSessionEntry[]; count: number }; message?: string }> {
+  try {
+    const params = new URLSearchParams();
+    Object.entries(filters || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") params.append(k, String(v));
+    });
+    const response = await axios.get(`${API_BASE_URL}/platform-admin/impersonation-sessions/?${params}`, {
+      headers: getHeaders(accessToken),
+    });
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Erreur lors du chargement des prises en main") };
   }
 }
