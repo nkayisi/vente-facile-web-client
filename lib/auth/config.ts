@@ -4,6 +4,7 @@ import { CredentialsSignin } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import { refreshWithMutex } from "./refresh-mutex";
 import { enTetesDeBordure } from "@/lib/api/bordure";
+import { PREFIXE_VERROU } from "./codes-connexion";
 
 function resolveApiBaseUrl(): string {
   // next-auth s'execute cote serveur : prefere l'URL interne Docker
@@ -213,6 +214,26 @@ class TropDeTentatives extends CredentialsSignin {
 }
 
 /**
+ * Le verrou de connexion (cinq échecs, quinze minutes) : le `code` porte les
+ * minutes à attendre, lu par la page de connexion (`lib/auth/codes-connexion.ts`).
+ */
+class ConnexionVerrouillee extends CredentialsSignin {
+  constructor(minutes: number) {
+    super();
+    this.code = `${PREFIXE_VERROU}${minutes}`;
+  }
+}
+
+/** Le verrou se distingue de la limite de débit par le `code` du corps. */
+async function refusDeTrop(response: Response): Promise<CredentialsSignin> {
+  const corps = (await response.json().catch(() => null)) as { code?: string; retry_after?: number } | null;
+  if (corps?.code === "login_locked" && typeof corps.retry_after === "number") {
+    return new ConnexionVerrouillee(Math.max(1, Math.ceil(corps.retry_after / 60)));
+  }
+  return new TropDeTentatives();
+}
+
+/**
  * Un statut qui ne peut PAS vouloir dire « mot de passe erroné ».
  *
  * ⚠ LE 404 EN FAIT PARTIE, et c'est contre-intuitif. Un proxy inverse qui n'a
@@ -263,7 +284,7 @@ export const authConfig: NextAuthConfig = {
             // ⚠ 429 : le backend throttle les tentatives anonymes en
             //   production. Dire « mot de passe incorrect » à quelqu'un qui est
             //   limité le fait réessayer, donc rester limité.
-            if (response.status === 429) throw new TropDeTentatives();
+            if (response.status === 429) throw await refusDeTrop(response);
             if (estUnePanne(response.status)) throw new ServiceIndisponible();
             return null;
           }

@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 import { getUserOrganizations } from "@/actions/organization.actions";
 import { getDefaultRedirectPath } from "@/lib/auth/redirect";
+import { minutesDuVerrou } from "@/lib/auth/codes-connexion";
 
 function LoginForm() {
   const router = useRouter();
@@ -103,10 +104,18 @@ function LoginForm() {
          * support, et le serveur était simplement arrêté. Les trois `code` sont
          * posés dans [lib/auth/config.ts](../../../lib/auth/config.ts).
          */
+        const minutesVerrou = minutesDuVerrou(result.code);
         if (result.code === "service_indisponible") {
           toast.error(
             "Le service est momentanément indisponible. Vos identifiants " +
               "n'y sont pour rien : réessayez dans quelques minutes.",
+          );
+        } else if (minutesVerrou !== null) {
+          // Le verrou de connexion : même un mot de passe juste n'ouvre pas avant
+          // l'échéance, et le dire évite de le retaper en boucle.
+          toast.error(
+            `Trop de tentatives sur ce compte. Réessayez dans ${minutesVerrou} minute${minutesVerrou > 1 ? "s" : ""} : ` +
+              "d'ici là, même le bon mot de passe ne sera pas accepté.",
           );
         } else if (result.code === "trop_de_tentatives") {
           toast.error(
