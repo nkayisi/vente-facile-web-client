@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import { CredentialsSignin } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import { refreshWithMutex } from "./refresh-mutex";
+import { enTetesDeBordure } from "@/lib/api/bordure";
 
 function resolveApiBaseUrl(): string {
   // next-auth s'execute cote serveur : prefere l'URL interne Docker
@@ -234,19 +235,22 @@ export const authConfig: NextAuthConfig = {
         email: { label: "Email", type: "email" },
         password: { label: "Mot de passe", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
           console.log("[Auth] Identifiants manquants");
           return null;
         }
 
         try {
-          console.log("[Auth] Tentative de connexion pour:", credentials.email);
-
+          // ⚠ Jamais l'adresse e-mail dans le journal : chaque tentative de
+          //   chaque marchand y finissait, en production.
           const response = await fetch(`${API_BASE_URL}/auth/token/`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              // L'adresse du navigateur : sans elle, le verrouillage et les
+              // limites de débit compteraient toutes les connexions ensemble.
+              ...(await enTetesDeBordure(request?.headers)),
             },
             body: JSON.stringify({
               email: credentials.email,

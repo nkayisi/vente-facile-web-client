@@ -7,10 +7,21 @@
  * Toujours visible, et rouge : un administrateur qui oublie qu'il regarde par
  * les yeux d'un marchand finit par croire que ses chiffres sont les siens.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Eye, Loader2, LogOut } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { isImpersonationLive } from "@/actions/admin.actions";
 import { usePriseEnMain } from "@/lib/auth/use-prise-en-main";
+
+/**
+ * ⚠ Un arrêt décidé AILLEURS (un super-administrateur, un rôle retiré, un compte
+ * désactivé) ne se voit pas d'ici : sans cette question posée à intervalle,
+ * l'administrateur garderait un bandeau qui annonce encore des minutes, devant
+ * des écrans qui ne répondent plus.
+ */
+const VERIFICATION_MS = 30_000;
 
 function restant(echeance: number, maintenant: number): string {
   const secondes = Math.max(0, Math.round((echeance - maintenant) / 1000));
@@ -20,8 +31,11 @@ function restant(echeance: number, maintenant: number): string {
 }
 
 export function ImpersonationBanner() {
+  const { data: session } = useSession();
+  const jeton = session?.accessToken;
   const { impersonation, sortir, enCours } = usePriseEnMain();
   const [maintenant, setMaintenant] = useState(() => Date.now());
+  const enVerification = useRef(false);
 
   useEffect(() => {
     if (!impersonation) return;
@@ -36,6 +50,28 @@ export function ImpersonationBanner() {
       void sortir();
     }
   }, [impersonation, maintenant, enCours, sortir]);
+
+  useEffect(() => {
+    if (!impersonation || !jeton) return;
+    let annule = false;
+    const minuteur = setInterval(async () => {
+      if (enVerification.current) return;
+      enVerification.current = true;
+      try {
+        // `null` n'est pas « coupé » : un réseau qui flanche ne rend pas la main.
+        if ((await isImpersonationLive(jeton)) === false && !annule) {
+          toast.error("La prise en main a été arrêtée.");
+          void sortir();
+        }
+      } finally {
+        enVerification.current = false;
+      }
+    }, VERIFICATION_MS);
+    return () => {
+      annule = true;
+      clearInterval(minuteur);
+    };
+  }, [impersonation, jeton, sortir]);
 
   if (!impersonation) return null;
 

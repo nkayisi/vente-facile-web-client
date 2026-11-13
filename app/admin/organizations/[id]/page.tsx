@@ -44,6 +44,7 @@ import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { ActivateSubscriptionDialog } from "@/components/admin/activate-subscription-dialog";
 import { OrganizationEditDialog, TYPES_ETABLISSEMENT } from "@/components/admin/organization-edit-dialog";
 import { ImpersonateDialog } from "@/components/admin/impersonate-dialog";
+import { ImpersonationSessionRow } from "@/components/admin/impersonation-session-row";
 import { dateCourte, dateHeure, montant, raisonSansPriseEnMain } from "@/lib/admin/format";
 
 function Ligne({ label, valeur }: { label: string; valeur?: React.ReactNode }) {
@@ -305,28 +306,17 @@ export default function AdminOrganizationDetailPage() {
 
         {voitJournal && (
           <Card className="border">
-            <CardHeader className="pb-2">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="flex items-center gap-2 text-base font-medium">
                 <Eye className="h-4 w-4 text-muted-foreground" /> Prises en main
               </CardTitle>
+              <Link href="/admin/impersonations" className="text-sm text-primary hover:underline">Toutes</Link>
             </CardHeader>
             <CardContent className="divide-y">
               {prises.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground">Aucune prise en main sur cet établissement.</p>
               ) : (
-                prises.map((p) => (
-                  <div key={p.id} className="py-2 text-sm">
-                    <p>
-                      <span className="font-medium">{p.impersonator_email}</span> → {p.target_email}
-                      {p.is_live && <Badge className="ml-2" variant="default">En cours</Badge>}
-                    </p>
-                    <p className="text-muted-foreground">« {p.reason} »</p>
-                    <p className="text-xs text-muted-foreground">
-                      {dateHeure(p.started_at)}
-                      {p.ended_at ? ` · ${p.ended_reason_display.toLowerCase()} ${dateHeure(p.ended_at)}` : ""}
-                    </p>
-                  </div>
-                ))
+                prises.map((p) => <ImpersonationSessionRow key={p.id} session={p} />)
               )}
             </CardContent>
           </Card>

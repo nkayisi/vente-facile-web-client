@@ -14,6 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getAdminAuditLog, type AdminActionLogEntry } from "@/actions/admin.actions";
+import { AdministrateurSelect, TOUS_LES_ADMINISTRATEURS } from "@/components/admin/administrateur-select";
 import { AdminPagination } from "@/components/admin/admin-pagination";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { compte, dateHeure } from "@/lib/admin/format";
@@ -70,6 +71,7 @@ export default function AuditLogPage() {
   const terme = useDebouncedValue(recherche);
   const [cible, setCible] = useState("all");
   const [action, setAction] = useState("all");
+  const [auteur, setAuteur] = useState(TOUS_LES_ADMINISTRATEURS);
   const [du, setDu] = useState("");
   const [au, setAu] = useState("");
   const [page, setPage] = useState(1);
@@ -86,6 +88,7 @@ export default function AuditLogPage() {
         search: terme || undefined,
         target_type: cible === "all" ? undefined : cible,
         action: action === "all" ? undefined : action,
+        actor: auteur === TOUS_LES_ADMINISTRATEURS ? undefined : auteur,
         date_from: du || undefined,
         date_to: au || undefined,
       });
@@ -99,7 +102,7 @@ export default function AuditLogPage() {
     return () => {
       annule = true;
     };
-  }, [jeton, page, terme, cible, action, du, au]);
+  }, [jeton, page, terme, cible, action, auteur, du, au]);
 
   // ⚠ Un filtre qui change ramène à la page 1, DANS le geste : une page 3 d'un
   // résultat qui n'en a qu'une s'afficherait vide, et se lirait « rien ».
@@ -118,7 +121,8 @@ export default function AuditLogPage() {
       </div>
 
       <Card className="border">
-        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+        {/* Deux rangées de quatre colonnes : les six champs sur une ligne tronquaient leurs libellés à 1280 px. */}
+        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="relative xl:col-span-2">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -140,6 +144,14 @@ export default function AuditLogPage() {
               {ACTIONS.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
             </SelectContent>
           </Select>
+          <div className="xl:col-span-2">
+            <AdministrateurSelect
+              value={auteur}
+              onChange={filtrer(setAuteur)}
+              libelleTous="Tous les auteurs"
+              ariaLabel="Auteur"
+            />
+          </div>
           {/* Deux colonnes de la grille : un champ de date plus étroit coupe son propre gabarit (« dd/m… »). */}
           <div className="grid grid-cols-2 gap-2 xl:col-span-2">
             <Input type="date" value={du} onChange={(e) => filtrer(setDu)(e.target.value)} aria-label="Du" />

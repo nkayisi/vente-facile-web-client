@@ -17,6 +17,7 @@ import {
   TrendingUp,
   ScrollText,
   ShieldCheck,
+  Eye,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
@@ -45,6 +46,7 @@ const adminMenuItems: EntreeMenu[] = [
   { title: "Plans", href: "/admin/plans", icon: CreditCard, platformPermission: "plans.view" },
   { title: "Statistiques", href: "/admin/statistiques", icon: TrendingUp, platformPermission: "metrics.view" },
   { title: "Journal d'audit", href: "/admin/audit-log", icon: ScrollText, platformPermission: "audit_log.view" },
+  { title: "Prises en main", href: "/admin/impersonations", icon: Eye, platformPermission: "audit_log.view" },
   { title: "Administrateurs", href: "/admin/administrators", icon: ShieldCheck, platformPermission: "platform_admins.view" },
   { title: "Application mobile", href: "/admin/application", icon: Smartphone, platformPermission: "app_release.view" },
 ];

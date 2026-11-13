@@ -35,16 +35,19 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   getAdminAuditLog,
   getAdminUser,
+  getImpersonationSessions,
   revokePlatformRole,
   toggleUserActive,
   type AdminActionLogEntry,
   type AdminUser,
+  type ImpersonationSessionEntry,
 } from "@/actions/admin.actions";
 import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { RoleDialog } from "@/components/admin/role-dialog";
 import { UserEditDialog } from "@/components/admin/user-dialogs";
 import { ImpersonateDialog } from "@/components/admin/impersonate-dialog";
+import { ImpersonationSessionRow } from "@/components/admin/impersonation-session-row";
 import { dateCourte, dateHeure, raisonSansPriseEnMain } from "@/lib/admin/format";
 
 function initiales(nom?: string | null, email?: string) {
@@ -74,6 +77,7 @@ export default function AdminUserDetailPage() {
   const [user, setUser] = useState<AdminUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [journal, setJournal] = useState<AdminActionLogEntry[]>([]);
+  const [prises, setPrises] = useState<ImpersonationSessionEntry[]>([]);
   const [tour, setTour] = useState(0);
   const [geste, setGeste] = useState<Geste>(null);
   const [priseDans, setPriseDans] = useState<{ id: string; name: string } | null>(null);
@@ -85,14 +89,23 @@ export default function AdminUserDetailPage() {
     if (!jeton || !userId) return;
     let annule = false;
     (async () => {
-      const [r, j] = await Promise.all([
+      // Les prises en main SUR ce compte et PAR ce compte : un marchand n'a que
+      // les premières, un administrateur surtout les secondes.
+      const [r, j, sur, par] = await Promise.all([
         getAdminUser(jeton, userId),
         voitJournal ? getAdminAuditLog(jeton, { target_id: userId, page_size: 10 }) : Promise.resolve(null),
+        voitJournal ? getImpersonationSessions(jeton, { target_user: userId, page_size: 10 }) : Promise.resolve(null),
+        voitJournal ? getImpersonationSessions(jeton, { impersonator: userId, page_size: 10 }) : Promise.resolve(null),
       ]);
       if (annule) return;
       if (r.success && r.data) setUser(r.data);
       else toast.error(r.message || "Utilisateur introuvable");
       if (j?.success && j.data) setJournal(j.data.results);
+      setPrises(
+        [...(sur?.data?.results ?? []), ...(par?.data?.results ?? [])]
+          .sort((a, b) => b.started_at.localeCompare(a.started_at))
+          .slice(0, 10)
+      );
       setIsLoading(false);
     })();
     return () => {
@@ -317,6 +330,20 @@ export default function AdminUserDetailPage() {
                 </div>
               ))
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {voitJournal && prises.length > 0 && (
+        <Card className="border">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-medium">
+              <Eye className="h-4 w-4 text-muted-foreground" /> Prises en main
+            </CardTitle>
+            <Link href="/admin/impersonations" className="text-sm text-primary hover:underline">Toutes</Link>
+          </CardHeader>
+          <CardContent className="divide-y">
+            {prises.map((p) => <ImpersonationSessionRow key={p.id} session={p} showOrganization />)}
           </CardContent>
         </Card>
       )}
