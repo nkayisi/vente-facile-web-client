@@ -410,6 +410,27 @@ export interface DebtOperationResult {
   settle_currency?: string;
 }
 
+/**
+ * La phrase d'un refus d'opération de dette.
+ *
+ * ⚠ Ces endpoints refusent de deux façons : `{error}` (refus métier) et
+ *   `{champ: [phrase]}` (refus du serializer : montant nul, motif absent). Ne
+ *   lire que `error` rendait un message générique sur le second, et le marchand
+ *   ne savait pas quoi corriger. La phrase du serveur suffit, sans le nom du
+ *   champ, qui n'est pas du français.
+ */
+function messageDeRefus(error: unknown, repli: string): string {
+  const corps = getErrorBody(error);
+  if (!corps) return repli;
+  if (typeof corps.error === "string" && corps.error.trim()) return corps.error;
+  if (typeof corps.detail === "string" && corps.detail.trim()) return corps.detail;
+  for (const valeur of Object.values(corps)) {
+    const phrase = Array.isArray(valeur) ? valeur[0] : valeur;
+    if (typeof phrase === "string" && phrase.trim()) return phrase;
+  }
+  return repli;
+}
+
 export async function recordCustomerPayment(
   accessToken: string,
   organizationId: string,
@@ -439,41 +460,21 @@ export async function recordCustomerPayment(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Contacts] Record payment error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: getErrorBody(error)?.error || "Erreur lors de l'enregistrement du paiement" };
+    return { success: false, message: messageDeRefus(error, "Erreur lors de l'enregistrement du paiement") };
   }
 }
 
-export async function recordCustomerAdvance(
-  accessToken: string,
-  organizationId: string,
-  customerId: string,
-  data: {
-    amount: number;
-    currency?: string;
-    exchange_rate?: number;
-    payment_method?: string;
-    reference?: string;
-    notes?: string;
-  }
-): Promise<ApiResponse<DebtOperationResult>> {
-  try {
-    const response = await axios.post(
-      `${API_BASE_URL}/customers/${customerId}/record-advance/`,
-      data,
-      { headers: getHeaders(accessToken, organizationId) }
-    );
-    return { success: true, data: response.data };
-  } catch (error: unknown) {
-    console.error("[Contacts] Record advance error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: getErrorBody(error)?.error || "Erreur lors de l'enregistrement de l'avance" };
-  }
-}
+// ⚠ PAS de `recordCustomerAdvance` : « avance » et « règlement » sont LE MÊME
+//   ACTE (`record-advance` n'est qu'un alias de `record-payment` côté serveur).
+//   Une seconde action laisserait croire à un choix qui n'existe pas ; un
+//   versement sans facture à solder devient une avance de lui-même, sous `AVC-`.
 
 export async function adjustCustomerBalance(
   accessToken: string,
   organizationId: string,
   customerId: string,
-  data: { amount: number; currency?: string; exchange_rate?: number; notes?: string }
+  /** `notes` est OBLIGATOIRE : le serveur refuse un ajustement sans motif. */
+  data: { amount: number; currency?: string; exchange_rate?: number; notes: string }
 ): Promise<ApiResponse<DebtOperationResult>> {
   try {
     const response = await axios.post(
@@ -484,7 +485,7 @@ export async function adjustCustomerBalance(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[Contacts] Adjust balance error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: getErrorBody(error)?.error || "Erreur lors de l'ajustement" };
+    return { success: false, message: messageDeRefus(error, "Erreur lors de l'ajustement") };
   }
 }
 

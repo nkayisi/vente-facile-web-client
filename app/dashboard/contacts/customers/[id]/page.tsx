@@ -42,6 +42,8 @@ import {
   CircleDollarSign,
   Check,
   Printer,
+  HandCoins,
+  Scale,
 } from "lucide-react";
 import {
   Dialog,
@@ -89,6 +91,9 @@ import { LoyaltyCreditPicker } from "@/components/sales/loyalty-credit-picker";
 import { createMoneyHelpers, MONEY_EPS } from "@/lib/currency";
 import { isOverdue, dueDateLabel } from "@/lib/due-date";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { PermissionGate } from "@/components/auth/permission-gate";
+import { CustomerPaymentDialog } from "@/components/contacts/customer-payment-dialog";
+import { CustomerAdjustDialog } from "@/components/contacts/customer-adjust-dialog";
 
 /**
  * Arrondi d'une saisie de cagnotte au centième, par DÉFAUT.
@@ -119,6 +124,9 @@ export default function CustomerDetailPage() {
 
   // Credit limit dialog
   const [showCreditLimitDialog, setShowCreditLimitDialog] = useState(false);
+  // Encaisser et ajuster : montés à l'ouverture, donc vierges à chaque fois.
+  const [encaissement, setEncaissement] = useState(false);
+  const [ajustement, setAjustement] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [creditLimitValue, setCreditLimitValue] = useState("");
   const [allowCreditValue, setAllowCreditValue] = useState(true);
@@ -702,8 +710,10 @@ export default function CustomerDetailPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Header : empilé jusqu'à 2xl. Cinq actions et le nom du client ne tiennent
+          pas sur une ligne à côté de la barre latérale, qui retire 256 px à la
+          fenêtre : le nom se coupait en deux et les actions sur deux rangées. */}
+      <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
         <div className="flex items-center gap-4">
           <Link href="/dashboard/contacts/customers">
             <Button variant="ghost" size="icon">
@@ -735,6 +745,16 @@ export default function CustomerDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <PermissionGate permission="customers.edit">
+            <Button onClick={() => setEncaissement(true)}>
+              <HandCoins className="h-4 w-4 mr-2" />
+              Encaisser
+            </Button>
+            <Button variant="outline" onClick={() => setAjustement(true)}>
+              <Scale className="h-4 w-4 mr-2" />
+              Ajuster le solde
+            </Button>
+          </PermissionGate>
           <Link href={`/dashboard/contacts/customers/${customerId}/historique`}>
             <Button variant="outline">
               <History className="h-4 w-4 mr-2" />
@@ -1143,6 +1163,37 @@ export default function CustomerDetailPage() {
           </Card>
         </div>
       </div>
+
+      {encaissement && (
+        <CustomerPaymentDialog
+          open
+          onOpenChange={(o) => !o && setEncaissement(false)}
+          customer={customer}
+          factures={pendingSales}
+          paymentMethods={paymentMethods}
+          money={money}
+          chrome={chrome}
+          paperWidth={paperWidth}
+          onDone={() => {
+            refreshData();
+            loadPendingSales();
+          }}
+        />
+      )}
+      {ajustement && (
+        <CustomerAdjustDialog
+          open
+          onOpenChange={(o) => !o && setAjustement(false)}
+          customer={customer}
+          money={money}
+          chrome={chrome}
+          paperWidth={paperWidth}
+          onDone={() => {
+            refreshData();
+            loadPendingSales();
+          }}
+        />
+      )}
 
       {/* Credit Limit Dialog */}
       <Dialog open={showCreditLimitDialog} onOpenChange={setShowCreditLimitDialog}>
