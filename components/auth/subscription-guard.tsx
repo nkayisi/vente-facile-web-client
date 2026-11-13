@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { reportClientError } from "@/lib/observability/report-error";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
+import { accord, pluriel } from "@/lib/accord";
 
 interface SubscriptionContextValue {
   subscriptionStatus: SubscriptionStatus | null;
@@ -321,18 +322,18 @@ function SubscriptionWarningBanner({
         {isPastDue ? (
           <>
             Période de grâce :{" "}
-            <strong>{status.days_remaining_grace ?? 0} jour(s)</strong>{" "}
-            restant(s)
+            <strong>{pluriel(status.days_remaining_grace ?? 0, "jour", "jours")}</strong>{" "}
+            {accord(status.days_remaining_grace ?? 0, "restant", "restants")}
           </>
         ) : status.subscription?.is_trial ? (
           <>
-            Essai gratuit : <strong>{status.days_remaining} jour(s)</strong>{" "}
-            restant(s)
+            Essai gratuit : <strong>{pluriel(status.days_remaining ?? 0, "jour", "jours")}</strong>{" "}
+            {accord(status.days_remaining ?? 0, "restant", "restants")}
           </>
         ) : (
           <>
             Abonnement expire dans{" "}
-            <strong>{status.days_remaining} jour(s)</strong>
+            <strong>{pluriel(status.days_remaining ?? 0, "jour", "jours")}</strong>
           </>
         )}
       </span>

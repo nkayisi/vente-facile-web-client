@@ -78,6 +78,7 @@ import {
 } from "@/actions/inventory.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { pluriel } from "@/lib/accord";
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -372,7 +373,7 @@ export default function InventoryDetailPage() {
       session.accessToken, organization.id, inventorySession.id, countsToSave
     );
     if (result.success) {
-      toast.success(`${result.data?.updated_count} comptage(s) enregistré(s)`);
+      toast.success(`${pluriel(result.data?.updated_count ?? 0, "comptage enregistré", "comptages enregistrés")}`);
       setEditedCounts({});
       setHasUnsavedChanges(false);
       fetchCounts();
@@ -583,7 +584,7 @@ export default function InventoryDetailPage() {
               ) : inventorySession.items_counted < inventorySession.items_total ? (
                 <p className="text-xs text-orange-600 flex items-center gap-1">
                   <AlertCircle className="h-3.5 w-3.5" />
-                  {inventorySession.items_total - inventorySession.items_counted} produit(s) restant(s) à compter
+                  {pluriel(inventorySession.items_total - inventorySession.items_counted, "produit restant", "produits restants")} à compter
                 </p>
               ) : canSubmit ? (
                 <Button onClick={() => setShowSubmitDialog(true)} className="bg-orange-500 hover:bg-orange-600">
@@ -628,7 +629,7 @@ export default function InventoryDetailPage() {
                 <Progress value={inventorySession.progress_percentage} className="h-2.5" />
                 {inventorySession.items_total - inventorySession.items_counted > 0 && (
                   <p className="text-xs text-orange-600 mt-1">
-                    {inventorySession.items_total - inventorySession.items_counted} produit(s) restant(s) à compter
+                    {pluriel(inventorySession.items_total - inventorySession.items_counted, "produit restant", "produits restants")} à compter
                   </p>
                 )}
               </div>
@@ -958,9 +959,9 @@ export default function InventoryDetailPage() {
                     Les ajustements de stock ont été appliqués.
                   </p>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-green-700">
-                    <span>{inventorySession.items_total} produit(s) inventorié(s)</span>
+                    <span>{pluriel(inventorySession.items_total, "produit inventorié", "produits inventoriés")}</span>
                     {inventorySession.items_with_difference > 0 && (
-                      <span className="font-medium">{inventorySession.items_with_difference} écart(s) détecté(s)</span>
+                      <span className="font-medium">{pluriel(inventorySession.items_with_difference, "écart détecté", "écarts détectés")}</span>
                     )}
                     {sessionDuration && <span>Durée : {sessionDuration}</span>}
                   </div>
@@ -1044,7 +1045,7 @@ export default function InventoryDetailPage() {
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex gap-3">
                   <AlertTriangle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
                   <div className="text-sm text-orange-800">
-                    <p className="font-medium">{inventorySession.items_with_difference} produit(s) avec écart</p>
+                    <p className="font-medium">{pluriel(inventorySession.items_with_difference, "produit", "produits")} avec écart</p>
                   </div>
                 </div>
 
@@ -1056,7 +1057,7 @@ export default function InventoryDetailPage() {
                       <span className="text-sm font-medium text-green-800">Surplus</span>
                     </div>
                     <p className="text-lg font-bold text-green-600">+{formatPrice(positiveValue)}</p>
-                    <p className="text-xs text-green-700">{positiveCount} produit(s) en plus</p>
+                    <p className="text-xs text-green-700">{pluriel(positiveCount, "produit", "produits")} en plus</p>
                   </div>
 
                   {/* Écart négatif (manquant) */}
@@ -1066,7 +1067,7 @@ export default function InventoryDetailPage() {
                       <span className="text-sm font-medium text-red-800">Manquant</span>
                     </div>
                     <p className="text-lg font-bold text-red-600">{formatPrice(negativeValue)}</p>
-                    <p className="text-xs text-red-700">{negativeCount} produit(s) en moins</p>
+                    <p className="text-xs text-red-700">{pluriel(negativeCount, "produit", "produits")} en moins</p>
                   </div>
                 </div>
 
@@ -1120,7 +1121,7 @@ export default function InventoryDetailPage() {
                 <div className="space-y-3">
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
                     <p className="font-medium mb-2">Résumé des ajustements :</p>
-                    <p>{inventorySession.items_with_difference} produit(s) avec écart</p>
+                    <p>{pluriel(inventorySession.items_with_difference, "produit", "produits")} avec écart</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">

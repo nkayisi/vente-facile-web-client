@@ -46,6 +46,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { pluriel } from "@/lib/accord";
 
 const STATUS_COLORS: Record<string, string> = {
   trial: "bg-blue-100 text-blue-700",
@@ -241,7 +242,7 @@ export default function SubscriptionPage() {
                 <p className="text-sm text-gray-500">Jours restants</p>
                 <p className={`text-lg font-bold ${subscription.days_remaining <= 5 ? "text-red-600" : "text-green-600"
                   }`}>
-                  {subscription.days_remaining} jour(s)
+                  {pluriel(subscription.days_remaining, "jour", "jours")}
                 </p>
               </div>
               <div>
@@ -342,11 +343,11 @@ export default function SubscriptionPage() {
                     <div className="space-y-3 mb-6">
                       <div className="flex items-center gap-2 text-sm">
                         <Users className="h-4 w-4 text-gray-400" />
-                        <span>{plan.max_users} utilisateur(s)</span>
+                        <span>{pluriel(plan.max_users, "utilisateur", "utilisateurs")}</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <Building2 className="h-4 w-4 text-gray-400" />
-                        <span>{plan.max_branches} succursale(s)</span>
+                        <span>{pluriel(plan.max_branches, "succursale", "succursales")}</span>
                       </div>
                       {plan.max_products && (
                         <div className="flex items-center gap-2 text-sm">

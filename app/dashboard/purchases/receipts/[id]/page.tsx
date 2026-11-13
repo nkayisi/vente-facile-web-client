@@ -59,6 +59,7 @@ import {
   getGoodsReceipt,
   type GoodsReceipt,
 } from "@/actions/purchases.actions";
+import { accord } from "@/lib/accord";
 
 export default function GoodsReceiptDetailPage() {
   const params = useParams();
@@ -325,8 +326,9 @@ export default function GoodsReceiptDetailPage() {
               {/* Ce qui est refusé N'ENTRE PAS en rayon et ne crée aucune
                   dette : seul l'accepté compte. Le dire évite de chercher les
                   unités manquantes à l'inventaire suivant. */}
-              {formatDecimal(String(totalRefuse))} unité(s) refusée(s) :
-              elles n&apos;entrent pas en rayon et ne sont pas dues.
+              {formatDecimal(String(totalRefuse))}{" "}
+              {accord(totalRefuse, "unité refusée", "unités refusées")} :{" "}
+              {accord(totalRefuse, "elle n'entre pas en rayon et n'est pas due.", "elles n'entrent pas en rayon et ne sont pas dues.")}
             </p>
           )}
         </CardContent>

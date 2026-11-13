@@ -53,6 +53,7 @@ import {
 import { DataPagination } from "@/components/shared/DataPagination";
 import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { pluriel } from "@/lib/accord";
 
 export default function BrandsPage() {
   const { data: session } = useSession();
@@ -388,7 +389,7 @@ export default function BrandsPage() {
               Êtes-vous sûr de vouloir supprimer <strong>{brandToDelete?.name}</strong> ?
               {(brandToDelete?.products_count || 0) > 0 && (
                 <span className="block mt-2 text-orange-600">
-                  Attention : {brandToDelete?.products_count} produit(s) sont associés à cette marque.
+                  Attention : {pluriel(brandToDelete?.products_count ?? 0, "produit est associé", "produits sont associés")} à cette marque.
                 </span>
               )}
             </AlertDialogDescription>

@@ -84,6 +84,7 @@ import {
 } from "@/actions/inventory.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { pluriel } from "@/lib/accord";
 
 const statusConfig: Record<InventorySessionStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -571,7 +572,7 @@ export default function InventoryPage() {
                               </div>
                               <Progress value={inv.progress_percentage} className="h-1.5" />
                               {inv.items_with_difference > 0 && (
-                                <p className="text-xs text-orange-600">{inv.items_with_difference} écart(s)</p>
+                                <p className="text-xs text-orange-600">{pluriel(inv.items_with_difference, "écart", "écarts")}</p>
                               )}
                             </div>
                           ) : (
@@ -724,7 +725,7 @@ export default function InventoryPage() {
               <div className="space-y-2">
                 <Label>Catégories *</Label>
                 {(newSession.category_ids?.length || 0) > 0 && (
-                  <p className="text-xs text-orange-600">{newSession.category_ids?.length} catégorie(s) sélectionnée(s)</p>
+                  <p className="text-xs text-orange-600">{pluriel(newSession.category_ids?.length ?? 0, "catégorie sélectionnée", "catégories sélectionnées")}</p>
                 )}
                 {newSession.warehouse && categories.length === 0 && (
                   <p className="text-xs text-orange-600">
@@ -752,7 +753,7 @@ export default function InventoryPage() {
                         <span>{cat.name}</span>
                       </div>
                       {cat.products_count !== undefined && (
-                        <span className="text-xs text-gray-400">{cat.products_count} produit(s)</span>
+                        <span className="text-xs text-gray-400">{pluriel(cat.products_count, "produit", "produits")}</span>
                       )}
                     </label>
                   ))}
@@ -768,7 +769,7 @@ export default function InventoryPage() {
               <div className="space-y-2">
                 <Label>Produits *</Label>
                 {(newSession.product_ids?.length || 0) > 0 && (
-                  <p className="text-xs text-orange-600">{newSession.product_ids?.length} produit(s) sélectionné(s)</p>
+                  <p className="text-xs text-orange-600">{pluriel(newSession.product_ids?.length ?? 0, "produit sélectionné", "produits sélectionnés")}</p>
                 )}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />

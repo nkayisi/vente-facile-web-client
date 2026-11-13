@@ -55,6 +55,7 @@ import {
 import { DataPagination } from "@/components/shared/DataPagination";
 import { ProductsDataTable, type DataTableColumn } from "@/components/shared/ProductsDataTable";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { pluriel } from "@/lib/accord";
 
 export default function CategoriesPage() {
   const { data: session } = useSession();
@@ -466,7 +467,7 @@ export default function CategoriesPage() {
               Êtes-vous sûr de vouloir supprimer <strong>{categoryToDelete?.name}</strong> ?
               {(categoryToDelete?.products_count || 0) > 0 && (
                 <span className="block mt-2 text-orange-600">
-                  Attention : {categoryToDelete?.products_count} produit(s) sont associés à cette catégorie.
+                  Attention : {pluriel(categoryToDelete?.products_count ?? 0, "produit est associé", "produits sont associés")} à cette catégorie.
                 </span>
               )}
             </AlertDialogDescription>

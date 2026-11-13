@@ -86,6 +86,7 @@ import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
 import { usePerimeter } from "@/hooks/use-perimeter";
+import { pluriel } from "@/lib/accord";
 
 const STATUS_CONFIG: Record<TransferStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -601,7 +602,7 @@ export default function TransfersPage() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
-                          <span>{transfer.items_count} article(s)</span>
+                          <span>{pluriel(transfer.items_count ?? 0, "article", "articles")}</span>
                           <span>Créé le {formatDate(transfer.requested_at)}</span>
                           {transfer.requested_by_name && (
                             <span>Par: {transfer.requested_by_name}</span>

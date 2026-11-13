@@ -40,6 +40,7 @@ import {
   SalesStats,
   RegisterSession,
 } from "@/actions/sales.actions";
+import { pluriel } from "@/lib/accord";
 
 /** Raccourcis de la section vente. `badge` reçoit un compteur quand il y a lieu. */
 const QUICK_LINKS = [
@@ -388,7 +389,7 @@ export default function SalesPage() {
         <Link
           href="/dashboard/sales/pending-payments"
           className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
-          aria-label={`À encaisser : ${outstanding.count} vente(s)`}
+          aria-label={`À encaisser : ${pluriel(outstanding.count, "vente", "ventes")}`}
         >
           <Card className="h-full gap-0 py-0 transition-shadow hover:shadow-md">
             <CardContent className="flex items-center gap-3 p-4">

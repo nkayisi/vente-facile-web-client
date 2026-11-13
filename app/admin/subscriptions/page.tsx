@@ -53,6 +53,7 @@ import { useAdminPermissions } from "@/components/admin/admin-permissions-provid
 import { AdminExportMenu } from "@/components/admin/admin-export-menu";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { dateCourte, montant, tonEcheance } from "@/lib/admin/format";
+import { AdminPagination } from "@/components/admin/admin-pagination";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   DropdownMenu,
@@ -82,39 +83,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
-
-function generatePageNumbers(current: number, total: number): (number | "ellipsis")[] {
-  if (total <= 7) {
-    return Array.from({ length: total }, (_, i) => i + 1);
-  }
-
-  const pages: (number | "ellipsis")[] = [1];
-
-  if (current > 3) pages.push("ellipsis");
-
-  const start = Math.max(2, current - 1);
-  const end = Math.min(total - 1, current + 1);
-
-  for (let i = start; i <= end; i++) {
-    pages.push(i);
-  }
-
-  if (current < total - 2) pages.push("ellipsis");
-
-  pages.push(total);
-
-  return pages;
-}
 
 const BILLING_CYCLES = [
   { value: "monthly", label: "Mensuel" },
@@ -349,16 +318,17 @@ function ListeAbonnements() {
 
   const getStatusBadge = (status: string, display: string) => {
     const styles: Record<string, string> = {
-      active: "bg-green-100 text-green-700",
-      trial: "bg-blue-100 text-blue-700",
-      past_due: "bg-amber-100 text-amber-700",
-      expired: "bg-red-100 text-red-700",
-      cancelled: "bg-red-100 text-red-700",
+      // Des JETONS, jamais des couleurs : un statut garde son sens si la
+      // palette change, et le thème sombre les redéfinit.
+      active: "bg-success/15 text-success",
+      trial: "bg-primary/10 text-primary",
+      past_due: "bg-warning/15 text-warning",
+      expired: "bg-destructive/15 text-destructive",
+      cancelled: "bg-destructive/15 text-destructive",
     };
     return <Badge className={styles[status] || ""}>{display}</Badge>;
   };
 
-  const totalPages = Math.ceil(totalCount / pageSize);
 
   return (
     <div className="space-y-6">
@@ -518,47 +488,9 @@ function ListeAbonnements() {
               </TableBody>
             </Table>
 
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between p-4 border-t">
-                <p className="text-sm text-muted-foreground">
-                  Page {currentPage} sur {totalPages} · {totalCount} résultat{totalCount > 1 ? "s" : ""}
-                </p>
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious
-                        onClick={() => currentPage > 1 && setCurrentPage(currentPage - 1)}
-                        className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
-                      />
-                    </PaginationItem>
-
-                    {generatePageNumbers(currentPage, totalPages).map((page, idx) =>
-                      page === "ellipsis" ? (
-                        <PaginationItem key={`ellipsis-${idx}`}>
-                          <PaginationEllipsis />
-                        </PaginationItem>
-                      ) : (
-                        <PaginationItem key={page}>
-                          <PaginationLink
-                            isActive={page === currentPage}
-                            onClick={() => setCurrentPage(page as number)}
-                          >
-                            {page}
-                          </PaginationLink>
-                        </PaginationItem>
-                      )
-                    )}
-
-                    <PaginationItem>
-                      <PaginationNext
-                        onClick={() => currentPage < totalPages && setCurrentPage(currentPage + 1)}
-                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              </div>
-            )}
+            {/* La même pagination que toutes les listes de l'administration :
+                précédent / suivant et la position. */}
+            <AdminPagination page={currentPage} total={totalCount} taille={pageSize} onPage={setCurrentPage} />
           </>
         )}
       </Card>
@@ -714,17 +646,17 @@ function ListeAbonnements() {
 
                     {/* Avertissement si abonnement actif existant */}
                     {selectedOrg.subscription_plan && selectedOrg.subscription_plan !== "-" && (
-                      <div className="flex gap-3 px-3 py-3 bg-amber-50 border border-amber-200 rounded-md text-sm">
-                        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                      <div className="flex gap-3 px-3 py-3 bg-warning/10 border border-warning/30 rounded-md text-sm">
+                        <AlertTriangle className="h-4 w-4 shrink-0 text-warning mt-0.5" />
                         <div>
-                          <p className="font-medium text-amber-800">Abonnement existant</p>
-                          <p className="text-amber-700 mt-0.5">
+                          <p className="font-medium text-foreground">Abonnement existant</p>
+                          <p className="text-muted-foreground mt-0.5">
                             Cet établissement a un abonnement <strong>{selectedOrg.subscription_plan}</strong> ({selectedOrg.subscription_status}).
                             {selectedOrg.subscription_end && (
                               <> Expire le {dateCourte(selectedOrg.subscription_end)}.</>
                             )}
                           </p>
-                          <p className="text-amber-600 mt-1">
+                          <p className="text-warning mt-1">
                             En créant un nouvel abonnement, l&apos;abonnement actuel sera automatiquement remplacé.
                           </p>
                         </div>

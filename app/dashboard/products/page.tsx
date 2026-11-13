@@ -102,6 +102,7 @@ import {
     WholesalePriceCell,
     StockCell,
 } from "@/components/products/product-cells";
+import { accord, pluriel } from "@/lib/accord";
 
 export default function ProductsPage() {
     const { data: session } = useSession();
@@ -365,23 +366,23 @@ export default function ProductsPage() {
             if (result.data.created > 0) {
                 if (result.data.skipped > 0) {
                     toast.warning(
-                        `${result.data.created} produit(s) importé(s), ${result.data.skipped} ignoré(s)`
+                        `${pluriel(result.data.created, "produit importé", "produits importés")}, ${pluriel(result.data.skipped, "ignoré", "ignorés")}`
                     );
                 } else if (renommes > 0) {
                     // Un code dérivé n'est pas un échec, mais le marchand doit le
                     // savoir AVANT de fermer la fenêtre : c'est là, et là seulement,
                     // que le rapprochement avec son fichier est encore possible.
                     toast.warning(
-                        `${result.data.created} produit(s) importé(s), ${renommes} code(s) SKU modifié(s)`
+                        `${pluriel(result.data.created, "produit importé", "produits importés")}, ${pluriel(renommes, "code SKU modifié", "codes SKU modifiés")}`
                     );
                 } else {
-                    toast.success(`${result.data.created} produit(s) importé(s) avec succès`);
+                    toast.success(`${pluriel(result.data.created, "produit importé", "produits importés")} avec succès`);
                 }
                 fetchProducts();
             } else {
                 toast.error(
                     result.data.skipped > 0
-                        ? `Aucun produit importé : ${result.data.skipped} ligne(s) refusée(s)`
+                        ? `Aucun produit importé : ${pluriel(result.data.skipped, "ligne refusée", "lignes refusées")}`
                         : "Aucun produit à importer dans ce fichier"
                 );
             }
@@ -1090,7 +1091,7 @@ function ImportDialog({
                                     >
                                         <div>
                                             <StatValue value={String(importResult.created)} color="text-green-600" />
-                                            <p className="text-xs text-gray-600">Créé(s)</p>
+                                            <p className="text-xs text-gray-600">{accord(importResult.created, "Créé", "Créés")}</p>
                                         </div>
                                         {/* « Mis à jour » n'est affiché que s'il bouge : l'import
                                             ne modifie aucun produit existant (un SKU déjà pris est
@@ -1104,7 +1105,7 @@ function ImportDialog({
                                         )}
                                         <div>
                                             <StatValue value={String(importResult.skipped)} color="text-orange-600" />
-                                            <p className="text-xs text-gray-600">Ignoré(s)</p>
+                                            <p className="text-xs text-gray-600">{accord(importResult.skipped, "Ignoré", "Ignorés")}</p>
                                         </div>
                                     </div>
                                     {importResult.skipped > 0 && (

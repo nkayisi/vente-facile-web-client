@@ -79,6 +79,7 @@ import {
   type BulkSupplyLine,
   type SupplySheetLine,
 } from "@/actions/stock.actions";
+import { accord, pluriel } from "@/lib/accord";
 
 /** Ce que le formulaire retient d'une ligne, avant tout envoi. */
 interface Saisie {
@@ -393,7 +394,7 @@ export default function BulkSupplyPage() {
       setErreursLigne(trouvees);
       setOuvertes((o) => ({ ...o, ...aOuvrir }));
       toast.error(
-        `${Object.keys(trouvees).length} ligne(s) à corriger : rien n'a été enregistré.`
+        `${pluriel(Object.keys(trouvees).length, "ligne à corriger", "lignes à corriger")} : rien n'a été enregistré.`
       );
       return;
     }
@@ -414,7 +415,7 @@ export default function BulkSupplyPage() {
   /** Pourquoi le bouton est fermé. Un bouton muet se lit comme une panne. */
   const motifFerme =
     illisibles.length > 0
-      ? `${illisibles.length} ligne(s) portent une quantité illisible : corrigez-les, sinon elles n'entreront pas en stock.`
+      ? `${pluriel(illisibles.length, "ligne porte", "lignes portent")} une quantité illisible : ${accord(illisibles.length, "corrigez-la, sinon elle n'entrera", "corrigez-les, sinon elles n'entreront")} pas en stock.`
       : retenues.length === 0
         ? "Saisissez au moins une quantité."
         : null;
@@ -581,7 +582,7 @@ export default function BulkSupplyPage() {
                           <Send className="mr-2 h-4 w-4" />
                         )}
                         {retenues.length > 0
-                          ? `Enregistrer ${retenues.length} entrée(s)`
+                          ? `Enregistrer ${pluriel(retenues.length, "entrée", "entrées")}`
                           : "Enregistrer"}
                       </Button>
                       {motifFerme ? (

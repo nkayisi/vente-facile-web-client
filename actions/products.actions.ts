@@ -8,6 +8,7 @@ import {
   type ExportFile,
   type ExportFormat,
 } from "@/lib/export/fetch-export";
+import { pluriel } from "@/lib/accord";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -576,7 +577,7 @@ export async function bulkUpdateProducts(
 
     return {
       success: true,
-      message: `${response.data.updated} produit(s) mis à jour`,
+      message: `${pluriel(response.data.updated, "produit mis", "produits mis")} à jour`,
       data: response.data,
     };
   } catch (error: unknown) {
@@ -602,7 +603,7 @@ export async function bulkDeleteProducts(
 
     return {
       success: true,
-      message: `${response.data.deleted} produit(s) supprimé(s)`,
+      message: `${pluriel(response.data.deleted, "produit supprimé", "produits supprimés")}`,
       data: response.data,
     };
   } catch (error: unknown) {

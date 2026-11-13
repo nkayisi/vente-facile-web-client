@@ -128,6 +128,7 @@ import {
   devisesAffichables,
   prixAffiche,
 } from "@/lib/pos/affichage-devise";
+import { accord, pluriel } from "@/lib/accord";
 
 /**
  * Défaut serveur, et RIEN DE PLUS.
@@ -552,7 +553,7 @@ export default function POSPage() {
             setActiveInventorySessions(lockedResult.data.active_sessions);
             if (lockedResult.data.has_active_inventory) {
               toast.warning(
-                `Inventaire en cours: ${lockedResult.data.active_sessions.length} session(s) active(s). Certains produits sont bloqués.`,
+                `Inventaire en cours : ${pluriel(lockedResult.data.active_sessions.length, "session active", "sessions actives")}. Certains produits sont bloqués.`,
                 { duration: 5000 }
               );
             }
@@ -3077,7 +3078,7 @@ export default function POSPage() {
               <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                 <p className="text-sm text-amber-700 flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4" />
-                  Vous avez {cart.length} article(s) dans le panier. Ils seront perdus si vous fermez la session.
+                  Vous avez {pluriel(cart.length, "article", "articles")} dans le panier. {accord(cart.length, "Il sera perdu", "Ils seront perdus")} si vous fermez la session.
                 </p>
               </div>
             )}

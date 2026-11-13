@@ -8,6 +8,7 @@ import {
   type ExportFile,
   type ExportFormat,
 } from "@/lib/export/fetch-export";
+import { pluriel } from "@/lib/accord";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -1685,7 +1686,7 @@ export async function createBulkStockMovement(
     revalidatePath("/dashboard/stock");
     return {
       success: true,
-      message: `${response.data.created} entrée(s) enregistrée(s)`,
+      message: `${pluriel(response.data.created, "entrée enregistrée", "entrées enregistrées")}`,
       data: response.data,
     };
   } catch (error: unknown) {

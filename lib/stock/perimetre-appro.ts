@@ -234,7 +234,7 @@ export function resumePerimetre(
     morceaux.push(p.categories.map((c) => c.label).join(", "));
   }
   if (p.portee === "product" && p.articles.length > 0) {
-    morceaux.push(`${p.articles.length} article(s)`);
+    morceaux.push(`${p.articles.length} article${p.articles.length > 1 ? "s" : ""}`);
   }
   if (p.recherche.trim()) morceaux.push(`« ${p.recherche.trim()} »`);
 

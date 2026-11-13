@@ -38,6 +38,7 @@ import {
   getCustomerReport,
   type CustomerReport,
 } from "@/actions/contacts.actions";
+import { pluriel } from "@/lib/accord";
 
 export function CustomerReportCard({
   accessToken,
@@ -183,7 +184,7 @@ export function CustomerReportCard({
                   {rapport.by_currency.map((d) => (
                     <div key={d.currency} className="flex justify-between gap-3">
                       <span className="text-muted-foreground">
-                        {d.currency} · {d.count} vente(s)
+                        {d.currency} · {pluriel(d.count, "vente", "ventes")}
                       </span>
                       <span className="font-medium">
                         {money.money(Number(d.native_total), d.currency)}

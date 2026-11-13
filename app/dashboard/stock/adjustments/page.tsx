@@ -89,6 +89,7 @@ import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
 import { usePerimeter } from "@/hooks/use-perimeter";
+import { pluriel } from "@/lib/accord";
 
 const STATUS_CONFIG: Record<AdjustmentStatus, { label: string; color: string; icon: any }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700", icon: Clock },
@@ -691,7 +692,7 @@ export default function AdjustmentsPage() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
-                          <span>{adjustment.items_count} article(s)</span>
+                          <span>{pluriel(adjustment.items_count ?? 0, "article", "articles")}</span>
                           <span>Créé le {formatDate(adjustment.created_at)}</span>
                           {adjustment.created_by_name && (
                             <span>Par: {adjustment.created_by_name}</span>

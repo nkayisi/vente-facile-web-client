@@ -31,6 +31,7 @@ import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { ActivateSubscriptionDialog } from "@/components/admin/activate-subscription-dialog";
 import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
 import { AdminExportMenu } from "@/components/admin/admin-export-menu";
+import { AdminPagination } from "@/components/admin/admin-pagination";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   Search,
@@ -39,8 +40,6 @@ import {
   CreditCard,
   Loader2,
   MoreHorizontal,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { dateCourte } from "@/lib/admin/format";
@@ -118,7 +117,6 @@ export default function AdminOrganizationsPage() {
     { value: "other", label: "Autre" },
   ];
 
-  const totalPages = Math.ceil(totalCount / pageSize);
 
   return (
     <div className="space-y-6">
@@ -231,7 +229,7 @@ export default function AdminOrganizationsPage() {
                     </TableCell>
                     <TableCell>{org.members_count}</TableCell>
                     <TableCell>
-                      <Badge variant={org.is_active ? "default" : "secondary"} className={org.is_active ? "bg-green-100 text-green-700" : ""}>
+                      <Badge variant={org.is_active ? "default" : "secondary"} className={org.is_active ? "bg-success/15 text-success" : ""}>
                         {org.is_active ? "Actif" : "Inactif"}
                       </Badge>
                     </TableCell>
@@ -277,19 +275,7 @@ export default function AdminOrganizationsPage() {
               </TableBody>
             </Table>
 
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between p-4 border-t">
-                <p className="text-sm text-muted-foreground">Page {currentPage} sur {totalPages}</p>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
+            <AdminPagination page={currentPage} total={totalCount} taille={pageSize} onPage={setCurrentPage} />
           </>
         )}
       </Card>

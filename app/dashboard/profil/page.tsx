@@ -480,7 +480,7 @@ export default function ProfilePage() {
                             <div className="space-y-1.5">
                                 <Label className="text-xs text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
                                     <Building2 className="h-3.5 w-3.5" />
-                                    Organisation(s)
+                                    Organisations
                                 </Label>
                                 <div className="space-y-1">
                                     {profile.organizations.map((org) => (
