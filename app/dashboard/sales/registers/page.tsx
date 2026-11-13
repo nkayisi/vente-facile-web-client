@@ -56,6 +56,7 @@ import {
   type CashSessionCurrencyLine,
   type CashSessionReceiptData,
 } from "@/lib/receipt";
+import { chromeDeLaCaisse } from "@/lib/receipt/chrome";
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import { useOrganization } from "@/components/auth/organization-checker";
@@ -395,7 +396,12 @@ export default function RegistersPage() {
 
           const receipt: CashSessionReceiptData = {
             kind: "cash_session",
-            chrome,
+            // Le Z porte l'en-tête de la caisse qu'il clôture : cet écran en
+            // gère plusieurs, le chrome du hook ne peut pas savoir laquelle.
+            chrome: chromeDeLaCaisse(
+              chrome,
+              registers.find((r) => r.id === selectedSession.register),
+            ),
             // La session n'est pas numérotée côté serveur : sa référence est son
             // identifiant, réduit à une forme lisible au comptoir.
             number: `CZ-${closed.id.slice(0, 8).toUpperCase()}`,

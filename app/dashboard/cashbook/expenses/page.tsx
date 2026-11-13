@@ -93,6 +93,15 @@ import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
 import { usePerimeter } from "@/hooks/use-perimeter";
+import { getWarehouses } from "@/actions/stock.actions";
+import {
+  depenseSeraitInvisible,
+  entrepotExige,
+  entrepotParDefaut,
+  peutNeRattacherAucunDepot,
+  saisieSansIssue,
+  type EntrepotDeDepense,
+} from "@/lib/cashbook/entrepot-depense";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   draft: { label: "Brouillon", color: "bg-gray-100 text-gray-700" },
@@ -102,6 +111,9 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   rejected: { label: "Rejetée", color: "bg-red-100 text-red-700" },
   cancelled: { label: "Annulée", color: "bg-gray-100 text-gray-500" },
 };
+
+/** Radix refuse une valeur vide : « aucun dépôt » a sa sentinelle. */
+const AUCUN_DEPOT = "__aucun__";
 
 export default function ExpensesPage() {
   const { data: session } = useSession();
@@ -208,6 +220,44 @@ export default function ExpensesPage() {
   }, [session?.accessToken, organization?.id]);
 
   const perimetre = usePerimeter();
+
+  // ── L'entrepôt de la dépense ──────────────────────────────────────────────
+  // Pris dans les entrepôts ACCESSIBLES : `/warehouses/` est déjà borné par le
+  // rôle côté serveur, mais il exige `warehouses.view`, que le caissier n'a
+  // pas. Pour lui, ses entrepôts assignés suffisent - sans drapeau « principal »,
+  // donc un seul dépôt se propose d'emblée, plusieurs se choisissent.
+  const voitLesEntrepots = hasPermission("warehouses.view");
+  const [entrepotsServeur, setEntrepotsServeur] = useState<EntrepotDeDepense[] | null>(null);
+  useEffect(() => {
+    if (!voitLesEntrepots || !session?.accessToken || !organization?.id) return;
+    let annule = false;
+    getWarehouses(session.accessToken, organization.id, { is_active: true }).then((r) => {
+      if (annule || !r.success || !r.data) return;
+      setEntrepotsServeur(
+        r.data.map((w) => ({ id: w.id, name: w.name, is_default: w.is_default }))
+      );
+    });
+    return () => {
+      annule = true;
+    };
+  }, [voitLesEntrepots, session?.accessToken, organization?.id]);
+  const entrepotsDeDepense = useMemo<EntrepotDeDepense[]>(
+    () =>
+      voitLesEntrepots
+        ? entrepotsServeur ?? []
+        : perimetre.assignedWarehouses.map((w) => ({ id: w.id, name: w.name })),
+    [voitLesEntrepots, entrepotsServeur, perimetre.assignedWarehouses]
+  );
+  const sansIssue = saisieSansIssue(perimetre.role, entrepotsDeDepense);
+  const aucunDepotPermis = peutNeRattacherAucunDepot(perimetre.role);
+
+  function ouvrirCreation() {
+    // Le défaut se pose au GESTE, pas dans un effet : un effet le reposerait
+    // à chaque chargement, par-dessus un choix déjà fait.
+    setCreateForm((f) => ({ ...f, warehouse: entrepotParDefaut(entrepotsDeDepense) }));
+    setShowCreateDialog(true);
+  }
+
   const [perimeterValue, setPerimeterValueRaw] = useState<PerimeterValue>({
     warehouse: null,
     user: null,
@@ -297,17 +347,24 @@ export default function ExpensesPage() {
       toast.error("Veuillez remplir tous les champs obligatoires");
       return;
     }
+    if (depenseSeraitInvisible(perimetre.role, createForm.warehouse)) {
+      toast.error(
+        "Choisissez l'entrepôt de la dépense : sans lui, vous ne la reverriez plus."
+      );
+      return;
+    }
 
     setIsSubmitting(true);
     // Ouvert sur le geste, avant l'appel réseau : sinon le navigateur bloque
     // la fenêtre.
     const job = printer.begin();
     try {
-      const res = await createExpense(
-        session.accessToken,
-        organization.id,
-        createForm
-      );
+      const res = await createExpense(session.accessToken, organization.id, {
+        ...createForm,
+        // « Aucun » ne part pas : le serveur range alors la dépense parmi les
+        // charges d'établissement, que seul le propriétaire voit.
+        warehouse: createForm.warehouse || undefined,
+      });
       if (res.success) {
         // Une sortie de caisse sans pièce justificative n'était opposable à
         // personne : le bénéficiaire repart désormais avec un reçu signable.
@@ -482,7 +539,7 @@ export default function ExpensesPage() {
             <Button
               size="sm"
               className="bg-orange-500 hover:bg-orange-600"
-              onClick={() => setShowCreateDialog(true)}
+              onClick={ouvrirCreation}
             >
               <Plus className="h-4 w-4 mr-2" />
               Nouvelle dépense
@@ -804,6 +861,42 @@ export default function ExpensesPage() {
               />
             </div>
             <div className="space-y-2">
+              <Label>Entrepôt{entrepotExige(perimetre.role) ? " *" : ""}</Label>
+              {sansIssue ? (
+                <p className="text-sm text-destructive">
+                  Aucun entrepôt ne vous est assigné : une dépense enregistrée ici ne
+                  serait visible de personne d&apos;autre que le propriétaire.
+                  Demandez une affectation au propriétaire de l&apos;établissement.
+                </p>
+              ) : (
+                <Select
+                  value={createForm.warehouse ?? (aucunDepotPermis ? AUCUN_DEPOT : "")}
+                  onValueChange={(value) =>
+                    setCreateForm({
+                      ...createForm,
+                      warehouse: value === AUCUN_DEPOT ? null : value,
+                    })
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Sélectionner..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aucunDepotPermis && (
+                      <SelectItem value={AUCUN_DEPOT}>
+                        Aucun (charge de l&apos;établissement)
+                      </SelectItem>
+                    )}
+                    {entrepotsDeDepense.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>
+                        {w.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <div className="space-y-2">
               <Label>Description *</Label>
               <Input
                 value={createForm.description}
@@ -853,7 +946,7 @@ export default function ExpensesPage() {
             </Button>
             <Button
               onClick={handleCreateExpense}
-              disabled={isSubmitting}
+              disabled={isSubmitting || sansIssue}
               className="bg-orange-500 hover:bg-orange-600"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

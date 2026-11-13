@@ -57,6 +57,25 @@ export function buildChrome(sources: ChromeSources): ReceiptChrome {
 }
 
 /**
+ * Le même chrome, avec l'en-tête et le pied d'une CAISSE précise.
+ *
+ * Pour l'écran qui imprime pour plusieurs caisses à la fois - le parc de
+ * caisses et son ticket Z - où le chrome du hook ne peut pas savoir d'avance
+ * laquelle. Même préséance que `buildChrome` : la caisse prime, sinon ce que le
+ * chrome portait déjà (les réglages de l'établissement).
+ */
+export function chromeDeLaCaisse(
+  chrome: ReceiptChrome,
+  register?: ChromeSources["register"]
+): ReceiptChrome {
+  return {
+    ...chrome,
+    header: register?.receipt_header?.trim() || chrome.header,
+    footer: register?.receipt_footer?.trim() || chrome.footer,
+  };
+}
+
+/**
  * Largeur de papier réglée par l'organisation. Repli : 58 mm.
  *
  * La comparaison est FAITE SUR UN NOMBRE, jamais sur la valeur brute :

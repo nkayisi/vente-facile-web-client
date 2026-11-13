@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -263,6 +264,11 @@ export default function UnitsPage() {
       setIsDeleteDialogOpen(false);
       setUnitToDelete(null);
       fetchUnits();
+    } else {
+      // Le serveur REFUSE la suppression d'une unité qui sert encore à des
+      // articles, et dit combien. Sans ce message, la boîte restait ouverte
+      // sans un mot : on croyait le bouton en panne.
+      toast.error(result.message ?? "La suppression de l'unité a échoué.");
     }
     setIsDeleting(false);
   };

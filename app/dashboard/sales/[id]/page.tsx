@@ -57,6 +57,7 @@ import {
   saleReceiptFromSale,
   type PaymentReceiptData,
 } from "@/lib/receipt";
+import { useCaisseDuTicket } from "@/hooks/use-caisse-du-ticket";
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import { useOrganization } from "@/components/auth/organization-checker";
@@ -84,9 +85,14 @@ export default function SaleDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
   const [sale, setSale] = useState<Sale | null>(null);
+  // Le duplicata porte l'en-tête de la caisse qui a ENCAISSÉ, comme l'original.
+  const caisseDuTicket = useCaisseDuTicket(
+    session?.accessToken, organization?.id, sale?.register
+  );
   const { chrome, paperWidth, settings } = useReceiptChrome(
     session?.accessToken,
-    organization
+    organization,
+    caisseDuTicket
   );
   const printer = useReceiptPrinter();
   const [showCancelDialog, setShowCancelDialog] = useState(false);

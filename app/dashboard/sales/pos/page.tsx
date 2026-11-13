@@ -116,6 +116,7 @@ import {
   type SaleReceiptData,
   type SaleReceiptItem,
 } from "@/lib/receipt";
+import { useCaisseDuTicket } from "@/hooks/use-caisse-du-ticket";
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import { useOrganization } from "@/components/auth/organization-checker";
@@ -467,7 +468,13 @@ export default function POSPage() {
   const [customerLoyalty, setCustomerLoyalty] = useState<CustomerLoyalty | null>(null);
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
   const [orgSettings, setOrgSettings] = useState<OrganizationSettings | null>(null);
-  const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
+  // L'en-tête et le pied de la CAISSE ouverte priment sur ceux de l'établissement.
+  const caisseDuTicket = useCaisseDuTicket(
+    session?.accessToken, organization?.id, currentSession?.register
+  );
+  const { chrome, paperWidth } = useReceiptChrome(
+    session?.accessToken, organization, caisseDuTicket
+  );
   const printer = useReceiptPrinter();
   const [useLoyalty, setUseLoyalty] = useState(false);
   const [loyaltyToUse, setLoyaltyToUse] = useState(0);
