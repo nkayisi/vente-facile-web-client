@@ -88,8 +88,13 @@ export function CustomerPaymentDialog({
   // Qui voit TOUTES les ventes voit toutes les factures : l'écart entre la
   // dette et les factures ne peut alors venir que d'une dette SANS facture
   // (un ajustement). Pour les autres, c'est d'abord la facture d'un collègue.
-  const { hasPermission } = usePermissions();
-  const voitToutesLesVentes = hasPermission("sales.view_all");
+  //
+  // ⚠ Le PROPRIÉTAIRE, et non `sales.view_all` : un gérant qui a ce droit ne
+  //   voit que les ventes de SES dépôts (`SaleViewSet` borne par entrepôt), et
+  //   prendrait les factures d'une autre boutique pour une dette hors facture.
+  //   Même critère que le terminal (`lireReliquat`).
+  const { isRole } = usePermissions();
+  const voitToutesLesVentes = isRole("owner");
 
   const moyens = useMemo(
     () => paymentMethods.filter((m) => m.is_active && !HORS_ENCAISSEMENT.has(m.method_type)),
