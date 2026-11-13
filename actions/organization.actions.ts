@@ -1,7 +1,9 @@
 "use server";
 
+import { cookies } from "next/headers";
 import axios from "@/lib/auth/api-helper";
 import { getErrorBody } from "@/lib/api/drf-error";
+import { NOM_COOKIE_SUSPENSION } from "@/lib/auth/suspension";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -91,6 +93,17 @@ interface OrganizationsListResponse {
 /**
  * Server Action pour récupérer les organisations de l'utilisateur
  */
+/**
+ * Efface le signal de suspension une fois que `OrganizationChecker` l'a traité.
+ *
+ * ⚠ Le cookie n'est qu'un TRANSPORT : resté posé, il serait relu à chaque rendu
+ * du layout, et un rechargement dans les dix minutes rejouerait une suspension
+ * déjà montrée. L'effacer re-rend le layout avec un signal vide, sans effet.
+ */
+export async function acquitterSuspension(): Promise<void> {
+  (await cookies()).delete(NOM_COOKIE_SUSPENSION);
+}
+
 export async function getUserOrganizations(accessToken: string): Promise<OrganizationsListResponse> {
   try {
     console.log("[Server Action] Fetching user organizations");

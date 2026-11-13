@@ -17,3 +17,9 @@ export function minutesDuVerrou(code: string | null | undefined): number | null 
   const minutes = Number(code.slice(PREFIXE_VERROU.length));
   return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
 }
+
+/** Tous les établissements du compte sont suspendus par Vente Facile. */
+export const CODE_SUSPENDU = "etablissement_suspendu";
+
+/** La phrase du serveur, reprise mot pour mot : le support la reconnaît. */
+export const PHRASE_SUSPENDU = "Cet établissement est suspendu par Vente Facile. Contactez le support.";

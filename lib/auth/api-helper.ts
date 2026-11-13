@@ -1,6 +1,8 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from "axios";
 import { formatApiErrorBody } from "@/lib/api/drf-error";
 import { getServerAccessToken } from "./server-token";
+import { suspensionDuRefus } from "./signal-suspension";
+import { signalerSuspension } from "./suspension";
 
 /**
  * Instance Axios pour les server actions avec retry automatique sur 401.
@@ -102,6 +104,17 @@ serverAxios.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${freshToken}`;
         return serverAxios(originalRequest);
       }
+    }
+
+    // ⚠ Un établissement suspendu : on PRÉVIENT le navigateur, ici et nulle part
+    // ailleurs, puis on rejette comme avant. Les écrans gardent leur propre
+    // message (la phrase du serveur), et `OrganizationChecker` remplace tout
+    // le tableau de bord par l'écran de suspension. Voir `lib/auth/suspension.ts`.
+    if (error.response?.status === 403) {
+      const suspension = suspensionDuRefus(error.response.data);
+      const enTete = originalRequest?.headers?.["X-Organization-ID"];
+      const organisation = suspension?.organisation ?? (typeof enTete === "string" ? enTete : null);
+      if (suspension && organisation) await signalerSuspension(organisation);
     }
 
     // Enrichir l'erreur 402 (Payment Required) avec des infos supplémentaires

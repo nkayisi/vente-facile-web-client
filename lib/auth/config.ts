@@ -4,7 +4,7 @@ import { CredentialsSignin } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import { refreshWithMutex } from "./refresh-mutex";
 import { enTetesDeBordure } from "@/lib/api/bordure";
-import { PREFIXE_VERROU } from "./codes-connexion";
+import { CODE_SUSPENDU, PREFIXE_VERROU } from "./codes-connexion";
 
 function resolveApiBaseUrl(): string {
   // next-auth s'execute cote serveur : prefere l'URL interne Docker
@@ -224,6 +224,14 @@ class ConnexionVerrouillee extends CredentialsSignin {
   }
 }
 
+/**
+ * Tous les établissements du compte sont suspendus : un refus NOMMÉ, distinct
+ * d'un mot de passe erroné. Le marchand retaperait sinon un mot de passe juste.
+ */
+class EtablissementSuspendu extends CredentialsSignin {
+  code = CODE_SUSPENDU;
+}
+
 /** Le verrou se distingue de la limite de débit par le `code` du corps. */
 async function refusDeTrop(response: Response): Promise<CredentialsSignin> {
   const corps = (await response.json().catch(() => null)) as { code?: string; retry_after?: number } | null;
@@ -285,6 +293,10 @@ export const authConfig: NextAuthConfig = {
             //   production. Dire « mot de passe incorrect » à quelqu'un qui est
             //   limité le fait réessayer, donc rester limité.
             if (response.status === 429) throw await refusDeTrop(response);
+            if (response.status === 403) {
+              const corps = (await response.json().catch(() => null)) as { code?: string } | null;
+              if (corps?.code === "organization_suspended") throw new EtablissementSuspendu();
+            }
             if (estUnePanne(response.status)) throw new ServiceIndisponible();
             return null;
           }

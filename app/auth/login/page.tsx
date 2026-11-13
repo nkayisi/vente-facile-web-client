@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 import { getUserOrganizations } from "@/actions/organization.actions";
 import { getDefaultRedirectPath } from "@/lib/auth/redirect";
-import { minutesDuVerrou } from "@/lib/auth/codes-connexion";
+import { CODE_SUSPENDU, minutesDuVerrou, PHRASE_SUSPENDU } from "@/lib/auth/codes-connexion";
 
 function LoginForm() {
   const router = useRouter();
@@ -110,6 +110,8 @@ function LoginForm() {
             "Le service est momentanément indisponible. Vos identifiants " +
               "n'y sont pour rien : réessayez dans quelques minutes.",
           );
+        } else if (result.code === CODE_SUSPENDU) {
+          toast.error(PHRASE_SUSPENDU);
         } else if (minutesVerrou !== null) {
           // Le verrou de connexion : même un mot de passe juste n'ouvre pas avant
           // l'échéance, et le dire évite de le retaper en boucle.
