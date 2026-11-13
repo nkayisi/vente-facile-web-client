@@ -26,10 +26,10 @@ import {
   reconcilePayments,
   type AdminIncidents,
   type IncidentSeverity,
-  type ReconcileReport,
 } from "@/actions/admin.actions";
 import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
 import { compte, dateCourte, dateHeure, depuis, montant, nombre } from "@/lib/admin/format";
+import { resumerReconciliation } from "@/lib/admin/reconciliation";
 
 const GRAVITE: Record<IncidentSeverity, { label: string; className: string }> = {
   critical: { label: "Critique", className: "bg-destructive/10 text-destructive border-destructive/30" },
@@ -114,7 +114,7 @@ export default function IncidentsPage() {
       toast.error(r.message || "Réconciliation impossible");
       return;
     }
-    setRapports((prev) => ({ ...prev, [reference]: resumer(r.data!) }));
+    setRapports((prev) => ({ ...prev, [reference]: resumerReconciliation(r.data!) }));
     if (r.data.reconciled > 0) {
       toast.success("Paiement encaissé : l'abonnement est activé.");
       actualiser();
@@ -262,12 +262,4 @@ export default function IncidentsPage() {
       </Tabs>
     </div>
   );
-}
-
-function resumer(r: ReconcileReport): string {
-  if (r.reconciled) return "Encaissé : l'abonnement a été activé.";
-  if (r.really_failed) return `Échec confirmé par l'opérateur (${r.details.really_failed[0]?.detail ?? ""}).`;
-  if (r.still_pending) return "Toujours en attente chez l'opérateur : le client n'a peut-être pas validé.";
-  if (r.unresolved) return `Non résolu : ${r.details.unresolved[0]?.detail ?? "réponse inattendue"}.`;
-  return "Rien à réconcilier pour cette référence.";
 }

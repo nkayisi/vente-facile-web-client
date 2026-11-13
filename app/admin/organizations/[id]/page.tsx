@@ -45,6 +45,7 @@ import { ActivateSubscriptionDialog } from "@/components/admin/activate-subscrip
 import { OrganizationEditDialog, TYPES_ETABLISSEMENT } from "@/components/admin/organization-edit-dialog";
 import { ImpersonateDialog } from "@/components/admin/impersonate-dialog";
 import { ImpersonationSessionRow } from "@/components/admin/impersonation-session-row";
+import { SupportNotesCard } from "@/components/admin/support-notes-card";
 import { dateCourte, dateHeure, montant, raisonSansPriseEnMain } from "@/lib/admin/format";
 
 function Ligne({ label, valeur }: { label: string; valeur?: React.ReactNode }) {
@@ -211,9 +212,12 @@ export default function AdminOrganizationDetailPage() {
                 Aucun abonnement en cours : l&apos;établissement est bloqué en écriture.
               </p>
             )}
-            <div className="pt-3">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 pt-3">
               <Link href={`/admin/subscriptions?organization=${org.id}`} className="text-sm text-primary hover:underline">
                 Historique des abonnements
+              </Link>
+              <Link href={`/admin/payments?organization=${org.id}`} className="text-sm text-primary hover:underline">
+                Paiements
               </Link>
             </div>
           </CardContent>
@@ -243,6 +247,9 @@ export default function AdminOrganizationDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Avant l'équipe : c'est ce qu'on lit avant d'appeler qui que ce soit. */}
+      <SupportNotesCard organizationId={org.id} />
 
       <Card className="border">
         <CardHeader className="pb-2">
@@ -379,7 +386,7 @@ export default function AdminOrganizationDetailPage() {
         entityName={org.name}
         description={
           org.is_active
-            ? "L'établissement est marqué inactif dans l'administration, pour le suivi. Ce marquage ne bloque pas encore le marchand : pour l'arrêter, annulez son abonnement. Ses données ne sont pas touchées."
+            ? "L'établissement est suspendu : ses membres ne peuvent plus se connecter ni rien consulter, et les prises en main en cours sont fermées. Seuls ses terminaux déjà enrôlés peuvent encore envoyer les ventes déjà encaissées. Ses données ne sont pas touchées."
             : "L'établissement redevient actif."
         }
         confirmLabel={org.is_active ? "Désactiver" : "Réactiver"}

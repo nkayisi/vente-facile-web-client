@@ -1304,3 +1304,246 @@ export async function isImpersonationLive(impersonationToken: string): Promise<b
     return statut === 401 ? false : null;
   }
 }
+
+// =============================================================================
+// NOTES DU SUPPORT (phase 7)
+// =============================================================================
+
+/** Une note du support sur un établissement. Jamais visible du marchand. */
+export interface SupportNote {
+  id: string;
+  organization: string;
+  organization_name: string;
+  author_email: string;
+  body: string;
+  is_pinned: boolean;
+  /** Seul son auteur corrige le texte : l'écran ne propose rien d'autre. */
+  peut_corriger: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getSupportNotes(
+  accessToken: string,
+  organizationId: string
+): Promise<{ success: boolean; data?: SupportNote[]; message?: string }> {
+  try {
+    const response = await axios.get(
+      // ⚠ La pagination par défaut couperait à vingt : sur la fiche, une note
+      //   tronquée en silence est une note que personne ne lira.
+      `${API_BASE_URL}/platform-admin/support-notes/?organization=${encodeURIComponent(organizationId)}&page_size=200`,
+      { headers: await getHeaders(accessToken) }
+    );
+    const data = response.data;
+    return { success: true, data: Array.isArray(data) ? data : data.results };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Les notes n'ont pas pu être chargées") };
+  }
+}
+
+export async function createSupportNote(
+  accessToken: string,
+  organizationId: string,
+  body: string
+): Promise<{ success: boolean; data?: SupportNote; message?: string }> {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/platform-admin/support-notes/`,
+      { organization: organizationId, body },
+      { headers: await getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "La note n'a pas pu être enregistrée") };
+  }
+}
+
+export async function updateSupportNote(
+  accessToken: string,
+  noteId: string,
+  patch: { body?: string; is_pinned?: boolean }
+): Promise<{ success: boolean; data?: SupportNote; message?: string }> {
+  try {
+    const response = await axios.patch(
+      `${API_BASE_URL}/platform-admin/support-notes/${noteId}/`,
+      patch,
+      { headers: await getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "La note n'a pas pu être modifiée") };
+  }
+}
+
+// =============================================================================
+// RECHERCHE GLOBALE (phase 7)
+// =============================================================================
+
+export interface AdminSearchHit {
+  id: string;
+  name: string;
+  detail: string;
+  is_active?: boolean;
+  organization?: string;
+}
+
+/**
+ * Un groupe à `null` n'est pas « aucun résultat » : c'est un domaine que le rôle
+ * ne lit pas. L'écran ne l'affiche pas du tout.
+ */
+export interface AdminSearchResults {
+  q: string;
+  organizations: AdminSearchHit[] | null;
+  users: AdminSearchHit[] | null;
+  payments: AdminSearchHit[] | null;
+}
+
+export async function searchAdmin(
+  accessToken: string,
+  q: string
+): Promise<{ success: boolean; data?: AdminSearchResults; message?: string }> {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/platform-admin/search/?q=${encodeURIComponent(q)}`,
+      { headers: await getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "La recherche n'a pas abouti") };
+  }
+}
+
+// =============================================================================
+// PAIEMENTS D'ABONNEMENT (phase 7)
+// =============================================================================
+
+export interface AdminSubscriptionPayment {
+  id: string;
+  organization: string;
+  organization_name: string;
+  subscription: string | null;
+  plan_name: string | null;
+  /** Décimal en chaîne : `COERCE_DECIMAL_TO_STRING` reste au défaut. */
+  amount: string;
+  currency: string;
+  payment_method: string;
+  payment_method_display: string;
+  status: string;
+  status_display: string;
+  reference: string;
+  external_transaction_id: string;
+  paid_at: string | null;
+  created_at: string;
+}
+
+export interface AdminSubscriptionPaymentFilters {
+  search?: string;
+  status?: string;
+  payment_method?: string;
+  organization?: string;
+  date_from?: string;
+  date_to?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export async function getAdminSubscriptionPayments(
+  accessToken: string,
+  filters?: AdminSubscriptionPaymentFilters
+): Promise<{ success: boolean; data?: { results: AdminSubscriptionPayment[]; count: number }; message?: string }> {
+  try {
+    const params = new URLSearchParams();
+    Object.entries(filters || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") params.append(k, String(v));
+    });
+    const response = await axios.get(
+      `${API_BASE_URL}/platform-admin/subscription-payments/?${params}`,
+      { headers: await getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return { success: false, message: messageDe(error, "Les paiements n'ont pas pu être chargés") };
+  }
+}
+
+// =============================================================================
+// EXPORTS DE L'ADMINISTRATION (phase 7)
+// =============================================================================
+
+/**
+ * Les cinq listes exportables. Une liste fermée plutôt qu'un chemin libre : une
+ * server action est un point d'entrée RPC, et un chemin fourni par le client
+ * ferait d'elle un relais vers n'importe quelle route de l'API.
+ */
+export type AdminExportList =
+  | "organizations"
+  | "users"
+  | "subscriptions"
+  | "subscription-payments"
+  | "audit-log";
+
+const LISTES_EXPORTABLES: readonly AdminExportList[] = [
+  "organizations",
+  "users",
+  "subscriptions",
+  "subscription-payments",
+  "audit-log",
+];
+
+const TYPES_DE_FICHIER = {
+  pdf: "application/pdf",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  csv: "text/csv;charset=utf-8",
+} as const;
+
+/**
+ * Exporte une liste de l'administration, dans le périmètre de ses filtres.
+ *
+ * ⚠ PAS `fetchExportFile` : celui-là passe par le client HTTP du MARCHAND, qui
+ *   exige un établissement et lit le signal de suspension. L'administration n'a
+ *   pas d'établissement. Le corps rendu a la même forme (`ExportFile`), donc le
+ *   téléchargement côté client est le même.
+ */
+export async function exportAdminList(
+  accessToken: string,
+  liste: AdminExportList,
+  format: "pdf" | "xlsx" | "csv",
+  filters: Record<string, string | number | undefined | null> = {}
+): Promise<{ success: boolean; data?: { data: number[]; contentType: string; filename: string }; message?: string }> {
+  if (!LISTES_EXPORTABLES.includes(liste)) {
+    return { success: false, message: "Liste inconnue." };
+  }
+  try {
+    const params = new URLSearchParams({ export_format: format });
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+    });
+    const response = await axios.get(
+      `${API_BASE_URL}/platform-admin/${liste}/export/?${params}`,
+      { headers: await getHeaders(accessToken), responseType: "arraybuffer" }
+    );
+    const disposition = String(response.headers["content-disposition"] || "");
+    const nom = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? `${liste}.${format}`;
+    return {
+      success: true,
+      data: {
+        data: Array.from(new Uint8Array(response.data)),
+        contentType: TYPES_DE_FICHIER[format],
+        filename: nom,
+      },
+    };
+  } catch (error: unknown) {
+    // Un corps d'erreur arrive lui aussi en `arraybuffer` : on le relit en JSON
+    // pour que « réservé au super-administrateur » se lise, pas « erreur 403 ».
+    const reponse = (error as { response?: { status?: number; data?: ArrayBuffer } }).response;
+    if (reponse?.data instanceof ArrayBuffer) {
+      try {
+        const corps = JSON.parse(new TextDecoder().decode(reponse.data));
+        if (corps?.detail) return { success: false, message: String(corps.detail) };
+      } catch {
+        // Corps illisible : on retombe sur le message générique.
+      }
+    }
+    return { success: false, message: messageDe(error, "L'export n'a pas pu être préparé") };
+  }
+}

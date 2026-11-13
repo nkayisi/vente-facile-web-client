@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getAdminUsers, revokePlatformRole, toggleUserActive, type AdminUser } from "@/actions/admin.actions";
 import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
+import { AdminExportMenu } from "@/components/admin/admin-export-menu";
 import { AdminPagination } from "@/components/admin/admin-pagination";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { RoleDialog } from "@/components/admin/role-dialog";
@@ -127,11 +128,23 @@ export default function AdminUsersPage() {
             {total} compte{total > 1 ? "s" : ""} enregistré{total > 1 ? "s" : ""}
           </p>
         </div>
-        {hasPlatformPermission("users.create") && (
-          <Button onClick={() => setCreation(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Nouveau compte
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <AdminExportMenu
+            liste="users"
+            libelle="Comptes"
+            vide={!isLoading && total === 0}
+            filtres={{
+              search: terme,
+              is_active: statut === "all" ? undefined : String(statut === "active"),
+              is_staff: role === "all" ? undefined : String(role === "staff"),
+            }}
+          />
+          {hasPlatformPermission("users.create") && (
+            <Button onClick={() => setCreation(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Nouveau compte
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col justify-between gap-3 sm:flex-row">

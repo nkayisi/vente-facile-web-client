@@ -2,6 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { Menu, LogOut, ChevronDown } from "lucide-react";
+import { AdminSearch } from "@/components/admin/admin-search";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -35,7 +36,9 @@ export function AdminHeader({ onMenuClick }: AdminHeaderProps) {
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="flex-1" />
+      <div className="flex flex-1 justify-center px-2">
+        <AdminSearch />
+      </div>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

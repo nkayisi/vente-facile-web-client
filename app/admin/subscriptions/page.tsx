@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
+import { AdminExportMenu } from "@/components/admin/admin-export-menu";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { dateCourte, montant, tonEcheance } from "@/lib/admin/format";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -361,17 +362,31 @@ function ListeAbonnements() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Abonnements</h1>
           <p className="text-muted-foreground">{totalCount} abonnement{totalCount > 1 ? "s" : ""}</p>
         </div>
-        {peutCreer && (
-          <Button onClick={openCreateDialog}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nouvel abonnement
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <AdminExportMenu
+            liste="subscriptions"
+            libelle="Abonnements"
+            vide={!isLoading && totalCount === 0}
+            filtres={{
+              search: debouncedSearch,
+              status: statusFilter === "all" ? undefined : statusFilter,
+              billing_cycle: billingCycleFilter === "all" ? undefined : billingCycleFilter,
+              plan: planFilter === "all" ? undefined : planFilter,
+              organization: organisationFiltre || undefined,
+            }}
+          />
+          {peutCreer && (
+            <Button onClick={openCreateDialog}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nouvel abonnement
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row justify-between gap-3">

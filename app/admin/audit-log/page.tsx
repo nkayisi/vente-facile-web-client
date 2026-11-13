@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getAdminAuditLog, type AdminActionLogEntry } from "@/actions/admin.actions";
 import { AdministrateurSelect, TOUS_LES_ADMINISTRATEURS } from "@/components/admin/administrateur-select";
+import { AdminExportMenu } from "@/components/admin/admin-export-menu";
 import { AdminPagination } from "@/components/admin/admin-pagination";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { compte, dateHeure } from "@/lib/admin/format";
@@ -113,11 +114,26 @@ export default function AuditLogPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Journal d&apos;audit</h1>
-        <p className="text-muted-foreground">
-          {compte(total, "acte d'administration", "actes d'administration")}. Lecture seule.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Journal d&apos;audit</h1>
+          <p className="text-muted-foreground">
+            {compte(total, "acte d'administration", "actes d'administration")}. Lecture seule.
+          </p>
+        </div>
+        <AdminExportMenu
+          liste="audit-log"
+          libelle="Journal d'audit"
+          vide={!isLoading && total === 0}
+          filtres={{
+            search: terme,
+            target_type: cible === "all" ? undefined : cible,
+            action: action === "all" ? undefined : action,
+            actor: auteur === TOUS_LES_ADMINISTRATEURS ? undefined : auteur,
+            date_from: du,
+            date_to: au,
+          }}
+        />
       </div>
 
       <Card className="border">

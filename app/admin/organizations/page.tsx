@@ -30,6 +30,7 @@ import {
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { ActivateSubscriptionDialog } from "@/components/admin/activate-subscription-dialog";
 import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
+import { AdminExportMenu } from "@/components/admin/admin-export-menu";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   Search,
@@ -121,9 +122,21 @@ export default function AdminOrganizationsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Établissements</h1>
-        <p className="text-muted-foreground">{totalCount} commerce{totalCount > 1 ? "s" : ""} enregistré{totalCount > 1 ? "s" : ""}</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Établissements</h1>
+          <p className="text-muted-foreground">{totalCount} commerce{totalCount > 1 ? "s" : ""} enregistré{totalCount > 1 ? "s" : ""}</p>
+        </div>
+        <AdminExportMenu
+          liste="organizations"
+          libelle="Établissements"
+          vide={!isLoading && totalCount === 0}
+          filtres={{
+            search: debouncedSearch,
+            is_active: statusFilter === "all" ? undefined : String(statusFilter === "active"),
+            business_type: businessTypeFilter === "all" ? undefined : businessTypeFilter,
+          }}
+        />
       </div>
 
       <div className="flex flex-col sm:flex-row justify-between gap-3">
@@ -288,7 +301,7 @@ export default function AdminOrganizationsPage() {
         entityName={cibleToggle?.name}
         description={
           cibleToggle?.is_active
-            ? "L'établissement est marqué inactif dans l'administration, pour le suivi. Ce marquage ne bloque pas encore le marchand : pour l'arrêter, annulez son abonnement. Ses données ne sont pas touchées."
+            ? "L'établissement est suspendu : ses membres ne peuvent plus se connecter ni rien consulter, et les prises en main en cours sont fermées. Seuls ses terminaux déjà enrôlés peuvent encore envoyer les ventes déjà encaissées. Ses données ne sont pas touchées."
             : "L'établissement redevient actif."
         }
         confirmLabel={cibleToggle?.is_active ? "Désactiver" : "Réactiver"}

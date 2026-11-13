@@ -18,6 +18,7 @@ import {
   ScrollText,
   ShieldCheck,
   Eye,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
@@ -43,6 +44,7 @@ const adminMenuItems: EntreeMenu[] = [
   { title: "Établissements", href: "/admin/organizations", icon: Building2, platformPermission: "organizations.view" },
   { title: "Utilisateurs", href: "/admin/users", icon: Users, platformPermission: "users.view" },
   { title: "Abonnements", href: "/admin/subscriptions", icon: Receipt, platformPermission: "subscriptions.view" },
+  { title: "Paiements", href: "/admin/payments", icon: Wallet, platformPermission: "subscriptions.view" },
   { title: "Plans", href: "/admin/plans", icon: CreditCard, platformPermission: "plans.view" },
   { title: "Statistiques", href: "/admin/statistiques", icon: TrendingUp, platformPermission: "metrics.view" },
   { title: "Journal d'audit", href: "/admin/audit-log", icon: ScrollText, platformPermission: "audit_log.view" },
