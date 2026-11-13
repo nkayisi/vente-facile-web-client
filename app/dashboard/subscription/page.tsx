@@ -135,6 +135,10 @@ export default function SubscriptionPage() {
     // │ payant partagent le palier 1, donc aucun plan n'était supérieur.   │
     // │ Le bandeau d'avertissement proposait « Passer au payant » et       │
     // │ menait à une grille dont chaque bouton était grisé.                │
+    // │                                                                    │
+    // │ L'essai est au palier 0 depuis le 13 novembre 2026 ; la branche    │
+    // │ reste pour ce que le palier ne dit pas : un essai ne se prolonge   │
+    // │ pas, et un plan gratuit ne se relance pas par-dessus.              │
     // └────────────────────────────────────────────────────────────────────┘
     const estEssai = subscription?.is_trial === true;
     const estPayant =

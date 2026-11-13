@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, Store, Building2, Pill, Package, UtensilsCrossed, MoreHorizontal, ArrowRight, ArrowLeft, Check } from "lucide-react";
 import { registerWithOrganization } from "@/actions/auth.actions";
 import { SUPPORTED_CURRENCIES } from "@/lib/currencies";
+import { SUPPORTED_COUNTRIES, DEFAULT_COUNTRY, defaultCountryForCurrency } from "@vente-facile/core";
 
 const businessTypes = [
   { value: "boutique", label: "Boutique", description: "Magasin de détail, commerce de proximité", icon: Store },
@@ -43,6 +44,7 @@ interface FormData {
   organizationPhone: string;
   businessType: string;
   currency: string;
+  country: string;
 }
 
 export default function RegisterPage() {
@@ -62,8 +64,23 @@ export default function RegisterPage() {
     organizationPhone: "",
     businessType: "boutique",
     currency: "CDF",
+    country: DEFAULT_COUNTRY,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  /**
+   * Le pays suit la devise TANT QUE le marchand ne l'a pas choisi lui-même :
+   * le franc CFA est la monnaie de six pays, et changer de devise après coup
+   * ne doit pas défaire un choix fait à la main.
+   */
+  const [paysChoisi, setPaysChoisi] = useState(false);
+
+  const choisirDevise = (code: string) => {
+    setFormData(prev => ({
+      ...prev,
+      currency: code,
+      country: paysChoisi ? prev.country : defaultCountryForCurrency(code),
+    }));
+  };
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -148,7 +165,7 @@ export default function RegisterPage() {
         organization_phone: formData.organizationPhone.trim(),
         business_type: formData.businessType,
         currency: formData.currency,
-        country: "RDC",
+        country: formData.country,
       });
 
       if (!result.success) {
@@ -404,7 +421,7 @@ export default function RegisterPage() {
                 <Label htmlFor="currency">Devise par défaut *</Label>
                 <Select
                   value={formData.currency}
-                  onValueChange={(value) => handleInputChange("currency", value)}
+                  onValueChange={choisirDevise}
                   disabled={isLoading}
                 >
                   <SelectTrigger className="w-full">
@@ -424,6 +441,32 @@ export default function RegisterPage() {
                 </Select>
                 <p className="text-xs text-gray-500 mt-1">
                   Cette devise sera utilisée par défaut dans votre établissement et ne pourra plus être modifiée après la création.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="country">Pays *</Label>
+                <Select
+                  value={formData.country}
+                  onValueChange={(value) => {
+                    setPaysChoisi(true);
+                    handleInputChange("country", value);
+                  }}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger id="country" className="w-full">
+                    <SelectValue placeholder="Sélectionnez un pays" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_COUNTRIES.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Proposé d&apos;après la devise. Il s&apos;imprime en tête de vos tickets et se modifie ensuite dans les paramètres.
                 </p>
               </div>
 
