@@ -7,6 +7,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { OrganizationChecker } from "@/components/auth/organization-checker";
+import { useSessionFermee } from "@/lib/auth/use-session-fermee";
 
 /**
  * La coquille CLIENT des pages de paiement : le contenu de l'ancien layout, tel quel.
@@ -15,10 +16,13 @@ import { OrganizationChecker } from "@/components/auth/organization-checker";
 export function PaymentShell({
   children,
   signalSuspension,
+  signalSessionFermee,
 }: {
   children: React.ReactNode;
   signalSuspension: string | null;
+  signalSessionFermee: string | null;
 }) {
+  useSessionFermee(signalSessionFermee);
   const { status } = useSession();
   const router = useRouter();
 

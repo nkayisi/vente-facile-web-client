@@ -18,6 +18,7 @@ import {
   Building2,
   CheckCircle,
   Eye,
+  KeyRound,
   Loader2,
   Mail,
   Pencil,
@@ -44,11 +45,12 @@ import {
 } from "@/actions/admin.actions";
 import { useAdminPermissions } from "@/components/admin/admin-permissions-provider";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { ResetPasswordDialog } from "@/components/admin/reset-password-dialog";
 import { RoleDialog } from "@/components/admin/role-dialog";
 import { UserEditDialog } from "@/components/admin/user-dialogs";
 import { ImpersonateDialog } from "@/components/admin/impersonate-dialog";
 import { ImpersonationSessionRow } from "@/components/admin/impersonation-session-row";
-import { dateCourte, dateHeure, raisonSansPriseEnMain } from "@/lib/admin/format";
+import { dateCourte, dateHeure, raisonSansPriseEnMain, raisonSansReinitialisation } from "@/lib/admin/format";
 
 function initiales(nom?: string | null, email?: string) {
   if (nom) return nom.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -64,7 +66,7 @@ function Ligne({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-type Geste = "edition" | "bascule" | "role" | "retrait" | null;
+type Geste = "edition" | "bascule" | "role" | "retrait" | "mot_de_passe" | null;
 
 export default function AdminUserDetailPage() {
   const { data: session } = useSession();
@@ -159,6 +161,13 @@ export default function AdminUserDetailPage() {
   const peutBasculer = hasPlatformPermission("users.toggle_active") && !soiMeme;
   const peutGererRoles = hasPlatformPermission("platform_admins.manage") && !soiMeme;
   const peutPrendreLaMain = hasPlatformPermission("impersonation.start");
+  const peutReinitialiser = hasPlatformPermission("users.reset_password") && !soiMeme;
+  const fermetureMotDePasse = raisonSansReinitialisation({
+    soiMeme,
+    compteActif: user.is_active,
+    administrateur: Boolean(user.platform_role || user.is_superuser),
+    peutGererAdministrateurs: hasPlatformPermission("platform_admins.manage"),
+  });
 
   const fermeturePrise = raisonSansPriseEnMain(user.is_active, Boolean(user.platform_role || user.is_superuser));
 
@@ -199,6 +208,16 @@ export default function AdminUserDetailPage() {
               <ShieldOff className="mr-2 h-4 w-4" /> Retirer le rôle
             </Button>
           )}
+          {peutReinitialiser && (
+            <Button
+              variant="outline"
+              disabled={fermetureMotDePasse !== null}
+              title={fermetureMotDePasse ?? undefined}
+              onClick={() => setGeste("mot_de_passe")}
+            >
+              <KeyRound className="mr-2 h-4 w-4" /> Réinitialiser le mot de passe
+            </Button>
+          )}
           {peutBasculer && (
             <Button variant={user.is_active ? "outline" : "default"} onClick={() => setGeste("bascule")}>
               <Power className="mr-2 h-4 w-4" /> {user.is_active ? "Désactiver" : "Réactiver"}
@@ -206,6 +225,9 @@ export default function AdminUserDetailPage() {
           )}
         </div>
       </div>
+      {peutReinitialiser && fermetureMotDePasse && (
+        <p className="text-sm text-muted-foreground">Mot de passe : {fermetureMotDePasse}.</p>
+      )}
       {soiMeme && (
         <p className="text-sm text-muted-foreground">
           C&apos;est votre compte : un autre super-administrateur peut changer votre rôle ou le désactiver, pas vous.
@@ -243,6 +265,13 @@ export default function AdminUserDetailPage() {
                 <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                   <XCircle className="h-3.5 w-3.5" /> Non
                 </span>
+              )}
+            </Ligne>
+            <Ligne label="Mot de passe">
+              {user.must_change_password ? (
+                <span className="text-warning">À changer à la prochaine connexion</span>
+              ) : (
+                <span className="text-muted-foreground">Aucun changement en attente</span>
               )}
             </Ligne>
             <Ligne label="Inscrit le">{dateCourte(user.date_joined)}</Ligne>
@@ -357,6 +386,15 @@ export default function AdminUserDetailPage() {
             setUser(u);
             actualiser();
           }}
+        />
+      )}
+      {geste === "mot_de_passe" && (
+        <ResetPasswordDialog
+          open
+          onOpenChange={(o) => !o && setGeste(null)}
+          userId={user.id}
+          userLabel={user.full_name || user.email}
+          onDone={actualiser}
         />
       )}
       {geste === "role" && (

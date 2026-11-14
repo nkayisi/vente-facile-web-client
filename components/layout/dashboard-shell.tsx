@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { DashboardHeader } from "@/components/layout/dashboard-header";
 import { OrganizationChecker } from "@/components/auth/organization-checker";
+import { useSessionFermee } from "@/lib/auth/use-session-fermee";
 import { SessionMonitor } from "@/components/auth/session-monitor";
 import { PermissionsProvider } from "@/components/auth/permissions-provider";
 import { SubscriptionGuard } from "@/components/auth/subscription-guard";
@@ -20,10 +21,13 @@ import { ImpersonationBanner } from "@/components/admin/impersonation-banner";
 export function DashboardShell({
   children,
   signalSuspension,
+  signalSessionFermee,
 }: {
   children: React.ReactNode;
   signalSuspension: string | null;
+  signalSessionFermee: string | null;
 }) {
+  useSessionFermee(signalSessionFermee);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   useEffect(() => {

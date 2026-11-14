@@ -37,6 +37,16 @@ const AUTH_ROUTES = ["/auth/login", "/auth/register"];
  */
 const PROTECTED_ROUTE_PREFIXES = ["/dashboard", "/admin", "/payment"];
 
+/**
+ * Le changement d'un mot de passe posé par l'administration.
+ *
+ * ⚠ CE N'EST QU'UN AIGUILLAGE. Le serveur refuse déjà toute route hors du
+ * changement lui-même (`password_change_required`) ; sans ce détour, le
+ * titulaire arriverait sur un tableau de bord dont chaque bloc afficherait ce
+ * refus, sans rien pour le conduire où il doit aller.
+ */
+const CHANGEMENT_MOT_DE_PASSE = "/auth/nouveau-mot-de-passe";
+
 export default auth((req) => {
   try {
     const { nextUrl } = req;
@@ -72,6 +82,18 @@ export default auth((req) => {
     response.cookies.delete("__Secure-authjs.csrf-token");
 
     return response;
+  }
+
+  // 2 bis. Mot de passe posé par l'administration : on le change avant tout.
+  const surLeChangement = nextUrl.pathname === CHANGEMENT_MOT_DE_PASSE;
+  if (isLoggedIn && hasValidToken && session?.mustChangePassword) {
+    if (!surLeChangement && (isProtectedRoute || isAuthRoute)) {
+      return NextResponse.redirect(new URL(CHANGEMENT_MOT_DE_PASSE, nextUrl));
+    }
+  } else if (surLeChangement) {
+    // Rien à changer : la page n'a plus d'objet, ni pour un visiteur anonyme.
+    const cible = isLoggedIn && hasValidToken ? getDefaultRedirectPath(session?.isStaff) : "/auth/login";
+    return NextResponse.redirect(new URL(cible, nextUrl));
   }
 
   // 2. Utilisateur connecté essaie d'accéder aux pages d'auth

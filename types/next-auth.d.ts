@@ -20,6 +20,11 @@ declare module "next-auth" {
     accessTokenExpires?: number;
     error?: string;
     isStaff?: boolean;
+    /**
+     * Mot de passe posé par l'administration, pas encore remplacé. Le middleware
+     * y conduit d'office ; le serveur, lui, refuse tout le reste quoi qu'il arrive.
+     */
+    mustChangePassword?: boolean;
     /** Présent pendant une prise en main par le support. */
     impersonation?: ImpersonationInfo;
     user: {
@@ -35,6 +40,7 @@ declare module "next-auth" {
     accessTokenExpires?: number;
     refreshTokenExpires?: number;
     isStaff?: boolean;
+    mustChangePassword?: boolean;
   }
 }
 
@@ -46,6 +52,7 @@ declare module "next-auth/jwt" {
     refreshTokenExpires?: number;
     error?: string;
     isStaff?: boolean;
+    mustChangePassword?: boolean;
     impersonation?: ImpersonationInfo;
     /**
      * Les jetons de l'administrateur, mis de côté pendant une prise en main.

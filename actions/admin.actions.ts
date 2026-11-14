@@ -1,8 +1,9 @@
 "use server";
 
-import axios from "axios";
+import axios, { type AxiosError } from "axios";
 import { formatAxiosErrorMessage, getErrorBody } from "@/lib/api/drf-error";
 import { enTetesDeBordure } from "@/lib/api/bordure";
+import { signalerSiSessionFermee } from "@/lib/auth/session-fermee";
 
 const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8005/api/v1";
 
@@ -80,7 +81,10 @@ export interface AdminOrganizationMember {
   email: string;
   role: string;
   role_display: string;
+  /** L'adhésion ET le compte : ce qui ouvre ou ferme la prise en main. */
   is_active: boolean;
+  /** Le compte seul : une adhésion close n'empêche pas de réinitialiser un mot de passe. */
+  user_is_active: boolean;
   /** On ne prend jamais la main sur un administrateur : le bouton se ferme. */
   is_platform_admin: boolean;
   joined_at: string;
@@ -125,6 +129,8 @@ export interface AdminUser {
   }>;
   date_joined: string;
   last_login?: string;
+  /** Mot de passe posé par l'administration, pas encore remplacé par son titulaire. */
+  must_change_password: boolean;
 }
 
 export interface AdminPlanCurrency {
@@ -214,6 +220,23 @@ export interface UpdatePlanData extends Partial<CreatePlanData> { }
 // HELPERS
 // =============================================================================
 
+/**
+ * Le client HTTP de l'administration.
+ *
+ * ⚠ Un seul crochet, celui d'une session coupée : un administrateur dont un
+ * super-administrateur vient de poser le mot de passe garderait sinon un onglet
+ * dont chaque écran répond 401, jusqu'au rafraîchissement suivant. Le refus
+ * repart tel quel : les messages des écrans ne changent pas.
+ */
+const adminAxios = axios.create();
+adminAxios.interceptors.response.use(
+  (reponse) => reponse,
+  async (error: AxiosError) => {
+    await signalerSiSessionFermee(error);
+    return Promise.reject(error);
+  },
+);
+
 /** Le message à montrer, champ par champ quand le serveur en désigne un. */
 function messageDe(error: unknown, repli: string): string {
   return formatAxiosErrorMessage(error, repli);
@@ -239,7 +262,7 @@ export async function getAdminDashboardStats(
   accessToken: string
 ): Promise<{ success: boolean; data?: AdminDashboardStats; message?: string }> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/platform-admin/dashboard/`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/platform-admin/dashboard/`, {
       headers: await getHeaders(accessToken),
     });
 
@@ -281,7 +304,7 @@ export async function getAdminOrganizations(
       });
     }
 
-    const response = await axios.get(
+    const response = await adminAxios.get(
       `${API_BASE_URL}/platform-admin/organizations/?${params}`,
       { headers: await getHeaders(accessToken) }
     );
@@ -301,7 +324,7 @@ export async function getAdminOrganization(
   organizationId: string
 ): Promise<{ success: boolean; data?: AdminOrganization; message?: string }> {
   try {
-    const response = await axios.get(
+    const response = await adminAxios.get(
       `${API_BASE_URL}/platform-admin/organizations/${organizationId}/`,
       { headers: await getHeaders(accessToken) }
     );
@@ -322,7 +345,7 @@ export async function toggleOrganizationActive(
   reason = ""
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/organizations/${organizationId}/toggle_active/`,
       { reason },
       { headers: await getHeaders(accessToken) }
@@ -348,7 +371,7 @@ export async function activateOrganizationSubscription(
   }
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/organizations/${organizationId}/activate_subscription/`,
       data,
       { headers: await getHeaders(accessToken) }
@@ -389,7 +412,7 @@ export async function getAdminUsers(
       });
     }
 
-    const response = await axios.get(
+    const response = await adminAxios.get(
       `${API_BASE_URL}/platform-admin/users/?${params}`,
       { headers: await getHeaders(accessToken) }
     );
@@ -409,7 +432,7 @@ export async function getAdminUser(
   userId: string
 ): Promise<{ success: boolean; data?: AdminUser; message?: string }> {
   try {
-    const response = await axios.get(
+    const response = await adminAxios.get(
       `${API_BASE_URL}/platform-admin/users/${userId}/`,
       { headers: await getHeaders(accessToken) }
     );
@@ -428,7 +451,7 @@ export async function getAdminSubscription(
   subscriptionId: string
 ): Promise<{ success: boolean; data?: AdminSubscription; message?: string }> {
   try {
-    const response = await axios.get(
+    const response = await adminAxios.get(
       `${API_BASE_URL}/platform-admin/subscriptions/${subscriptionId}/`,
       { headers: await getHeaders(accessToken) }
     );
@@ -448,7 +471,7 @@ export async function toggleUserActive(
   reason = ""
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/users/${userId}/toggle_active/`,
       { reason },
       { headers: await getHeaders(accessToken) }
@@ -482,7 +505,7 @@ export async function createAdminUser(
   data: CreateAdminUserData
 ): Promise<{ success: boolean; data?: AdminUser; message?: string; errors?: Record<string, unknown> }> {
   try {
-    const response = await axios.post(`${API_BASE_URL}/platform-admin/users/`, data, {
+    const response = await adminAxios.post(`${API_BASE_URL}/platform-admin/users/`, data, {
       headers: await getHeaders(accessToken),
     });
     return { success: true, data: response.data };
@@ -495,13 +518,46 @@ export async function createAdminUser(
   }
 }
 
+export interface ResetPasswordResult {
+  message: string;
+  sessions_closed: number;
+  devices_revoked: number;
+}
+
+/**
+ * Pose un mot de passe temporaire, à changer à la prochaine connexion.
+ *
+ * ⚠ LE MOT DE PASSE NE REVIENT PAS dans la réponse : l'écran le tient déjà, et
+ * c'est lui qui l'affiche une seule fois pour qu'on le dicte au titulaire.
+ */
+export async function resetUserPassword(
+  accessToken: string,
+  userId: string,
+  data: { password: string; reason: string }
+): Promise<{ success: boolean; data?: ResetPasswordResult; message?: string; errors?: Record<string, unknown> }> {
+  try {
+    const response = await adminAxios.post(
+      `${API_BASE_URL}/platform-admin/users/${userId}/reset_password/`,
+      data,
+      { headers: await getHeaders(accessToken) }
+    );
+    return { success: true, data: response.data };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: messageDe(error, "Erreur lors de la réinitialisation du mot de passe"),
+      errors: getErrorBody(error),
+    };
+  }
+}
+
 export async function updateAdminUser(
   accessToken: string,
   userId: string,
   data: { first_name?: string; last_name?: string; phone?: string }
 ): Promise<{ success: boolean; data?: AdminUser; message?: string; errors?: Record<string, unknown> }> {
   try {
-    const response = await axios.patch(`${API_BASE_URL}/platform-admin/users/${userId}/`, data, {
+    const response = await adminAxios.patch(`${API_BASE_URL}/platform-admin/users/${userId}/`, data, {
       headers: await getHeaders(accessToken),
     });
     return { success: true, data: response.data };
@@ -521,7 +577,7 @@ export async function grantPlatformRole(
   data: { role: PlatformRole; extra_permissions?: string[]; notes?: string }
 ): Promise<{ success: boolean; data?: AdminUser; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/users/${userId}/grant_role/`,
       data,
       { headers: await getHeaders(accessToken) }
@@ -538,7 +594,7 @@ export async function revokePlatformRole(
   reason = ""
 ): Promise<{ success: boolean; data?: AdminUser; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/users/${userId}/revoke_role/`,
       { reason },
       { headers: await getHeaders(accessToken) }
@@ -566,7 +622,7 @@ export async function getSettingsCurrencies(
   accessToken: string
 ): Promise<{ success: boolean; data?: SettingsCurrency[]; message?: string }> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/settings/currencies/`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/settings/currencies/`, {
       headers: await getHeaders(accessToken),
     });
     const list = Array.isArray(response.data) ? response.data : response.data?.results ?? [];
@@ -584,7 +640,7 @@ export async function getAdminPlans(
   accessToken: string
 ): Promise<{ success: boolean; data?: AdminPlan[]; message?: string }> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/platform-admin/plans/`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/platform-admin/plans/`, {
       headers: await getHeaders(accessToken),
     });
 
@@ -607,7 +663,7 @@ export async function createAdminPlan(
     if (!payload.currency) {
       delete payload.currency;
     }
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/plans/`,
       payload,
       { headers: await getHeaders(accessToken) }
@@ -633,7 +689,7 @@ export async function updateAdminPlan(
     if (payload.currency === "" || payload.currency === undefined) {
       delete payload.currency;
     }
-    const response = await axios.patch(
+    const response = await adminAxios.patch(
       `${API_BASE_URL}/platform-admin/plans/${planId}/`,
       payload,
       { headers: await getHeaders(accessToken) }
@@ -659,7 +715,7 @@ export async function togglePlanActive(
   reason = ""
 ): Promise<{ success: boolean; data?: AdminPlan; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/plans/${planId}/toggle_active/`,
       { reason },
       { headers: await getHeaders(accessToken) }
@@ -697,7 +753,7 @@ export async function getAdminSubscriptions(
       });
     }
 
-    const response = await axios.get(
+    const response = await adminAxios.get(
       `${API_BASE_URL}/platform-admin/subscriptions/?${params}`,
       { headers: await getHeaders(accessToken) }
     );
@@ -719,7 +775,7 @@ export async function extendSubscription(
   reason = ""
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/subscriptions/${subscriptionId}/extend/`,
       { days, reason },
       { headers: await getHeaders(accessToken) }
@@ -741,7 +797,7 @@ export async function cancelSubscription(
   reason = ""
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/subscriptions/${subscriptionId}/cancel/`,
       { reason },
       { headers: await getHeaders(accessToken) }
@@ -770,7 +826,7 @@ export async function createAdminSubscription(
   data: CreateSubscriptionData
 ): Promise<{ success: boolean; data?: AdminSubscription; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/subscriptions/`,
       data,
       { headers: await getHeaders(accessToken) }
@@ -810,7 +866,7 @@ export async function getAppRelease(
   accessToken: string
 ): Promise<{ success: boolean; data?: AppRelease; message?: string }> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/platform-admin/app-release/`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/platform-admin/app-release/`, {
       headers: await getHeaders(accessToken),
     });
     return { success: true, data: response.data };
@@ -844,7 +900,7 @@ export async function updateAppRelease(
   errors?: Record<string, unknown>;
 }> {
   try {
-    const response = await axios.patch(
+    const response = await adminAxios.patch(
       `${API_BASE_URL}/platform-admin/app-release/`,
       data,
       { headers: await getHeaders(accessToken) }
@@ -886,7 +942,7 @@ export async function getAdminMe(
   accessToken: string
 ): Promise<{ success: boolean; data?: AdminMe; status?: number; message?: string }> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/platform-admin/me/`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/platform-admin/me/`, {
       headers: await getHeaders(accessToken),
     });
     return { success: true, data: response.data };
@@ -919,7 +975,7 @@ export async function updateAdminOrganization(
   data: UpdateAdminOrganizationData
 ): Promise<{ success: boolean; data?: AdminOrganization; message?: string; errors?: Record<string, unknown> }> {
   try {
-    const response = await axios.patch(
+    const response = await adminAxios.patch(
       `${API_BASE_URL}/platform-admin/organizations/${organizationId}/`,
       data,
       { headers: await getHeaders(accessToken) }
@@ -964,7 +1020,7 @@ export async function getPlatformAdmins(
     Object.entries(filters || {}).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") params.append(k, String(v));
     });
-    const response = await axios.get(`${API_BASE_URL}/platform-admin/platform-admins/?${params}`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/platform-admin/platform-admins/?${params}`, {
       headers: await getHeaders(accessToken),
     });
     return { success: true, data: response.data };
@@ -1016,7 +1072,7 @@ export async function getAdminAuditLog(
     Object.entries(filters || {}).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") params.append(k, String(v));
     });
-    const response = await axios.get(`${API_BASE_URL}/platform-admin/audit-log/?${params}`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/platform-admin/audit-log/?${params}`, {
       headers: await getHeaders(accessToken),
     });
     return { success: true, data: response.data };
@@ -1055,7 +1111,7 @@ export async function getAdminMetrics(
   months = 12
 ): Promise<{ success: boolean; data?: AdminMetrics; message?: string }> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/platform-admin/metrics/?months=${months}`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/platform-admin/metrics/?months=${months}`, {
       headers: await getHeaders(accessToken),
     });
     return { success: true, data: response.data };
@@ -1136,7 +1192,7 @@ export async function getAdminIncidents(
   accessToken: string
 ): Promise<{ success: boolean; data?: AdminIncidents; message?: string }> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/platform-admin/incidents/`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/platform-admin/incidents/`, {
       headers: await getHeaders(accessToken),
     });
     return { success: true, data: response.data };
@@ -1162,7 +1218,7 @@ export async function reconcilePayments(
   options: { reference?: string; dry_run?: boolean } = {}
 ): Promise<{ success: boolean; data?: ReconcileReport; message?: string }> {
   try {
-    const response = await axios.post(`${API_BASE_URL}/platform-admin/incidents/reconcile/`, options, {
+    const response = await adminAxios.post(`${API_BASE_URL}/platform-admin/incidents/reconcile/`, options, {
       headers: await getHeaders(accessToken),
       // L'opérateur peut répondre lentement : un lot entier se compte en dizaines de secondes.
       timeout: 120_000,
@@ -1193,7 +1249,7 @@ export async function startImpersonation(
   reason: string
 ): Promise<{ success: boolean; data?: ImpersonationStart; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/users/${userId}/impersonate/`,
       { organization: organizationId, reason },
       { headers: await getHeaders(accessToken) }
@@ -1209,7 +1265,7 @@ export async function endImpersonation(
   impersonationToken: string
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    await axios.post(`${API_BASE_URL}/platform-admin/impersonation/end/`, {}, {
+    await adminAxios.post(`${API_BASE_URL}/platform-admin/impersonation/end/`, {}, {
       headers: await getHeaders(impersonationToken),
     });
     return { success: true };
@@ -1257,7 +1313,7 @@ export async function getImpersonationSessions(
     Object.entries(filters || {}).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") params.append(k, String(v));
     });
-    const response = await axios.get(`${API_BASE_URL}/platform-admin/impersonation-sessions/?${params}`, {
+    const response = await adminAxios.get(`${API_BASE_URL}/platform-admin/impersonation-sessions/?${params}`, {
       headers: await getHeaders(accessToken),
     });
     return { success: true, data: response.data };
@@ -1276,7 +1332,7 @@ export async function endImpersonationSession(
   reason: string
 ): Promise<{ success: boolean; data?: ImpersonationSessionEntry; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/impersonation-sessions/${sessionId}/end/`,
       { reason },
       { headers: await getHeaders(accessToken) }
@@ -1297,7 +1353,7 @@ export async function endImpersonationSession(
  */
 export async function isImpersonationLive(impersonationToken: string): Promise<boolean | null> {
   try {
-    await axios.get(`${API_BASE_URL}/users/me/`, { headers: await getHeaders(impersonationToken) });
+    await adminAxios.get(`${API_BASE_URL}/users/me/`, { headers: await getHeaders(impersonationToken) });
     return true;
   } catch (error: unknown) {
     const statut = (error as { response?: { status?: number } })?.response?.status;
@@ -1328,7 +1384,7 @@ export async function getSupportNotes(
   organizationId: string
 ): Promise<{ success: boolean; data?: SupportNote[]; message?: string }> {
   try {
-    const response = await axios.get(
+    const response = await adminAxios.get(
       // ⚠ La pagination par défaut couperait à vingt : sur la fiche, une note
       //   tronquée en silence est une note que personne ne lira.
       `${API_BASE_URL}/platform-admin/support-notes/?organization=${encodeURIComponent(organizationId)}&page_size=200`,
@@ -1347,7 +1403,7 @@ export async function createSupportNote(
   body: string
 ): Promise<{ success: boolean; data?: SupportNote; message?: string }> {
   try {
-    const response = await axios.post(
+    const response = await adminAxios.post(
       `${API_BASE_URL}/platform-admin/support-notes/`,
       { organization: organizationId, body },
       { headers: await getHeaders(accessToken) }
@@ -1364,7 +1420,7 @@ export async function updateSupportNote(
   patch: { body?: string; is_pinned?: boolean }
 ): Promise<{ success: boolean; data?: SupportNote; message?: string }> {
   try {
-    const response = await axios.patch(
+    const response = await adminAxios.patch(
       `${API_BASE_URL}/platform-admin/support-notes/${noteId}/`,
       patch,
       { headers: await getHeaders(accessToken) }
@@ -1403,7 +1459,7 @@ export async function searchAdmin(
   q: string
 ): Promise<{ success: boolean; data?: AdminSearchResults; message?: string }> {
   try {
-    const response = await axios.get(
+    const response = await adminAxios.get(
       `${API_BASE_URL}/platform-admin/search/?q=${encodeURIComponent(q)}`,
       { headers: await getHeaders(accessToken) }
     );
@@ -1456,7 +1512,7 @@ export async function getAdminSubscriptionPayments(
     Object.entries(filters || {}).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") params.append(k, String(v));
     });
-    const response = await axios.get(
+    const response = await adminAxios.get(
       `${API_BASE_URL}/platform-admin/subscription-payments/?${params}`,
       { headers: await getHeaders(accessToken) }
     );
@@ -1518,7 +1574,7 @@ export async function exportAdminList(
     Object.entries(filters).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
     });
-    const response = await axios.get(
+    const response = await adminAxios.get(
       `${API_BASE_URL}/platform-admin/${liste}/export/?${params}`,
       { headers: await getHeaders(accessToken), responseType: "arraybuffer" }
     );

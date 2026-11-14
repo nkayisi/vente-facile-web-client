@@ -14,6 +14,21 @@ import { Eye, EyeOff, Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 import { getUserOrganizations } from "@/actions/organization.actions";
 import { getDefaultRedirectPath } from "@/lib/auth/redirect";
 import { CODE_SUSPENDU, minutesDuVerrou, PHRASE_SUSPENDU } from "@/lib/auth/codes-connexion";
+import { ERREUR_SESSION_FERMEE } from "@/lib/auth/signal-session-fermee";
+
+
+/**
+ * Pourquoi on revient sur la connexion, quand une session prend fin d'elle-même.
+ * ⚠ Une session COUPÉE n'a pas « expiré » : le dire ferait croire à une simple
+ * inactivité, alors que l'administration vient de changer le mot de passe.
+ */
+const MESSAGES_DE_FIN_DE_SESSION = new Map<string, string>([
+  ["SessionExpired", "Votre session a expiré. Veuillez vous reconnecter."],
+  [
+    ERREUR_SESSION_FERMEE,
+    "Votre session a été fermée par l'administration. Reconnectez-vous avec le mot de passe qu'elle vous a communiqué.",
+  ],
+]);
 
 function LoginForm() {
   const router = useRouter();
@@ -29,11 +44,13 @@ function LoginForm() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Déconnecter automatiquement si la session est expirée
+  // Déconnecter automatiquement si la session est expirée, ou coupée par
+  // l'administration (réinitialisation du mot de passe, `use-session-fermee.ts`).
   useEffect(() => {
-    if (sessionError === "SessionExpired") {
+    const message = MESSAGES_DE_FIN_DE_SESSION.get(sessionError ?? "");
+    if (message) {
       setIsCleaningSession(true);
-      toast.error("Votre session a expiré. Veuillez vous reconnecter.");
+      toast.error(message);
 
       // Attendre que signOut finisse avant de permettre une nouvelle connexion
       signOut({ redirect: false }).finally(() => {

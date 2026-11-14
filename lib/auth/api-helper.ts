@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from "axios";
 import { formatApiErrorBody } from "@/lib/api/drf-error";
 import { getServerAccessToken } from "./server-token";
+import { signalerSiSessionFermee } from "./session-fermee";
 import { suspensionDuRefus } from "./signal-suspension";
 import { signalerSuspension } from "./suspension";
 
@@ -94,6 +95,14 @@ serverAxios.interceptors.response.use(
   },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // ⚠ Une session COUPÉE par l'administration ne se rattrape pas : le serveur
+    // refuse aussi son rafraîchissement. Réessayer avec le jeton du cookie
+    // rendait le même refus, écran après écran, pendant trente minutes. On
+    // prévient la page, qui se déconnecte (`lib/auth/session-fermee.ts`).
+    if (await signalerSiSessionFermee(error)) {
+      return Promise.reject(error);
+    }
 
     // Retry sur 401 (token expiré)
     if (error.response?.status === 401 && !originalRequest._retry) {

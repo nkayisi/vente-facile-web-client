@@ -7,9 +7,11 @@
  * `create_user`, qui le hache. Un compte créé sans eux naissait jusqu'ici
  * inutilisable, et rien ne le disait.
  *
- * ⚠ La correction ne touche ni l'adresse e-mail, ni le mot de passe : la
- * première sert d'identifiant de connexion, le second ne se pose pas à la place
- * de quelqu'un. L'un et l'autre restent au titulaire du compte.
+ * ⚠ La correction ne touche ni l'adresse e-mail, ni le mot de passe. La
+ * première sert d'identifiant de connexion. Le second a son PROPRE geste
+ * (`reset-password-dialog.tsx`), motivé, journalisé, qui coupe les sessions et
+ * fait changer le mot de passe à la prochaine connexion : le glisser dans une
+ * correction de nom le poserait à la place du titulaire, sans rien de tout cela.
  */
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -208,7 +210,7 @@ export function UserEditDialog({
         <DialogHeader>
           <DialogTitle>Modifier le compte</DialogTitle>
           <DialogDescription>
-            {user.email} · l&apos;adresse et le mot de passe restent au titulaire du compte.
+            {user.email} · l&apos;adresse ne se modifie pas ; le mot de passe a son propre geste, « Réinitialiser ».
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

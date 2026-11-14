@@ -37,6 +37,7 @@ PackageX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPrice, formatDecimal, formatDateTime } from "@/lib/format";
+import { getCurrencySymbol } from "@/lib/currencies";
 import { PermissionGate } from "@/components/auth/permission-gate";
 import {
   getSale,
@@ -626,7 +627,13 @@ export default function SaleDetailPage() {
               {parseFloat(sale.change_amount) > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Monnaie rendue</span>
-                  <span>{formatPrice(sale.change_amount)}</span>
+                  {/* Dans la devise des billets RENDUS, pas celle de la facture. */}
+                  <span>
+                    {formatPrice(
+                      sale.change_amount,
+                      getCurrencySymbol(sale.change_currency || sale.currency)
+                    )}
+                  </span>
                 </div>
               )}
             </div>

@@ -819,7 +819,7 @@ export default function ReportsPage() {
                     </p>
                   )}
                   <p className="text-sm text-gray-500 mt-1">
-                    Flux net: {formatPrice(parseFloat(summary.cashbook.net_flow))}
+                    Flux net : {formatPrice(parseFloat(summary.cashbook.net_flow))}
                   </p>
                 </div>
             </CardContent>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compte, depuis, raisonSansPriseEnMain, tonEcheance } from "./format";
+import { compte, depuis, raisonSansPriseEnMain, raisonSansReinitialisation, tonEcheance } from "./format";
 
 describe("compte", () => {
   it("accorde, zéro et un au singulier", () => {
@@ -37,5 +37,28 @@ describe("raisonSansPriseEnMain", () => {
     expect(raisonSansPriseEnMain(false, false)).toBe("Compte inactif");
     expect(raisonSansPriseEnMain(true, true)).toMatch(/Administrateur/);
     expect(raisonSansPriseEnMain(true, false)).toBeNull();
+  });
+});
+
+describe("raisonSansReinitialisation", () => {
+  const base = { soiMeme: false, compteActif: true, administrateur: false, peutGererAdministrateurs: false };
+
+  it("ouvre le geste sur un marchand actif", () => {
+    expect(raisonSansReinitialisation(base)).toBeNull();
+  });
+
+  it("ferme son propre compte, qui se change depuis le profil", () => {
+    expect(raisonSansReinitialisation({ ...base, soiMeme: true })).toMatch(/profil/);
+  });
+
+  it("ferme un compte désactivé", () => {
+    expect(raisonSansReinitialisation({ ...base, compteActif: false })).toMatch(/réactivez/);
+  });
+
+  it("ferme un administrateur au support, l'ouvre au super-administrateur", () => {
+    expect(raisonSansReinitialisation({ ...base, administrateur: true })).toMatch(/super-administrateur/);
+    expect(
+      raisonSansReinitialisation({ ...base, administrateur: true, peutGererAdministrateurs: true }),
+    ).toBeNull();
   });
 });

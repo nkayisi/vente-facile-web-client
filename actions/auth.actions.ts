@@ -247,6 +247,8 @@ export interface UserProfile {
     preferences: Record<string, any>;
     date_joined: string;
     last_login: string;
+    /** Mot de passe posé par l'administration, pas encore remplacé. */
+    must_change_password?: boolean;
 }
 
 export interface UpdateProfileData {

@@ -87,6 +87,8 @@ export function saleReceiptFromSale(
       currency: p.currency,
     })),
     changeAmount: num(sale.change_amount),
+    // Rendue dans SA devise : le duplicata doit dire ce que l'original a dit.
+    changeCurrency: sale.change_currency || sale.currency,
     amountDue: num(sale.amount_due),
 
     // Une réimpression doit être identique à l'original : les valeurs viennent

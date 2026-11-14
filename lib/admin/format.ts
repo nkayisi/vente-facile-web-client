@@ -79,3 +79,29 @@ export function raisonSansPriseEnMain(
   if (administrateur) return "Administrateur de la plateforme : on ne prend pas sa main";
   return null;
 }
+
+/**
+ * Pourquoi on ne peut PAS réinitialiser le mot de passe d'un compte, ou `null`.
+ *
+ * Miroir des trois refus de `reinitialiser_mot_de_passe` (serveur) : un bouton
+ * qui s'ouvre puis se fait refuser fait taper un motif pour rien. Le serveur
+ * reste l'autorité, et il refuse aussi.
+ */
+export function raisonSansReinitialisation({
+  soiMeme,
+  compteActif,
+  administrateur,
+  peutGererAdministrateurs,
+}: {
+  soiMeme: boolean;
+  compteActif: boolean;
+  administrateur: boolean;
+  peutGererAdministrateurs: boolean;
+}): string | null {
+  if (soiMeme) return "C'est votre compte : changez votre mot de passe depuis votre profil";
+  if (!compteActif) return "Compte désactivé : réactivez-le d'abord";
+  if (administrateur && !peutGererAdministrateurs) {
+    return "Administrateur de la plateforme : réservé au super-administrateur";
+  }
+  return null;
+}

@@ -1391,6 +1391,9 @@ export default function POSPage() {
               return receiptPayments;
             })(),
             changeAmount: !isCreditSale ? backendChange : 0,
+            // `change_amount` est exprimé dans `change_currency` : sans elle, une
+            // monnaie rendue en francs s'imprimait sous le symbole du dollar.
+            changeCurrency: saleAuthoritative.change_currency || invCur,
             currency: invCur,
             amountDue: backendAmountDue,
             loyalty: {

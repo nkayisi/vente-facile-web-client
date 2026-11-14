@@ -17,6 +17,7 @@ import {
   Building2,
   CreditCard,
   Eye,
+  KeyRound,
   Loader2,
   Mail,
   MapPin,
@@ -44,9 +45,10 @@ import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { ActivateSubscriptionDialog } from "@/components/admin/activate-subscription-dialog";
 import { OrganizationEditDialog, TYPES_ETABLISSEMENT } from "@/components/admin/organization-edit-dialog";
 import { ImpersonateDialog } from "@/components/admin/impersonate-dialog";
+import { ResetPasswordDialog } from "@/components/admin/reset-password-dialog";
 import { ImpersonationSessionRow } from "@/components/admin/impersonation-session-row";
 import { SupportNotesCard } from "@/components/admin/support-notes-card";
-import { dateCourte, dateHeure, montant, raisonSansPriseEnMain } from "@/lib/admin/format";
+import { dateCourte, dateHeure, montant, raisonSansPriseEnMain, raisonSansReinitialisation } from "@/lib/admin/format";
 
 function Ligne({ label, valeur }: { label: string; valeur?: React.ReactNode }) {
   return (
@@ -63,7 +65,7 @@ export default function AdminOrganizationDetailPage() {
   const params = useParams();
   const router = useRouter();
   const orgId = params.id as string;
-  const { hasPlatformPermission } = useAdminPermissions();
+  const { hasPlatformPermission, me } = useAdminPermissions();
 
   const [org, setOrg] = useState<AdminOrganization | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -75,6 +77,7 @@ export default function AdminOrganizationDetailPage() {
   const [bascule, setBascule] = useState(false);
   const [activation, setActivation] = useState(false);
   const [priseSur, setPriseSur] = useState<AdminOrganizationMember | null>(null);
+  const [motDePassePour, setMotDePassePour] = useState<AdminOrganizationMember | null>(null);
 
   const voitJournal = hasPlatformPermission("audit_log.view");
   const actualiser = useCallback(() => setTour((t) => t + 1), []);
@@ -133,6 +136,8 @@ export default function AdminOrganizationDetailPage() {
   const sub = org.subscription;
   const type = TYPES_ETABLISSEMENT.find((t) => t.value === org.business_type)?.label ?? org.business_type;
   const peutPrendreLaMain = hasPlatformPermission("impersonation.start");
+  const peutReinitialiser = hasPlatformPermission("users.reset_password");
+  const peutGererAdministrateurs = hasPlatformPermission("platform_admins.manage");
 
   return (
     <div className="space-y-6">
@@ -260,6 +265,14 @@ export default function AdminOrganizationDetailPage() {
         <CardContent className="divide-y">
           {(org.members ?? []).map((m) => {
             const fermeture = raisonSansPriseEnMain(m.is_active, m.is_platform_admin, "Compte ou adhésion inactif");
+            // ⚠ Le COMPTE seul, pas l'adhésion : un membre parti d'ici peut encore
+            // travailler ailleurs, et y avoir oublié son mot de passe.
+            const fermetureMotDePasse = raisonSansReinitialisation({
+              soiMeme: m.user_id === me?.id,
+              compteActif: m.user_is_active,
+              administrateur: m.is_platform_admin,
+              peutGererAdministrateurs,
+            });
             return (
               <div key={m.user_id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
@@ -270,12 +283,34 @@ export default function AdminOrganizationDetailPage() {
                   </div>
                   <p className="text-xs text-muted-foreground">{m.email}</p>
                 </div>
-                {peutPrendreLaMain && (
+                {(peutPrendreLaMain || peutReinitialiser) && (
                   <div className="flex flex-col items-start gap-1 sm:items-end">
-                    <Button size="sm" variant="outline" disabled={fermeture !== null} onClick={() => setPriseSur(m)}>
-                      <Eye className="mr-2 h-4 w-4" /> Prendre la main
-                    </Button>
-                    {fermeture && <p className="text-xs text-muted-foreground">{fermeture}</p>}
+                    <div className="flex flex-wrap gap-2">
+                      {peutReinitialiser && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={fermetureMotDePasse !== null}
+                          onClick={() => setMotDePassePour(m)}
+                        >
+                          <KeyRound className="mr-2 h-4 w-4" /> Mot de passe
+                        </Button>
+                      )}
+                      {peutPrendreLaMain && (
+                        <Button size="sm" variant="outline" disabled={fermeture !== null} onClick={() => setPriseSur(m)}>
+                          <Eye className="mr-2 h-4 w-4" /> Prendre la main
+                        </Button>
+                      )}
+                    </div>
+                    {/* Un seul motif par ligne : celui du geste qui le porte, sinon
+                        celui de la prise en main. Deux phrases empilées sous deux
+                        boutons ne disent plus lequel est fermé. */}
+                    {peutPrendreLaMain && fermeture ? (
+                      <p className="text-xs text-muted-foreground">{fermeture}</p>
+                    ) : (
+                      peutReinitialiser &&
+                      fermetureMotDePasse && <p className="text-xs text-muted-foreground">{fermetureMotDePasse}</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -366,6 +401,15 @@ export default function AdminOrganizationDetailPage() {
           onOpenChange={(o) => !o && setActivation(false)}
           organizationId={org.id}
           organizationName={org.name}
+          onDone={actualiser}
+        />
+      )}
+      {motDePassePour && (
+        <ResetPasswordDialog
+          open
+          onOpenChange={(o) => !o && setMotDePassePour(null)}
+          userId={motDePassePour.user_id}
+          userLabel={motDePassePour.name || motDePassePour.email}
           onDone={actualiser}
         />
       )}

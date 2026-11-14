@@ -11,7 +11,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Eye, Loader2, MoreHorizontal, Plus, Power, Search, Shield, ShieldOff } from "lucide-react";
+import { Eye, KeyRound, Loader2, MoreHorizontal, Plus, Power, Search, Shield, ShieldOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,10 +31,11 @@ import { useAdminPermissions } from "@/components/admin/admin-permissions-provid
 import { AdminExportMenu } from "@/components/admin/admin-export-menu";
 import { AdminPagination } from "@/components/admin/admin-pagination";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { ResetPasswordDialog } from "@/components/admin/reset-password-dialog";
 import { RoleDialog } from "@/components/admin/role-dialog";
 import { UserCreateDialog } from "@/components/admin/user-dialogs";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { dateCourte } from "@/lib/admin/format";
+import { dateCourte, raisonSansReinitialisation } from "@/lib/admin/format";
 
 const TAILLE = 20;
 
@@ -43,7 +44,7 @@ function initiales(nom?: string | null, email?: string) {
   return email?.charAt(0).toUpperCase() || "U";
 }
 
-type Geste = { type: "bascule" | "role" | "retrait"; user: AdminUser } | null;
+type Geste = { type: "bascule" | "role" | "retrait" | "mot_de_passe"; user: AdminUser } | null;
 
 export default function AdminUsersPage() {
   const { data: session } = useSession();
@@ -118,6 +119,7 @@ export default function AdminUsersPage() {
 
   const peutBasculer = hasPlatformPermission("users.toggle_active");
   const peutGererRoles = hasPlatformPermission("platform_admins.manage");
+  const peutReinitialiser = hasPlatformPermission("users.reset_password");
 
   return (
     <div className="space-y-6">
@@ -208,6 +210,14 @@ export default function AdminUsersPage() {
               <TableBody>
                 {users.map((u) => {
                   const soiMeme = u.id === me?.id;
+                  // Le motif d'un geste fermé se lit dans le menu, au lieu d'un
+                  // bouton qui s'ouvrirait pour se faire refuser.
+                  const sansMotDePasse = raisonSansReinitialisation({
+                    soiMeme,
+                    compteActif: u.is_active,
+                    administrateur: Boolean(u.platform_role) || u.is_superuser,
+                    peutGererAdministrateurs: peutGererRoles,
+                  });
                   return (
                     <TableRow key={u.id}>
                       <TableCell>
@@ -255,7 +265,24 @@ export default function AdminUsersPage() {
                                 <Eye className="mr-2 h-4 w-4" /> Voir la fiche
                               </Link>
                             </DropdownMenuItem>
-                            {(peutBasculer || peutGererRoles) && !soiMeme && <DropdownMenuSeparator />}
+                            {(peutBasculer || peutGererRoles || peutReinitialiser) && !soiMeme && <DropdownMenuSeparator />}
+                            {peutReinitialiser && !soiMeme && (
+                              <DropdownMenuItem
+                                disabled={sansMotDePasse !== null}
+                                className="items-start"
+                                onClick={() => setGeste({ type: "mot_de_passe", user: u })}
+                              >
+                                <KeyRound className="mr-2 mt-0.5 h-4 w-4" />
+                                {/* ⚠ Un élément désactivé ne montre pas d'infobulle : le
+                                    motif s'écrit dans l'élément lui-même. */}
+                                <span>
+                                  Réinitialiser le mot de passe
+                                  {sansMotDePasse && (
+                                    <span className="block max-w-56 text-xs text-muted-foreground">{sansMotDePasse}</span>
+                                  )}
+                                </span>
+                              </DropdownMenuItem>
+                            )}
                             {peutBasculer && !soiMeme && (
                               <DropdownMenuItem onClick={() => setGeste({ type: "bascule", user: u })}>
                                 <Power className="mr-2 h-4 w-4" /> {u.is_active ? "Désactiver" : "Réactiver"}
@@ -287,6 +314,15 @@ export default function AdminUsersPage() {
 
       {creation && (
         <UserCreateDialog open onOpenChange={(o) => !o && setCreation(false)} onCreated={actualiser} />
+      )}
+      {geste?.type === "mot_de_passe" && (
+        <ResetPasswordDialog
+          open
+          onOpenChange={(o) => !o && setGeste(null)}
+          userId={geste.user.id}
+          userLabel={geste.user.full_name || geste.user.email}
+          onDone={actualiser}
+        />
       )}
       {geste?.type === "role" && (
         <RoleDialog

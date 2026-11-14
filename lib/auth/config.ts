@@ -2,6 +2,7 @@ import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { CredentialsSignin } from "next-auth";
 import type { JWT } from "next-auth/jwt";
+import { chargeDuJeton } from "./charge-du-jeton";
 import { refreshWithMutex } from "./refresh-mutex";
 import { enTetesDeBordure } from "@/lib/api/bordure";
 import { CODE_SUSPENDU, PREFIXE_VERROU } from "./codes-connexion";
@@ -137,17 +138,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
  * chose, qu'un jeton ordinaire soit rangé comme une prise en main.
  */
 function estJetonDePriseEnMain(jeton: unknown): jeton is string {
-  if (typeof jeton !== "string") return false;
-  const corps = jeton.split(".")[1];
-  if (!corps) return false;
-  try {
-    // `atob` et non `Buffer` : ce module est aussi chargé par le middleware, qui
-    // peut tourner hors de Node. Les revendications lues ici sont en ASCII.
-    const json = JSON.parse(atob(corps.replace(/-/g, "+").replace(/_/g, "/")));
-    return json?.imp === true;
-  } catch {
-    return false;
-  }
+  return chargeDuJeton(jeton)?.imp === true;
 }
 
 /**
@@ -316,6 +307,7 @@ export const authConfig: NextAuthConfig = {
               accessTokenExpires: now + ACCESS_TOKEN_LIFETIME,
               refreshTokenExpires: now + REFRESH_TOKEN_LIFETIME,
               isStaff: data.user?.is_staff || false,
+              mustChangePassword: data.user?.must_change_password === true,
             };
           }
 
@@ -347,6 +339,7 @@ export const authConfig: NextAuthConfig = {
           refreshTokenExpires: user.refreshTokenExpires,
           email: user.email,
           isStaff: user.isStaff,
+          mustChangePassword: user.mustChangePassword === true,
           error: undefined,
         };
       }
@@ -360,8 +353,18 @@ export const authConfig: NextAuthConfig = {
         | { impersonation?: { access?: string; expires_at?: string; session_id?: string;
             target_user?: { email?: string; full_name?: string };
             organization?: { id?: string; name?: string } };
-            endImpersonation?: boolean }
+            endImpersonation?: boolean;
+            passwordChanged?: boolean }
         | undefined;
+      // ── Mot de passe changé ────────────────────────────────────────────────
+      // Le titulaire vient de remplacer le mot de passe posé par l'administration.
+      // ⚠ Le cookie n'est qu'un AIGUILLAGE : le client peut bien effacer ce
+      // drapeau sans rien changer, le serveur continue de refuser toute route
+      // (`apps.core.authentication`). Le relire au serveur n'ajouterait rien.
+      if (trigger === "update" && demande?.passwordChanged) {
+        return { ...token, mustChangePassword: false };
+      }
+
       if (trigger === "update" && demande?.impersonation) {
         const imp = demande.impersonation;
         if (token.impersonation || !token.isStaff || !token.refreshToken || !estJetonDePriseEnMain(imp.access)) {
@@ -459,6 +462,7 @@ export const authConfig: NextAuthConfig = {
       session.accessTokenExpires = token.accessTokenExpires as number | undefined;
       session.error = token.error as string | undefined;
       session.isStaff = token.isStaff as boolean | undefined;
+      session.mustChangePassword = token.mustChangePassword === true;
       // ⚠ L'information seulement, jamais `adminStash` : les jetons de
       // l'administrateur restent dans le cookie chiffré.
       session.impersonation = token.impersonation;
