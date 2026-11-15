@@ -18,7 +18,6 @@ import {
   AlertTriangle,
   Pencil,
   Trash2,
-  Settings,
   BarChart3,
   Plus,
 } from "lucide-react";
@@ -36,6 +35,10 @@ import { toast } from "sonner";
 import { formatPrice, formatDecimal, formatNumber } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { usePermissions } from "@/components/auth/permissions-provider";
+import { WarehouseFormDialog } from "@/components/stock/warehouse-form-dialog";
+import { useEntrepots } from "@/hooks/use-entrepots";
+import { peutModifierEntrepot } from "@/lib/stock/entrepots";
 import {
   getWarehouse,
   getWarehouseStockSummary,
@@ -65,6 +68,17 @@ export default function WarehouseDetailPage() {
   const [locations, setLocations] = useState<StockLocation[]>([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [refusSuppression, setRefusSuppression] = useState<string | null>(null);
+  const [modification, setModification] = useState(false);
+  // `404` : inexistant OU hors du périmètre de lecture (le serveur ne distingue
+  // pas les deux, et c'est voulu). Autre statut : une panne, qui se dit autrement.
+  const [statutLecture, setStatutLecture] = useState<number | null>(null);
+
+  const { isRole, hasPermission, relireSiRefus } = usePermissions();
+  const { membre, invalider: invaliderEntrepots } = useEntrepots();
+  const proprietaire = isRole("owner");
+  const peutModifier =
+    membre !== null && peutModifierEntrepot(membre, hasPermission("warehouses.edit"), warehouseId);
   const [showCreateLocationDialog, setShowCreateLocationDialog] = useState(false);
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
   const [locationFormData, setLocationFormData] = useState<CreateStockLocationData>({
@@ -90,6 +104,13 @@ export default function WarehouseDetailPage() {
           const warehouseResult = await getWarehouse(session.accessToken, org.id, warehouseId);
           if (warehouseResult.success && warehouseResult.data) {
             setWarehouse(warehouseResult.data);
+            setStatutLecture(null);
+          } else {
+            setWarehouse(null);
+            setStatutLecture(warehouseResult.status ?? 0);
+            // Rien d'autre à lire : les trois appels suivants répondraient la
+            // même chose, pour un entrepôt qu'on ne montrera pas.
+            return;
           }
 
           // Fetch stock summary
@@ -164,14 +185,19 @@ export default function WarehouseDetailPage() {
     if (!session?.accessToken || !organization?.id) return;
 
     setIsDeleting(true);
+    setRefusSuppression(null);
 
     try {
       const result = await deleteWarehouse(session.accessToken, organization.id, warehouseId);
       if (result.success) {
         toast.success("Entrepôt supprimé avec succès");
+        await invaliderEntrepots();
         router.push("/dashboard/stock");
       } else {
-        toast.error(result.message || "Erreur lors de la suppression");
+        // Le serveur NOMME ce qui bloque (stock restant, session ouverte,
+        // principal…) : on l'écrit dans la boîte, où on peut le relire.
+        relireSiRefus(result);
+        setRefusSuppression(result.message || "La suppression a été refusée.");
       }
     } catch (error) {
       toast.error("Une erreur est survenue");
@@ -197,14 +223,28 @@ export default function WarehouseDetailPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Entrepôt introuvable</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {statutLecture === 404 ? "Entrepôt introuvable" : "Entrepôt indisponible"}
+            </h1>
           </div>
         </div>
         <Card className="p-0">
           <CardContent className="p-8 text-center">
-            <p className="text-gray-500">Cet entrepôt n'existe pas ou a été supprimé.</p>
+            {statutLecture === 404 ? (
+              // ⚠ « Supprimé » ne suffisait pas : la cause la plus fréquente est
+              // un entrepôt qui EXISTE, hors de votre périmètre. Le dire évite de
+              // croire à une perte de données.
+              <p className="text-gray-500">
+                Cet entrepôt n&apos;existe pas, ou il est hors de votre périmètre. Seul le
+                propriétaire peut vous l&apos;affecter.
+              </p>
+            ) : (
+              <p className="text-gray-500">
+                L&apos;entrepôt n&apos;a pas pu être chargé. Réessayez dans un instant.
+              </p>
+            )}
             <Button onClick={() => router.push("/dashboard/stock")} className="mt-4">
-              Retour à l'inventaire
+              Retour à la gestion de stock
             </Button>
           </CardContent>
         </Card>
@@ -226,17 +266,24 @@ export default function WarehouseDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => router.push(`/dashboard/stock/warehouses/${warehouseId}/edit`)}
-          >
-            <Pencil className="h-4 w-4 mr-2" />
-            Modifier
-          </Button>
-          <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
-            <Trash2 className="h-4 w-4 mr-2" />
-            Supprimer
-          </Button>
+          {peutModifier && (
+            <Button variant="outline" onClick={() => setModification(true)}>
+              <Pencil className="h-4 w-4 mr-2" />
+              Modifier
+            </Button>
+          )}
+          {proprietaire && (
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setRefusSuppression(null);
+                setShowDeleteDialog(true);
+              }}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Supprimer
+            </Button>
+          )}
         </div>
       </div>
 
@@ -361,17 +408,11 @@ export default function WarehouseDetailPage() {
 
               <div className="flex flex-wrap gap-2 pt-4 border-t">
                 {warehouse.is_default && (
-                  <Badge variant="secondary">Par défaut</Badge>
+                  <Badge variant="secondary">Principal</Badge>
                 )}
-                <Badge variant={warehouse.is_active ? "default" : "secondary"} className={warehouse.is_active ? "bg-green-100 text-green-700" : ""}>
+                <Badge variant={warehouse.is_active ? "default" : "secondary"} className={warehouse.is_active ? "bg-success/15 text-success" : ""}>
                   {warehouse.is_active ? "Actif" : "Inactif"}
                 </Badge>
-                {warehouse.allow_negative_stock && (
-                  <Badge variant="outline" className="flex items-center gap-1">
-                    <Settings className="h-3 w-3" />
-                    Stock négatif autorisé
-                  </Badge>
-                )}
               </div>
 
               <div className="pt-4 border-t">
@@ -461,13 +502,15 @@ export default function WarehouseDetailPage() {
             <p className="text-sm text-gray-500">
               {locations.length} emplacement{locations.length > 1 ? 's' : ''}
             </p>
-            <Button
-              onClick={() => setShowCreateLocationDialog(true)}
-              className="bg-orange-500 hover:bg-orange-600"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Nouvel emplacement
-            </Button>
+            {peutModifier && warehouse.is_active && (
+              <Button
+                onClick={() => setShowCreateLocationDialog(true)}
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Nouvel emplacement
+              </Button>
+            )}
           </div>
 
           {locations.length === 0 ? (
@@ -508,16 +551,39 @@ export default function WarehouseDetailPage() {
         </TabsContent>
       </Tabs>
 
+      {modification && (
+        <WarehouseFormDialog
+          entrepot={warehouse}
+          onClose={() => setModification(false)}
+          onSaved={(resultat) => {
+            setModification(false);
+            toast.success("Entrepôt mis à jour avec succès");
+            if (resultat) setWarehouse(resultat);
+            void invaliderEntrepots();
+          }}
+        />
+      )}
+
       {/* Delete Confirmation Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Supprimer l'entrepôt</DialogTitle>
             <DialogDescription>
-              Êtes-vous sûr de vouloir supprimer l'entrepôt "{warehouse.name}" ? Cette action est
-              irréversible et supprimera également tous les stocks et emplacements associés.
+              Êtes-vous sûr de vouloir supprimer l&apos;entrepôt « {warehouse.name} » ? Cette
+              action est irréversible. Un entrepôt qui porte encore du stock ne se supprime pas,
+              et les caisses rattachées sont désactivées avec lui.
             </DialogDescription>
           </DialogHeader>
+          {refusSuppression && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{refusSuppression}</span>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
               Annuler

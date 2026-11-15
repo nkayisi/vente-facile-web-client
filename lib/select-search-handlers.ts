@@ -26,6 +26,8 @@ import { getCustomers, getSuppliers } from "@/actions/contacts.actions";
 import type { Customer, Supplier } from "@/actions/contacts.actions";
 import { getWarehouses } from "@/actions/stock.actions";
 import type { Warehouse } from "@/actions/stock.actions";
+import type { MembrePerimetre } from "@vente-facile/core";
+import { optionsEntrepots, type UsageEntrepot } from "@/lib/stock/entrepots";
 import { getBranches } from "@/actions/organization.actions";
 import type { Branch } from "@/actions/organization.actions";
 import { getPaymentMethods } from "@/actions/sales.actions";
@@ -149,18 +151,50 @@ export function createSupplierSearchHandler(
   );
 }
 
+/**
+ * Les entrepôts proposés par un sélecteur, selon ce qu'on va en FAIRE.
+ *
+ * - ``"action"`` (vendre, transférer, ajuster, ouvrir une caisse) : ses
+ *   entrepôts affectés et ACTIFS (`entrepotsActionnables` du noyau). Un membre
+ *   qui consulte tous les entrepôts LIT partout mais n'agit que chez lui.
+ * - ``"lecture"`` (filtres d'historique et de rapports) : tout ce que le
+ *   serveur rend, les inactifs AUSSI, suffixés « (inactif) ». Les cacher
+ *   empêchait de relire le passé d'un entrepôt désactivé.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ ON LIT LA LISTE ENTIÈRE, PUIS ON CHERCHE DEDANS.                        │
+ * │                                                                          │
+ * │ Le sélecteur demandait au serveur « les trente premiers qui              │
+ * │ correspondent », puis le client gardait ceux où il peut agir : chez un   │
+ * │ gérant qui consulte cent entrepôts et n'agit que dans un seul, le sien   │
+ * │ pouvait ne pas figurer parmi les trente, et le sélecteur restait vide.   │
+ * │ Un établissement compte quelques dizaines d'entrepôts au plus : on les   │
+ * │ lit toutes pages, une fois par ouverture, et on filtre ici.              │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ⚠ L'usage est OBLIGATOIRE : un défaut silencieux est exactement ce qui avait
+ * fait cacher les inactifs des filtres d'historique. Et ni `is_active` forcé,
+ * ni cast : le `page_size` d'autrefois partait dans le vide derrière un
+ * `as never`.
+ */
 export function createWarehouseSearchHandler(
   accessToken: string,
   organizationId: string,
-  extraFilters?: { branch?: string; is_active?: boolean },
+  usage: UsageEntrepot,
+  options?: { membre?: MembrePerimetre | null; branch?: string },
 ): SearchHandler {
-  return createListSearchHandler<Warehouse, { search?: string; page_size?: number; is_active?: boolean; branch?: string }>(
-    getWarehouses as never,
-    (w) => w.name,
-    accessToken,
-    organizationId,
-    { is_active: true, ...extraFilters },
-  );
+  let liste: Promise<Warehouse[]> | null = null;
+  return async (query: string) => {
+    // Une recherche VIDE est le chargement d'ouverture : on relit, pour qu'un
+    // entrepôt créé ou affecté depuis apparaisse. Les frappes suivantes
+    // cherchent dans la liste déjà lue.
+    if (!liste || !query.trim()) {
+      liste = getWarehouses(accessToken, organizationId, {
+        ...(options?.branch ? { branch: options.branch } : {}),
+      }).then((r) => (r.success && r.data ? r.data : []));
+    }
+    return optionsEntrepots(await liste, usage, options?.membre ?? null, query);
+  };
 }
 
 /**

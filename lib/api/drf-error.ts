@@ -107,6 +107,36 @@ function parseBodyField(data: Record<string, unknown>, key: string, fallback: st
 }
 
 /**
+ * Les clés d'un corps d'erreur qui NE SONT PAS des champs.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ UN CODE DE REFUS N'EST PAS UNE ERREUR DE CHAMP.                         │
+ * │                                                                          │
+ * │ Le serveur nomme ses refus de périmètre par un `code` posé AU PREMIER    │
+ * │ NIVEAU, à côté des erreurs de champ :                                    │
+ * │ `{register: "…", code: "session_d_un_autre"}`. Parcourues comme des     │
+ * │ champs, ces clés faisaient lire au marchand « code : session_d_un_autre » │
+ * │ - un identifiant technique là où une phrase l'attendait.                 │
+ * │ `fields` accompagne un refus « réservé au propriétaire » : c'est la      │
+ * │ liste des champs en cause, pas un message.                               │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+const CLES_HORS_CHAMPS = new Set(["code", "fields"]);
+
+/** Le code nommé d'un refus, posé au premier niveau ou sous `detail`. */
+export function codeDuCorps(data: unknown): string | undefined {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const o = data as Record<string, unknown>;
+  if (typeof o.code === "string" && o.code) return o.code;
+  const d = o.detail;
+  if (d && typeof d === "object" && !Array.isArray(d)) {
+    const c = (d as { code?: unknown }).code;
+    if (typeof c === "string" && c) return c;
+  }
+  return undefined;
+}
+
+/**
  * Extrait un message lisible depuis error.response.data (Axios) ou un corps JSON d’erreur.
  */
 export function formatApiErrorBody(
@@ -132,16 +162,25 @@ export function formatApiErrorBody(
   // Sans ce repli, une 400 de validation retombait sur le message générique
   // du caller et l'utilisateur ne savait jamais QUEL champ posait problème.
   // On borne à 3 messages : au-delà, un toast devient illisible.
+  //
+  // ⚠ Un refus NOMMÉ (un `code` au premier niveau) porte une PHRASE complète,
+  // écrite pour le marchand : on la rend telle quelle, sans la préfixer du nom
+  // de son champ (« register : … » ne dit rien à un caissier).
+  const nomme = codeDuCorps(data) !== undefined;
   const fieldMessages: string[] = [];
   for (const [key, value] of Object.entries(data)) {
+    if (CLES_HORS_CHAMPS.has(key)) continue;
     const message = parseDrfDetail(value, "");
-    if (message) fieldMessages.push(`${key} : ${message}`);
+    if (message) fieldMessages.push(nomme ? message : `${key} : ${message}`);
   }
   if (fieldMessages.length > 0) return fieldMessages.slice(0, 3).join(" ");
 
   // Structures imbriquées (``{items: [{quantity: ["msg"]}]}``) : on retombe
   // sur l'aplatissement, qui garde les index pour situer la ligne fautive.
-  const nested = flattenDrfErrors(data);
+  const sansCode = Object.fromEntries(
+    Object.entries(data).filter(([key]) => !CLES_HORS_CHAMPS.has(key)),
+  );
+  const nested = flattenDrfErrors(sansCode);
   if (nested.length > 0) return nested.slice(0, 3).join(" ");
 
   return fallback;

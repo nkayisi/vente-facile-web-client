@@ -93,7 +93,8 @@ import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
 import { usePerimeter } from "@/hooks/use-perimeter";
-import { getWarehouses } from "@/actions/stock.actions";
+import { useEntrepots } from "@/hooks/use-entrepots";
+import { entrepotsPourUsage } from "@/lib/stock/entrepots";
 import {
   depenseSeraitInvisible,
   entrepotExige,
@@ -227,26 +228,22 @@ export default function ExpensesPage() {
   // pas. Pour lui, ses entrepôts assignés suffisent - sans drapeau « principal »,
   // donc un seul dépôt se propose d'emblée, plusieurs se choisissent.
   const voitLesEntrepots = hasPermission("warehouses.view");
-  const [entrepotsServeur, setEntrepotsServeur] = useState<EntrepotDeDepense[] | null>(null);
-  useEffect(() => {
-    if (!voitLesEntrepots || !session?.accessToken || !organization?.id) return;
-    let annule = false;
-    getWarehouses(session.accessToken, organization.id, { is_active: true }).then((r) => {
-      if (annule || !r.success || !r.data) return;
-      setEntrepotsServeur(
-        r.data.map((w) => ({ id: w.id, name: w.name, is_default: w.is_default }))
-      );
-    });
-    return () => {
-      annule = true;
-    };
-  }, [voitLesEntrepots, session?.accessToken, organization?.id]);
+  // ⚠ L'ACTION, PAS LA LECTURE : une dépense se rattache à un entrepôt où l'on
+  // agit, affecté et ACTIF. Un membre qui consulte tous les entrepôts lit leurs
+  // dépenses, mais n'en saisit que chez lui ; et un entrepôt désactivé ne
+  // reçoit plus de dépense.
+  const entrepotsDuMembre = useEntrepots({ liste: voitLesEntrepots });
   const entrepotsDeDepense = useMemo<EntrepotDeDepense[]>(
     () =>
-      voitLesEntrepots
-        ? entrepotsServeur ?? []
-        : perimetre.assignedWarehouses.map((w) => ({ id: w.id, name: w.name })),
-    [voitLesEntrepots, entrepotsServeur, perimetre.assignedWarehouses]
+      (voitLesEntrepots
+        ? entrepotsDuMembre.actionnables
+        : entrepotsPourUsage(perimetre.membre, perimetre.assignedWarehouses, "action")
+      ).map((w) => ({
+        id: w.id,
+        name: w.name,
+        is_default: "is_default" in w ? Boolean(w.is_default) : undefined,
+      })),
+    [voitLesEntrepots, entrepotsDuMembre.actionnables, perimetre.membre, perimetre.assignedWarehouses]
   );
   const sansIssue = saisieSansIssue(perimetre.role, entrepotsDeDepense);
   const aucunDepotPermis = peutNeRattacherAucunDepot(perimetre.role);

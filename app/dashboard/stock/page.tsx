@@ -47,18 +47,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { PermissionGate } from "@/components/auth/permission-gate";
+import { usePermissions } from "@/components/auth/permissions-provider";
+import { WarehouseFormDialog } from "@/components/stock/warehouse-form-dialog";
+import { useEntrepots } from "@/hooks/use-entrepots";
+import { peutModifierEntrepot } from "@/lib/stock/entrepots";
 import { formatPrice, formatDecimal, formatDateTime } from "@/lib/format";
 import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
 import { ActionTile } from "@/components/shared/ActionTile";
 import {
-  getWarehouses,
-  createWarehouse,
-  updateWarehouse,
   deleteWarehouse,
   getLowStock,
   getExpiringBatches,
@@ -68,7 +65,6 @@ import {
   Stock,
   StockBatch,
   StockMovement,
-  CreateWarehouseData,
 } from "@/actions/stock.actions";
 import { useSubscription } from "@/components/auth/subscription-guard";
 import { useOrganization } from "@/components/auth/organization-checker";
@@ -81,7 +77,6 @@ export default function StockPage() {
   // State
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [lowStockItems, setLowStockItems] = useState<Stock[]>([]);
   const [expiringBatches, setExpiringBatches] = useState<StockBatch[]>([]);
@@ -89,20 +84,30 @@ export default function StockPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Dialog states
-  const [showWarehouseDialog, setShowWarehouseDialog] = useState(false);
+  // `undefined` : fermé ; `null` : création ; un entrepôt : modification.
+  const [formulaireEntrepot, setFormulaireEntrepot] = useState<Warehouse | null | undefined>(undefined);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [refusSuppression, setRefusSuppression] = useState<string | null>(null);
 
-  // Form state
-  const [formData, setFormData] = useState<CreateWarehouseData>({
-    name: "",
-    code: "",
-    address: "",
-    is_default: false,
-    is_active: true,
-    allow_negative_stock: false,
-  });
+  const { isRole, hasPermission, relireSiRefus } = usePermissions();
+  // ⚠ LA LISTE VIENT DE `useEntrepots`, rangée sous l'empreinte du périmètre :
+  // un entrepôt que le propriétaire vient d'affecter apparaît au retour sur
+  // l'onglet, sans recharger la page.
+  const {
+    membre,
+    tous: warehouses,
+    chargementListe,
+    invalider: invaliderEntrepots,
+  } = useEntrepots({ liste: true });
+  // ⚠ CRÉER ET SUPPRIMER : LE PROPRIÉTAIRE SEUL. Un gérant tenait
+  // `warehouses.create` par son rôle ; l'entrepôt qu'il créait n'était affecté
+  // à personne, donc il disparaissait de sa propre liste au rechargement.
+  const proprietaire = isRole("owner");
+  const peutModifier = (w: Warehouse) =>
+    membre !== null && peutModifierEntrepot(membre, hasPermission("warehouses.edit"), w.id);
+
 
   // Fetch data
   useEffect(() => {
@@ -117,18 +122,14 @@ export default function StockPage() {
         if (organization) {
           const org = organization;
 
-          const [warehousesResult, stocksResult, lowStockResult, expiringResult, movementsResult] =
+          const [stocksResult, lowStockResult, expiringResult, movementsResult] =
             await Promise.all([
-              getWarehouses(session.accessToken, org.id),
               getStocks(session.accessToken, org.id),
               getLowStock(session.accessToken, org.id),
               getExpiringBatches(session.accessToken, org.id, 30),
               getStockMovements(session.accessToken, org.id, { page_size: 10 }),
             ]);
 
-          if (warehousesResult.success && warehousesResult.data) {
-            setWarehouses(warehousesResult.data);
-          }
           if (stocksResult.success && stocksResult.data) {
             setStocks(stocksResult.data);
           }
@@ -153,46 +154,15 @@ export default function StockPage() {
     fetchData();
   }, [session?.accessToken, organization?.id]);
 
-  // Handle form submit
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!session?.accessToken || !organization?.id) return;
-
-    setIsSubmitting(true);
-
-    try {
-      if (selectedWarehouse) {
-        const result = await updateWarehouse(
-          session.accessToken,
-          organization.id,
-          selectedWarehouse.id,
-          formData
-        );
-        if (result.success) {
-          toast.success("Entrepôt mis à jour avec succès");
-          setWarehouses(prev =>
-            prev.map(w => (w.id === selectedWarehouse.id ? { ...w, ...formData } : w))
-          );
-          setShowWarehouseDialog(false);
-        } else {
-          toast.error(result.message || "Erreur lors de la mise à jour");
-        }
-      } else {
-        const result = await createWarehouse(session.accessToken, organization.id, formData);
-        if (result.success && result.data) {
-          toast.success("Entrepôt créé avec succès");
-          setWarehouses(prev => [...prev, result.data!]);
-          setShowWarehouseDialog(false);
-          await refreshSubscription();
-        } else {
-          toast.error(result.message || "Erreur lors de la création");
-        }
-      }
-    } catch (error) {
-      toast.error("Une erreur est survenue");
-    } finally {
-      setIsSubmitting(false);
-    }
+  // Après création ou modification : l'objet du serveur, s'il porte son `id`.
+  const apresEnregistrement = async (_entrepot: Warehouse | null, cree: boolean) => {
+    setFormulaireEntrepot(undefined);
+    toast.success(cree ? "Entrepôt créé avec succès" : "Entrepôt mis à jour avec succès");
+    // ⚠ ON RELIT, ON N'INSÈRE PAS. Un serveur antérieur rend l'entrepôt créé
+    // sans `id` : inséré tel quel, sa carte menait à « introuvable ». Relire la
+    // liste vaut pour les deux cas, et porte la valeur de stock à jour.
+    await invaliderEntrepots();
+    if (cree) await refreshSubscription();
   };
 
   // Handle delete
@@ -200,6 +170,7 @@ export default function StockPage() {
     if (!session?.accessToken || !organization?.id || !selectedWarehouse) return;
 
     setIsSubmitting(true);
+    setRefusSuppression(null);
 
     try {
       const result = await deleteWarehouse(
@@ -209,11 +180,13 @@ export default function StockPage() {
       );
       if (result.success) {
         toast.success("Entrepôt supprimé avec succès");
-        setWarehouses(prev => prev.filter(w => w.id !== selectedWarehouse.id));
         setShowDeleteDialog(false);
         setSelectedWarehouse(null);
+        await invaliderEntrepots();
       } else {
-        toast.error(result.message || "Erreur lors de la suppression");
+        // Le serveur NOMME ce qui bloque : on l'écrit dans la boîte.
+        relireSiRefus(result);
+        setRefusSuppression(result.message || "La suppression a été refusée.");
       }
     } catch (error) {
       toast.error("Une erreur est survenue");
@@ -222,33 +195,8 @@ export default function StockPage() {
     }
   };
 
-  // Open create dialog
-  const openCreateDialog = () => {
-    setSelectedWarehouse(null);
-    setFormData({
-      name: "",
-      code: "",
-      address: "",
-      is_default: false,
-      is_active: true,
-      allow_negative_stock: false,
-    });
-    setShowWarehouseDialog(true);
-  };
-
-  // Open edit dialog
-  const openEditDialog = (warehouse: Warehouse) => {
-    setSelectedWarehouse(warehouse);
-    setFormData({
-      name: warehouse.name,
-      code: warehouse.code,
-      address: warehouse.address || "",
-      is_default: warehouse.is_default,
-      is_active: warehouse.is_active,
-      allow_negative_stock: warehouse.allow_negative_stock,
-    });
-    setShowWarehouseDialog(true);
-  };
+  const openCreateDialog = () => setFormulaireEntrepot(null);
+  const openEditDialog = (warehouse: Warehouse) => setFormulaireEntrepot(warehouse);
 
   // Filter warehouses
   const filteredWarehouses = (Array.isArray(warehouses) ? warehouses : []).filter(
@@ -292,7 +240,7 @@ export default function StockPage() {
     return configs[type] || { icon: Activity, color: "text-gray-600", bg: "bg-gray-50" };
   };
 
-  if (isLoading) {
+  if (isLoading || chargementListe) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
@@ -318,22 +266,24 @@ export default function StockPage() {
             <Activity className="h-4 w-4 mr-2" />
             Entrée de stock
           </Button>
-          <Button
-            onClick={openCreateDialog}
-            className="bg-orange-500 hover:bg-orange-600"
-            disabled={warehouseQuotaReached}
-            title={
-              warehouseQuotaReached
-                ? "Limite d'entrepôts atteinte pour votre formule"
-                : undefined
-            }
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Nouvel entrepôt
-          </Button>
+          {proprietaire && (
+            <Button
+              onClick={openCreateDialog}
+              className="bg-orange-500 hover:bg-orange-600"
+              disabled={warehouseQuotaReached}
+              title={
+                warehouseQuotaReached
+                  ? "Limite d'entrepôts atteinte pour votre formule"
+                  : undefined
+              }
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Nouvel entrepôt
+            </Button>
+          )}
         </div>
       </div>
-      {warehouseQuotaReached && (
+      {proprietaire && warehouseQuotaReached && (
         <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
           Limite d&apos;entrepôts atteinte ({warehouseCurrent}/{warehouseLimit}). Passez à une
           offre supérieure pour en ajouter.
@@ -450,22 +400,38 @@ export default function StockPage() {
                 <CardContent className="p-8 text-center">
                   <WarehouseIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun entrepôt</h3>
-                  <p className="text-sm text-gray-500 mb-4">
-                    Créez votre premier entrepôt pour commencer à gérer votre stock.
-                  </p>
-                  <Button
-                    onClick={openCreateDialog}
-                    className="bg-orange-500 hover:bg-orange-600"
-                    disabled={warehouseQuotaReached}
-                    title={
-                      warehouseQuotaReached
-                        ? "Limite d'entrepôts atteinte pour votre formule"
-                        : undefined
-                    }
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Créer un entrepôt
-                  </Button>
+                  {searchQuery.trim() ? (
+                    <p className="text-sm text-gray-500">
+                      Aucun entrepôt ne correspond à « {searchQuery.trim()} ».
+                    </p>
+                  ) : proprietaire ? (
+                    <>
+                      <p className="text-sm text-gray-500 mb-4">
+                        Créez votre premier entrepôt pour commencer à gérer votre stock.
+                      </p>
+                      <Button
+                        onClick={openCreateDialog}
+                        className="bg-orange-500 hover:bg-orange-600"
+                        disabled={warehouseQuotaReached}
+                        title={
+                          warehouseQuotaReached
+                            ? "Limite d'entrepôts atteinte pour votre formule"
+                            : undefined
+                        }
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Créer un entrepôt
+                      </Button>
+                    </>
+                  ) : (
+                    // ⚠ Un membre sans entrepôt ne voit RIEN, et ce n'est pas une
+                    // panne : on lui dit à qui demander, plutôt qu'un « créez-en
+                    // un » qu'il ne peut pas faire.
+                    <p className="text-sm text-gray-500">
+                      Aucun entrepôt ne vous est assigné. Demandez au propriétaire de vous en
+                      affecter un.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             ) : (
@@ -524,22 +490,25 @@ export default function StockPage() {
                                   <Eye className="h-4 w-4 mr-2" />
                                   Voir détails
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openEditDialog(warehouse)}>
-                                  <Pencil className="h-4 w-4 mr-2" />
-                                  Modifier
-                                </DropdownMenuItem>
-                                <PermissionGate permission="warehouses.delete">
+                                {peutModifier(warehouse) && (
+                                  <DropdownMenuItem onClick={() => openEditDialog(warehouse)}>
+                                    <Pencil className="h-4 w-4 mr-2" />
+                                    Modifier
+                                  </DropdownMenuItem>
+                                )}
+                                {proprietaire && (
                                   <DropdownMenuItem
                                     onClick={() => {
                                       setSelectedWarehouse(warehouse);
+                                      setRefusSuppression(null);
                                       setShowDeleteDialog(true);
                                     }}
-                                    className="text-red-600"
+                                    className="text-destructive"
                                   >
                                     <Trash2 className="h-4 w-4 mr-2" />
                                     Supprimer
                                   </DropdownMenuItem>
-                                </PermissionGate>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
@@ -555,12 +524,12 @@ export default function StockPage() {
                         <div className="flex items-center gap-2 mb-3">
                           {warehouse.is_default && (
                             <Badge variant="secondary" className="text-xs">
-                              Par défaut
+                              Principal
                             </Badge>
                           )}
                           <Badge
                             variant={warehouse.is_active ? "default" : "secondary"}
-                            className={warehouse.is_active ? "bg-green-100 text-green-700" : ""}
+                            className={warehouse.is_active ? "bg-success/15 text-success" : ""}
                           >
                             {warehouse.is_active ? "Actif" : "Inactif"}
                           </Badge>
@@ -740,118 +709,14 @@ export default function StockPage() {
         </div>
       </div>
 
-      {/* Create/Edit Warehouse Dialog */}
-      <Dialog open={showWarehouseDialog} onOpenChange={setShowWarehouseDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedWarehouse ? "Modifier l'entrepôt" : "Nouvel entrepôt"}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedWarehouse
-                ? "Modifiez les informations de l'entrepôt"
-                : "Créez un nouvel entrepôt pour stocker vos produits"}
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Nom *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={e => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Ex: Entrepôt principal"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="code">Code *</Label>
-              <Input
-                id="code"
-                value={formData.code}
-                onChange={e => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                placeholder="Ex: WH001"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="address">Adresse</Label>
-              <Textarea
-                id="address"
-                value={formData.address}
-                onChange={e => setFormData({ ...formData, address: e.target.value })}
-                placeholder="Adresse de l'entrepôt"
-                rows={2}
-              />
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="is_default">Entrepôt par défaut</Label>
-                  <p className="text-xs text-gray-500">
-                    Utilisé par défaut pour les nouvelles opérations
-                  </p>
-                </div>
-                <Switch
-                  id="is_default"
-                  checked={formData.is_default}
-                  onCheckedChange={checked => setFormData({ ...formData, is_default: checked })}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="is_active">Actif</Label>
-                  <p className="text-xs text-gray-500">
-                    L&apos;entrepôt peut recevoir des opérations
-                  </p>
-                </div>
-                <Switch
-                  id="is_active"
-                  checked={formData.is_active}
-                  onCheckedChange={checked => setFormData({ ...formData, is_active: checked })}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="allow_negative_stock">Autoriser stock négatif</Label>
-                  <p className="text-xs text-gray-500">Permet de vendre sans stock disponible</p>
-                </div>
-                <Switch
-                  id="allow_negative_stock"
-                  checked={formData.allow_negative_stock}
-                  onCheckedChange={checked =>
-                    setFormData({ ...formData, allow_negative_stock: checked })
-                  }
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowWarehouseDialog(false)}
-              >
-                Annuler
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="bg-orange-500 hover:bg-orange-600"
-              >
-                {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                {selectedWarehouse ? "Enregistrer" : "Créer"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Create/Edit Warehouse Dialog - monté à l'ouverture */}
+      {formulaireEntrepot !== undefined && (
+        <WarehouseFormDialog
+          entrepot={formulaireEntrepot}
+          onClose={() => setFormulaireEntrepot(undefined)}
+          onSaved={apresEnregistrement}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
@@ -860,9 +725,18 @@ export default function StockPage() {
             <DialogTitle>Supprimer l&apos;entrepôt</DialogTitle>
             <DialogDescription>
               Êtes-vous sûr de vouloir supprimer l&apos;entrepôt &quot;{selectedWarehouse?.name}&quot; ?
-              Cette action est irréversible.
+              Cette action est irréversible. Les caisses rattachées seront désactivées.
             </DialogDescription>
           </DialogHeader>
+          {refusSuppression && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{refusSuppression}</span>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
               Annuler

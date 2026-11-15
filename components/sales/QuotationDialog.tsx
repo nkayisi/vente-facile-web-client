@@ -46,6 +46,14 @@ import { createMoneyHelpers } from "@/lib/currency";
 import { createQuotation } from "@/actions/sales.actions";
 import { getProducts, type Product } from "@/actions/products.actions";
 import { getCustomers, type Customer } from "@/actions/contacts.actions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useEntrepots } from "@/hooks/use-entrepots";
 
 interface LigneDevis {
   cle: string;
@@ -95,6 +103,21 @@ export function QuotationDialog({
   const [lignes, setLignes] = useState<LigneDevis[]>([]);
   const [choixProduit, setChoixProduit] = useState<string>("");
   const [enCours, setEnCours] = useState(false);
+
+  // ┌────────────────────────────────────────────────────────────────────────┐
+  // │ UN DEVIS A UN ENTREPÔT, ET C'EST CE QUI LE REND VISIBLE À L'ÉQUIPE.    │
+  // │                                                                        │
+  // │ Sans entrepôt, « Voir tout » (le travail des collègues, dans SES        │
+  // │ entrepôts) ne savait pas à qui montrer un devis. Il se choisit parmi   │
+  // │ les entrepôts où l'on agit ; le principal, ou l'unique, est proposé.   │
+  // │ Un devis ne réserve rien : l'entrepôt dit seulement d'où partira la    │
+  // │ vente.                                                                 │
+  // └────────────────────────────────────────────────────────────────────────┘
+  const { actionnables } = useEntrepots({ liste: open });
+  const [entrepotChoisi, setEntrepot] = useState<string | null>(null);
+  const entrepotParDefaut =
+    actionnables.find((w) => w.is_default)?.id ?? (actionnables.length === 1 ? actionnables[0].id : "");
+  const entrepot = entrepotChoisi ?? entrepotParDefaut;
 
   const charger = useCallback(async () => {
     // En PARALLÈLE : les deux listes ne dépendent pas l'une de l'autre, et les
@@ -156,6 +179,7 @@ export function QuotationDialog({
     setEnCours(true);
     const reponse = await createQuotation(accessToken, organizationId, {
       customer: client || undefined,
+      warehouse: entrepot || undefined,
       valid_until: validite,
       notes: notes.trim() || undefined,
       items: lignes.map((l) => ({
@@ -170,6 +194,7 @@ export function QuotationDialog({
       toast.success("Devis créé");
       setLignes([]);
       setClient("");
+      setEntrepot(null);
       setNotes("");
       setValidite(dansNJours(30));
       onOpenChange(false);
@@ -203,6 +228,26 @@ export function QuotationDialog({
                 onValueChange={setClient}
                 placeholder="Client anonyme"
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="devis-entrepot">Entrepôt</Label>
+              <Select value={entrepot} onValueChange={setEntrepot}>
+                <SelectTrigger id="devis-entrepot" className="w-full">
+                  <SelectValue placeholder="Non précisé" />
+                </SelectTrigger>
+                <SelectContent>
+                  {actionnables.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!entrepot && actionnables.length > 1 && (
+                <p className="text-xs text-muted-foreground">
+                  Choisissez l&apos;entrepôt d&apos;où partira la vente.
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label htmlFor="validite">Valable jusqu&apos;au</Label>

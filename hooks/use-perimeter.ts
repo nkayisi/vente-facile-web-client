@@ -24,8 +24,13 @@ import { useMemo } from "react";
 
 import {
   choixEntrepotRecevable,
+  estBorneParAuteur,
   LIBELLES_VERROU_PERIMETRE,
+  litTousLesEntrepots,
+  membreDepuisPermissions,
   verrouEntrepot,
+  verrouUtilisateur,
+  type MembrePerimetre,
   type MotifVerrouPerimetre,
 } from "@vente-facile/core";
 
@@ -34,6 +39,8 @@ import { usePermissions } from "@/components/auth/permissions-provider";
 export interface AssignedWarehouse {
   id: string;
   name: string;
+  /** Absent : actif. Un entrepôt désactivé reste affecté, pour relire son passé. */
+  is_active?: boolean;
 }
 
 /**
@@ -46,11 +53,16 @@ export type LockReason = MotifVerrouPerimetre;
 
 export interface Perimeter {
   role: string | null;
+  /** Le membre tel que le noyau le lit : c'est lui qu'on passe aux règles. */
+  membre: MembrePerimetre;
   /** Vide pour un propriétaire : c'est ce qui le rend « partout ». */
   assignedWarehouses: AssignedWarehouse[];
-  /** Le caissier ne voit que ses propres lignes : les deux filtres se ferment. */
-  isCashier: boolean;
+  /** La case « Consulter tous les entrepôts » ou le propriétaire : il LIT partout. */
+  readsAll: boolean;
+  /** Le filtre « Entrepôt » d'une LECTURE (historique, rapports). */
   warehouseLock: LockReason | null;
+  /** Le filtre « Utilisateur » : fermé quand on ne voit que son propre travail. */
+  userLock: LockReason | null;
   /** `true` quand l'équipe ne servirait à rien : on n'appelle alors pas le serveur. */
   skipTeam: boolean;
   lockLabel: (reason: LockReason) => string;
@@ -60,11 +72,10 @@ export interface Perimeter {
    * ┌──────────────────────────────────────────────────────────────────────┐
    * │ UN VERROU NE PART PAS. IL FERME UN CHAMP, IL NE FILTRE PAS.          │
    * │                                                                      │
-   * │ Le serveur re-dérive le rôle à chaque requête, et il le fait plus     │
-   * │ largement que nous : `SaleViewSet` porte                              │
-   * │ `warehouse_scope_include_null = True` (les ventes anciennes sans      │
-   * │ entrepôt restent visibles), et le périmètre d'un CAISSIER est         │
-   * │ `filter(sold_by=user)` - sans la moindre borne d'entrepôt.            │
+   * │ Le serveur re-dérive le périmètre à chaque requête, et il le fait     │
+   * │ plus largement que nous : les ventes anciennes sans entrepôt restent  │
+   * │ visibles (`warehouse_scope_include_null`), et un membre borné par     │
+   * │ AUTEUR voit toujours SES lignes, où qu'elles soient.                  │
    * │                                                                      │
    * │ Renvoyer le verrou comme un filtre RESSERRE donc au-delà de la règle : │
    * │ un caissier perdait de son propre tableau de bord les ventes faites   │
@@ -72,10 +83,9 @@ export interface Perimeter {
    * │ sans entrepôt. Du chiffre d'affaires qui manque, sans un mot.         │
    * │                                                                      │
    * │ Ne partent donc que les choix DÉLIBÉRÉS. C'est sans risque            │
-   * │ d'élargissement : tous les endpoints concernés bornent déjà par rôle   │
-   * │ (`warehouse_scope_field`, `WarehouseScopedQuerysetMixin`,             │
-   * │ `filter_stock_transfer_queryset`, `restrict_visibility_for_request`,  │
-   * │ les `_scope_*` des rapports, `borner_ventes` du tableau de bord).     │
+   * │ d'élargissement : tous les endpoints concernés bornent déjà par le    │
+   * │ périmètre de lecture (`WarehouseScopedQuerysetMixin`, les `_scope_*`  │
+   * │ des rapports, `borner_ventes` du tableau de bord).                    │
    * └──────────────────────────────────────────────────────────────────────┘
    */
   effective: (chosen: { warehouse?: string; user?: string }) => {
@@ -87,39 +97,43 @@ export interface Perimeter {
 // ⚠ Pas de motif « sans auteur » ici : une donnée qui n'en a jamais eu RETIRE
 // son champ plutôt que de l'expliquer (voir `PerimeterFilters`). Le terminal
 // porte ce motif en plus, sur ses propres écrans ; le paquet ne tient que les
-// trois motifs COMMUNS.
+// motifs COMMUNS.
 
 export function usePerimeter(): Perimeter {
   const { permissions } = usePermissions();
 
   return useMemo(() => {
-    const role = permissions?.role ?? null;
+    const membre = membreDepuisPermissions(permissions);
     const assigned: AssignedWarehouse[] = permissions?.assigned_warehouses ?? [];
-    const isCashier = role === "cashier";
-    const isOwner = role === "owner";
+    const readsAll = litTousLesEntrepots(membre);
+    const borneParAuteur = estBorneParAuteur(membre, "lecture");
 
-    const warehouseLock = verrouEntrepot(role, assigned.length);
+    // En LECTURE, un membre qui ne lit pas tout lit exactement ses affectés,
+    // inactifs compris (on relit leur passé) : leur nombre suffit au verrou.
+    const warehouseLock = verrouEntrepot(membre, assigned.length, "lecture");
 
     return {
-      role,
+      role: membre.role,
+      membre,
       assignedWarehouses: assigned,
-      isCashier,
+      readsAll,
       warehouseLock,
-      skipTeam: isCashier,
+      userLock: verrouUtilisateur(membre, "lecture"),
+      // L'équipe est fermée à qui ne voit que son propre travail : le serveur
+      // la lui rend vide, l'appeler serait une requête de trop.
+      skipTeam: borneParAuteur,
       lockLabel: (reason) => LIBELLES_VERROU_PERIMETRE[reason],
       effective: (chosen) => {
-        if (isCashier) {
-          // Ses deux filtres sont fermés, et le serveur les applique seul :
-          // `filter(created_by=user)`, sans entrepôt. On n'envoie donc RIEN.
-          return {};
-        }
         // Un choix hors périmètre est écarté plutôt qu'envoyé : le serveur
         // rendrait 400, et l'écran crierait pour une règle qu'on connaissait.
         // Un VERROU, lui, n'est pas un choix : il ne part pas (voir l'encadré).
         const permis = new Set(assigned.map((w) => w.id));
         const warehouse =
-          choixEntrepotRecevable(chosen.warehouse, permis, isOwner) ?? undefined;
-        return { warehouse, user: chosen.user || undefined };
+          choixEntrepotRecevable(chosen.warehouse, permis, readsAll) ?? undefined;
+        // Borné par auteur : le serveur applique `user = lui` seul, et le champ
+        // est fermé. On n'envoie rien.
+        const user = borneParAuteur ? undefined : chosen.user || undefined;
+        return { warehouse, user };
       },
     };
   }, [permissions]);

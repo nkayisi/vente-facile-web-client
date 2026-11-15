@@ -84,7 +84,17 @@ import {
   type MemberFilters,
   type MemberPermissions,
 } from "@/actions/users.actions";
-import { getWarehouses, type Warehouse } from "@/actions/stock.actions";
+import { Switch } from "@/components/ui/switch";
+import { useEntrepots } from "@/hooks/use-entrepots";
+import {
+  basculerVoirTout,
+  caseVoirToutUtile,
+  casesAffectation,
+  membresVisibles,
+  permissionsAccordables,
+  voitLeTravailDesCollegues,
+  type CaseAffectation,
+} from "@/lib/equipe";
 import { DataPagination } from "@/components/shared/DataPagination";
 
 const ROLE_COLORS: Record<string, string> = {
@@ -132,7 +142,12 @@ export default function UsersPage() {
   const [hasPrevious, setHasPrevious] = useState(false);
   const pageSize = 20;
 
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  // ⚠ LA LISTE COMPLÈTE, inactifs compris : la première page seulement (vingt
+  // entrepôts) faisait disparaître de l'affectation tout entrepôt au-delà. Les
+  // cases ne proposent ensuite que ce que le demandeur peut affecter.
+  const { membre: demandeur, tous: entrepotsLisibles, chargementListe: chargementEntrepots } =
+    useEntrepots({ liste: true });
+  const proprietaire = permissions?.role === "owner";
 
   // Create dialog
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -154,6 +169,8 @@ export default function UsersPage() {
   );
   const [editRole, setEditRole] = useState("");
   const [editWarehouseIds, setEditWarehouseIds] = useState<string[]>([]);
+  const [editVoirTout, setEditVoirTout] = useState(false);
+  const [editConsulteTout, setEditConsulteTout] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Delete dialog
@@ -215,18 +232,37 @@ export default function UsersPage() {
     fetchMembers();
   }, [fetchMembers]);
 
-  useEffect(() => {
-    async function loadWarehouses() {
-      if (!session?.accessToken || !organizationId) return;
-      const res = await getWarehouses(session.accessToken, organizationId, {
-        is_active: true,
-      });
-      if (res.success && res.data) {
-        setWarehouses(res.data);
-      }
-    }
-    loadWarehouses();
-  }, [session?.accessToken, organizationId]);
+  // ⚠ UN GÉRANT NE GÈRE QUE LES MEMBRES DE SES ENTREPÔTS (plus le propriétaire).
+  const membresAffiches = useMemo(
+    () => (demandeur ? membresVisibles(demandeur, members) : members),
+    [demandeur, members]
+  );
+
+  const casesCreation = useMemo<CaseAffectation[]>(
+    () =>
+      demandeur
+        ? casesAffectation(demandeur, entrepotsLisibles, [], createForm.warehouse_ids)
+        : [],
+    [demandeur, entrepotsLisibles, createForm.warehouse_ids]
+  );
+  const casesEdition = useMemo<CaseAffectation[]>(
+    () =>
+      demandeur && editingMember
+        ? casesAffectation(
+            demandeur,
+            entrepotsLisibles,
+            editingMember.assigned_warehouses ?? [],
+            editWarehouseIds
+          )
+        : [],
+    [demandeur, entrepotsLisibles, editingMember, editWarehouseIds]
+  );
+  const actifParId = useMemo(
+    () => new Map(entrepotsLisibles.map((w) => [w.id, w.is_active] as const)),
+    [entrepotsLisibles]
+  );
+  const editVoirToutInitial = voitLeTravailDesCollegues(editingMember?.extra_permissions);
+  const editConsulteToutInitial = Boolean(editingMember?.consult_all_warehouses);
 
   // Create user
   const handleCreate = async () => {
@@ -273,8 +309,21 @@ export default function UsersPage() {
       .sort()
       .join(",");
     const nextIds = [...editWarehouseIds].sort().join(",");
-    return editRole !== editingMember.role || initialIds !== nextIds;
-  }, [editingMember, editRole, editWarehouseIds]);
+    return (
+      editRole !== editingMember.role ||
+      initialIds !== nextIds ||
+      editVoirTout !== editVoirToutInitial ||
+      editConsulteTout !== editConsulteToutInitial
+    );
+  }, [
+    editingMember,
+    editRole,
+    editWarehouseIds,
+    editVoirTout,
+    editVoirToutInitial,
+    editConsulteTout,
+    editConsulteToutInitial,
+  ]);
 
   // Edit member (rôle + entrepôts)
   const handleSaveMember = async () => {
@@ -286,12 +335,31 @@ export default function UsersPage() {
       return;
     }
 
+    // ⚠ ON N'ENVOIE QUE CE QUI A CHANGÉ. La case « Consulter tous » renvoyée
+    // telle quelle par un gérant se ferait refuser (réservée au propriétaire),
+    // et ferait échouer une simple réaffectation.
+    const initialIds = (editingMember.assigned_warehouses ?? []).map((w) => w.id).sort().join(",");
+    const changements: Parameters<typeof updateMember>[3] = {};
+    if (editRole !== editingMember.role) changements.role = editRole;
+    if ([...editWarehouseIds].sort().join(",") !== initialIds) {
+      changements.warehouse_ids = editWarehouseIds;
+    }
+    if (editVoirTout !== editVoirToutInitial) {
+      changements.extra_permissions = basculerVoirTout(
+        editingMember.extra_permissions ?? [],
+        editVoirTout
+      );
+    }
+    if (proprietaire && editConsulteTout !== editConsulteToutInitial) {
+      changements.consult_all_warehouses = editConsulteTout;
+    }
+
     setIsUpdating(true);
     const result = await updateMember(
       session.accessToken,
       organizationId,
       editingMember.id,
-      { role: editRole, warehouse_ids: editWarehouseIds }
+      changements
     );
 
     if (result.success) {
@@ -359,6 +427,8 @@ export default function UsersPage() {
     setEditWarehouseIds(
       member.assigned_warehouses?.map((w) => w.id) ?? []
     );
+    setEditVoirTout(voitLeTravailDesCollegues(member.extra_permissions));
+    setEditConsulteTout(Boolean(member.consult_all_warehouses));
     setShowEditDialog(true);
   };
 
@@ -456,10 +526,18 @@ export default function UsersPage() {
   const availableExtraPerms = useMemo(() => {
     if (!memberPerms) return [];
     const rolePermsSet = new Set(memberPerms.role_permissions || []);
-    return (memberPerms.all_permissions || []).filter(
+    // ⚠ On ne propose que ce que le demandeur peut ACCORDER : jamais créer ou
+    // supprimer un entrepôt (réservé au propriétaire), et, pour un gérant, rien
+    // qu'il ne possède pas. Le serveur refuse le reste après coup.
+    const accordables = permissionsAccordables(
+      { role: permissions?.role ?? null, permissions: permissions?.permissions ?? [] },
+      memberPerms.all_permissions || [],
+      memberPerms.extra_permissions || []
+    );
+    return accordables.filter(
       (p) => !rolePermsSet.has(p) && p.toLowerCase().includes(permSearchQuery.toLowerCase())
     );
-  }, [memberPerms, permSearchQuery]);
+  }, [memberPerms, permSearchQuery, permissions]);
 
   // Group permissions by module for better display
   const groupedPerms = useMemo(() => {
@@ -512,25 +590,25 @@ export default function UsersPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="py-0">
           <CardContent className="pt-4 pb-4">
-            <StatValue value={String(members.length)} />
+            <StatValue value={String(membresAffiches.length)} />
             <p className="text-xs text-gray-500">Total membres</p>
           </CardContent>
         </Card>
         <Card className="py-0">
           <CardContent className="pt-4 pb-4">
-            <StatValue value={String(members.filter((m) => m.is_active).length)} />
+            <StatValue value={String(membresAffiches.filter((m) => m.is_active).length)} />
             <p className="text-xs text-gray-500">Actifs</p>
           </CardContent>
         </Card>
         <Card className="py-0">
           <CardContent className="pt-4 pb-4">
-            <StatValue value={String(members.filter((m) => m.role === "owner" || m.role === "manager").length)} />
+            <StatValue value={String(membresAffiches.filter((m) => m.role === "owner" || m.role === "manager").length)} />
             <p className="text-xs text-gray-500">Admin / Gérants</p>
           </CardContent>
         </Card>
         <Card className="py-0">
           <CardContent className="pt-4 pb-4">
-            <StatValue value={String(members.filter((m) => !m.is_active).length)} />
+            <StatValue value={String(membresAffiches.filter((m) => !m.is_active).length)} />
             <p className="text-xs text-gray-500">Désactivés</p>
           </CardContent>
         </Card>
@@ -568,7 +646,7 @@ export default function UsersPage() {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-orange-600" />
             </div>
-          ) : members.length === 0 ? (
+          ) : membresAffiches.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
               Aucun membre trouvé
             </div>
@@ -588,7 +666,7 @@ export default function UsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.map((member) => (
+                {membresAffiches.map((member) => (
                   <TableRow key={member.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -623,6 +701,7 @@ export default function UsersPage() {
                                   className="text-[10px] font-normal px-1.5 py-0"
                                 >
                                   {w.name}
+                                  {(w.is_active ?? actifParId.get(w.id)) === false ? " (inactif)" : ""}
                                 </Badge>
                               ))
                             ) : (
@@ -642,6 +721,17 @@ export default function UsersPage() {
                         <Shield className="h-3 w-3 mr-1" />
                         {member.role_display || ROLE_LABELS[member.role as Role] || member.role}
                       </Badge>
+                      {member.role !== "owner" && member.consult_all_warehouses && (
+                        <Badge variant="outline" className="ml-1 text-xs font-normal">
+                          Consulte tous les entrepôts
+                        </Badge>
+                      )}
+                      {caseVoirToutUtile(member.role) &&
+                        voitLeTravailDesCollegues(member.effective_permissions) && (
+                          <Badge variant="outline" className="ml-1 text-xs font-normal">
+                            Voit tout
+                          </Badge>
+                        )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell align-top">
                       {member.role === "owner" ||
@@ -659,6 +749,7 @@ export default function UsersPage() {
                               className="text-xs font-normal text-gray-700"
                             >
                               {w.name}
+                              {(w.is_active ?? actifParId.get(w.id)) === false ? " (inactif)" : ""}
                             </Badge>
                           ))}
                         </div>
@@ -871,75 +962,12 @@ export default function UsersPage() {
                     ? "Entrepôts assignés *"
                     : "Entrepôt assigné *"}
                 </Label>
-                {warehouses.length === 0 ? (
-                  <p className="text-sm text-amber-600 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-                    Aucun entrepôt actif. Créez un entrepôt dans Stock avant
-                    d&apos;ajouter des utilisateurs avec un périmètre limité.
-                  </p>
-                ) : createForm.role === "manager" ? (
-                  <>
-                    <div className="max-h-44 overflow-y-auto rounded-md border border-gray-200 p-3 space-y-2">
-                      {warehouses.map((w) => (
-                        <label
-                          key={w.id}
-                          className="flex items-center gap-2 text-sm cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            className="rounded border-gray-300"
-                            checked={createForm.warehouse_ids.includes(w.id)}
-                            onChange={() =>
-                              setCreateForm((f) => ({
-                                ...f,
-                                warehouse_ids: f.warehouse_ids.includes(w.id)
-                                  ? f.warehouse_ids.filter((id) => id !== w.id)
-                                  : [...f.warehouse_ids, w.id],
-                              }))
-                            }
-                          />
-                          <span>
-                            {w.name}
-                            {w.code ? (
-                              <span className="text-gray-500 ml-1">
-                                ({w.code})
-                              </span>
-                            ) : null}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Cochez tous les entrepôts que ce gérant pourra gérer.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <Select
-                      value={createForm.warehouse_ids[0] ?? ""}
-                      onValueChange={(v) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          warehouse_ids: v ? [v] : [],
-                        }))
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Choisir un entrepôt" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {warehouses.map((w) => (
-                          <SelectItem key={w.id} value={w.id}>
-                            {w.name}
-                            {w.code ? ` (${w.code})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-gray-500">
-                      Ce compte n&apos;aura accès qu&apos;à cet entrepôt.
-                    </p>
-                  </>
-                )}
+                <ChoixEntrepots
+                  plusieurs={createForm.role === "manager"}
+                  cases={casesCreation}
+                  chargement={chargementEntrepots}
+                  onChange={(ids) => setCreateForm((f) => ({ ...f, warehouse_ids: ids }))}
+                />
               </div>
             ) : null}
           </div>
@@ -1004,62 +1032,58 @@ export default function UsersPage() {
                     ? "Entrepôts assignés"
                     : "Entrepôt assigné"}
                 </Label>
-                {warehouses.length === 0 ? (
-                  <p className="text-sm text-amber-600 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-                    Aucun entrepôt actif disponible.
-                  </p>
-                ) : editRole === "manager" ? (
-                  <div className="max-h-44 overflow-y-auto rounded-md border border-gray-200 p-3 space-y-2">
-                    {warehouses.map((w) => (
-                      <label
-                        key={w.id}
-                        className="flex items-center gap-2 text-sm cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          className="rounded border-gray-300"
-                          checked={editWarehouseIds.includes(w.id)}
-                          onChange={() =>
-                            setEditWarehouseIds((prev) =>
-                              prev.includes(w.id)
-                                ? prev.filter((id) => id !== w.id)
-                                : [...prev, w.id]
-                            )
-                          }
-                        />
-                        <span>
-                          {w.name}
-                          {w.code ? (
-                            <span className="text-gray-500 ml-1">
-                              ({w.code})
-                            </span>
-                          ) : null}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <Select
-                    value={editWarehouseIds[0] ?? ""}
-                    onValueChange={(v) =>
-                      setEditWarehouseIds(v ? [v] : [])
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Choisir un entrepôt" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {warehouses.map((w) => (
-                        <SelectItem key={w.id} value={w.id}>
-                          {w.name}
-                          {w.code ? ` (${w.code})` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                <ChoixEntrepots
+                  plusieurs={editRole === "manager"}
+                  cases={casesEdition}
+                  chargement={chargementEntrepots}
+                  onChange={setEditWarehouseIds}
+                />
               </div>
             ) : null}
+            {editingMember && caseVoirToutUtile(editRole) && (
+              <div className="flex items-start justify-between gap-4 rounded-md border px-3 py-2">
+                <div>
+                  <Label htmlFor="edit-voir-tout">Voir tout</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Voir le travail de ses collègues (ventes, dépenses, caisse, retours, devis),
+                    dans ses entrepôts seulement.
+                  </p>
+                </div>
+                <Switch
+                  id="edit-voir-tout"
+                  checked={editVoirTout}
+                  onCheckedChange={setEditVoirTout}
+                  // On n'accorde que ce qu'on possède.
+                  disabled={!hasPermission("sales.view_all")}
+                />
+              </div>
+            )}
+            {editingMember && proprietaire && editRole !== "owner" && (
+              <div className="space-y-2 rounded-md border px-3 py-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <Label htmlFor="edit-consulte-tout">Consulter tous les entrepôts</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Lire les données de tous les entrepôts, quel qu&apos;en soit l&apos;auteur.
+                      Il n&apos;agit toujours que dans ses entrepôts.
+                    </p>
+                  </div>
+                  <Switch
+                    id="edit-consulte-tout"
+                    checked={editConsulteTout}
+                    onCheckedChange={setEditConsulteTout}
+                  />
+                </div>
+                {editConsulteTout !== editConsulteToutInitial && (
+                  // ⚠ Le terminal efface puis retire ses données quand le
+                  // périmètre change : mieux vaut le savoir avant de cocher.
+                  <p className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-xs text-foreground">
+                    Ses terminaux effaceront puis retéléchargeront leurs données à la prochaine
+                    synchronisation. Qu&apos;il synchronise d&apos;abord ses ventes en attente.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -1347,5 +1371,96 @@ export default function UsersPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * Le choix des entrepôts d'un membre : des cases pour un gérant (au moins un),
+ * une liste pour un caissier ou un magasinier (exactement un).
+ *
+ * Une case fermée DIT pourquoi (« Hors de votre périmètre », « Inactif ») : une
+ * affectation qu'on ne peut pas changer reste visible, sans quoi elle
+ * disparaîtrait à l'enregistrement.
+ */
+function ChoixEntrepots({
+  plusieurs,
+  cases,
+  chargement,
+  onChange,
+}: {
+  plusieurs: boolean;
+  cases: CaseAffectation[];
+  chargement: boolean;
+  onChange: (ids: string[]) => void;
+}) {
+  if (chargement) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Chargement des entrepôts…
+      </p>
+    );
+  }
+  if (!cases.some((c) => !c.desactivee)) {
+    return (
+      <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-foreground">
+        Aucun entrepôt actif à affecter dans votre périmètre. Le propriétaire crée les
+        entrepôts dans Stock.
+      </p>
+    );
+  }
+  const selection = cases.filter((c) => c.coche).map((c) => c.id);
+  if (plusieurs) {
+    return (
+      <>
+        <div className="max-h-44 overflow-y-auto rounded-md border border-gray-200 p-3 space-y-2">
+          {cases.map((c) => (
+            <label
+              key={c.id}
+              className={`flex items-center gap-2 text-sm ${c.desactivee ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+            >
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={c.coche}
+                disabled={c.desactivee}
+                onChange={() =>
+                  onChange(
+                    c.coche ? selection.filter((id) => id !== c.id) : [...selection, c.id]
+                  )
+                }
+              />
+              <span>
+                {c.name}
+                {c.code ? <span className="text-gray-500 ml-1">({c.code})</span> : null}
+                {c.motif ? (
+                  <span className="ml-2 text-xs text-muted-foreground">{c.motif}</span>
+                ) : null}
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500">Cochez tous les entrepôts que ce gérant pourra gérer.</p>
+      </>
+    );
+  }
+  return (
+    <>
+      <Select value={selection[0] ?? ""} onValueChange={(v) => onChange(v ? [v] : [])}>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Choisir un entrepôt" />
+        </SelectTrigger>
+        <SelectContent>
+          {cases.map((c) => (
+            <SelectItem key={c.id} value={c.id} disabled={c.desactivee}>
+              {c.name}
+              {c.code ? ` (${c.code})` : ""}
+              {c.motif ? ` - ${c.motif}` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-gray-500">Ce compte n&apos;aura accès qu&apos;à cet entrepôt.</p>
+    </>
   );
 }

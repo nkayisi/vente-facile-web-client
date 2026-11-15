@@ -246,7 +246,7 @@ export default function StocksPage() {
             }}
             onSearch={
               session?.accessToken && organization?.id
-                ? createWarehouseSearchHandler(session.accessToken, organization.id)
+                ? createWarehouseSearchHandler(session.accessToken, organization.id, "lecture")
                 : async () => []
             }
             emptyLabel="Tous les entrepôts"

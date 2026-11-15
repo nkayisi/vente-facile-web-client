@@ -45,12 +45,13 @@ import { ExportMenu } from "@/components/shared/ExportMenu";
 import { PerimeterFilters, type PerimeterValue } from "@/components/filters/perimeter-filters";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { usePerimeter } from "@/hooks/use-perimeter";
+import { useEntrepots } from "@/hooks/use-entrepots";
 import { messageDeRefus } from "@/lib/perimeter-refusal";
 import { formatDate } from "@/lib/format";
 import {
   createRequisition, exportRequisition, getRequisitionProposal, getRequisitions,
-  getWarehouses, transitionRequisition,
-  type Requisition, type RequisitionProposal, type Warehouse,
+  transitionRequisition,
+  type Requisition, type RequisitionProposal,
 } from "@/actions/stock.actions";
 
 type Statut = Requisition["status"];
@@ -79,7 +80,10 @@ export default function RequisitionsPage() {
   const [chargement, setChargement] = useState(true);
   const [refus, setRefus] = useState<string | null>(null);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
-  const [entrepots, setEntrepots] = useState<Warehouse[]>([]);
+  // ⚠ Une réquisition se fait là où l'on AGIT : ses entrepôts affectés et
+  // ACTIFS. Un membre qui consulte tous les entrepôts lit les demandes de tous,
+  // mais ne demande que pour les siens.
+  const { actionnables: entrepots } = useEntrepots({ liste: true });
   const [recherche, setRecherche] = useState("");
   /**
    * La recherche DIFFÉRÉE, et c'est elle que `charger` lit.
@@ -139,18 +143,13 @@ export default function RequisitionsPage() {
      * C'est aussi la forme des deux pages voisines du stock.
      */
     try {
-      const [liste, depots] = await Promise.all([
-        getRequisitions(jeton, organization.id, {
-          search: rechercheDifferee || undefined,
-          status: statut === "all" ? undefined : statut,
-          warehouse: effectif.warehouse ?? undefined,
-          page,
-          page_size: parPage,
-        }),
-        entrepots.length === 0
-          ? getWarehouses(jeton, organization.id)
-          : Promise.resolve(null),
-      ]);
+      const liste = await getRequisitions(jeton, organization.id, {
+        search: rechercheDifferee || undefined,
+        status: statut === "all" ? undefined : statut,
+        warehouse: effectif.warehouse ?? undefined,
+        page,
+        page_size: parPage,
+      });
 
       if (liste.success && liste.data) {
         setRequisitions(liste.data.results);
@@ -165,9 +164,6 @@ export default function RequisitionsPage() {
         setRefus(messageDeRefus(liste));
         setRequisitions([]);
       }
-      if (depots?.success && depots.data) {
-        setEntrepots(depots.data);
-      }
     } finally {
       /**
        * Le drapeau de PREMIER chargement ne se relève jamais : c'est ce qui
@@ -178,7 +174,6 @@ export default function RequisitionsPage() {
     }
   }, [
     jeton, organization, rechercheDifferee, statut, effectif.warehouse, page,
-    entrepots.length,
   ]);
 
   // La frappe retombée, la requête part. Le nettoyage annule la précédente :
@@ -224,12 +219,12 @@ export default function RequisitionsPage() {
   );
 
   const ouvrirDialogue = () => {
+    // Le principal s'il est parmi les siens, sinon l'unique : « un choix
+    // unique n'est pas un choix ». Entre plusieurs sans principal, on ne
+    // devine pas.
     const defaut =
-      entrepots.find((e) => e.is_default && e.is_active)?.id ??
-      (entrepots.filter((e) => e.is_active).length === 1
-        ? entrepots.find((e) => e.is_active)?.id
-        : "") ??
-      "";
+      entrepots.find((e) => e.is_default)?.id ??
+      (entrepots.length === 1 ? entrepots[0].id : "");
     setEntrepot(defaut);
     setNotes("");
     setRupturesSeules(false);
@@ -476,13 +471,11 @@ export default function RequisitionsPage() {
                     <SelectValue placeholder="Choisir un entrepôt" />
                   </SelectTrigger>
                   <SelectContent>
-                    {entrepots
-                      .filter((e) => e.is_active)
-                      .map((e) => (
-                        <SelectItem key={e.id} value={e.id}>
-                          {e.name}
-                        </SelectItem>
-                      ))}
+                    {entrepots.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

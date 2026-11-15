@@ -42,7 +42,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
-import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
+import { useEntrepots } from "@/hooks/use-entrepots";
+import { libelleEntrepot } from "@/lib/stock/entrepots";
 import {
   Search,
   Loader2,
@@ -68,7 +69,7 @@ import {
 import { toast } from "sonner";
 import { formatDate, formatPrice, formatDecimal } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
-import { getWarehouses, Warehouse, getWarehouseStockSummary } from "@/actions/stock.actions";
+import { getWarehouseStockSummary } from "@/actions/stock.actions";
 import { getCategories, getProducts, Category, Product } from "@/actions/products.actions";
 import {
   getInventorySessions,
@@ -105,9 +106,14 @@ export default function InventoryPage() {
   const router = useRouter();
   const { organization } = useOrganization();
   const [sessions, setSessions] = useState<InventorySession[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  // ⚠ LA LISTE DU FILTRE EST UNE LECTURE (inactifs compris, avec leur badge) ;
+  // le sélecteur d'une nouvelle session est une ACTION (ses entrepôts actifs).
+  const entrepots = useEntrepots({ liste: true });
+  const warehouses = entrepots.tous;
   const [categories, setCategories] = useState<Category[]>([]);
-  const [warehouseStockCounts, setWarehouseStockCounts] = useState<Record<string, number>>({});
+  // Le nombre d'articles en stock de l'entrepôt CHOISI pour une nouvelle session.
+  // `null` : pas encore su. Voir l'encadré de l'effet qui le relève.
+  const [articlesDansLEntrepot, setArticlesDansLEntrepot] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [productSearch, setProductSearch] = useState("");
   const [productSearchResults, setProductSearchResults] = useState<Product[]>([]);
@@ -159,30 +165,36 @@ export default function InventoryPage() {
 
   // Fetch organization
 
-  // Fetch warehouses
+  // ┌────────────────────────────────────────────────────────────────────────┐
+  // │ UN ENTREPÔT VIDE NE S'INVENTORIE PAS, ET LE SAVOIR COÛTAIT N APPELS.   │
+  // │                                                                        │
+  // │ La page demandait le résumé de stock de CHAQUE entrepôt à son          │
+  // │ ouverture, pour n'en lire qu'un seul : celui qu'on choisirait. La      │
+  // │ liste porte désormais `stocked_products` (annoté par le serveur) ; à   │
+  // │ défaut (serveur antérieur), on ne lit que le résumé de l'entrepôt      │
+  // │ CHOISI.                                                                │
+  // └────────────────────────────────────────────────────────────────────────┘
   useEffect(() => {
-    async function fetchData() {
-      if (!session?.accessToken || !organization?.id) return;
-      const whResult = await getWarehouses(session.accessToken, organization.id);
-      if (whResult.success && whResult.data) {
-        setWarehouses(whResult.data);
-        // Fetch stock summary for each warehouse to know which have products
-        const stockCounts: Record<string, number> = {};
-        const token = session.accessToken;
-        const orgId = organization.id;
-        await Promise.all(
-          whResult.data.map(async (wh) => {
-            const summary = await getWarehouseStockSummary(token, orgId, wh.id);
-            if (summary.success && summary.data) {
-              stockCounts[wh.id] = summary.data.total_products;
-            }
-          })
-        );
-        setWarehouseStockCounts(stockCounts);
+    const id = newSession.warehouse;
+    if (!id || !session?.accessToken || !organization?.id) return;
+    const annote = warehouses.find((w) => w.id === id)?.stocked_products;
+    let annule = false;
+    const lire = async () => {
+      if (annote !== undefined) {
+        if (!annule) setArticlesDansLEntrepot(annote);
+        return;
       }
-    }
-    fetchData();
-  }, [session?.accessToken, organization?.id]);
+      const summary = await getWarehouseStockSummary(session.accessToken!, organization.id, id);
+      if (!annule) {
+        setArticlesDansLEntrepot(summary.success && summary.data ? summary.data.total_products : null);
+      }
+    };
+    void lire();
+    return () => {
+      annule = true;
+    };
+  }, [newSession.warehouse, warehouses, session?.accessToken, organization?.id]);
+  const entrepotVide = Boolean(newSession.warehouse) && articlesDansLEntrepot === 0;
 
   // Fetch categories with available stock for selected warehouse
   useEffect(() => {
@@ -494,7 +506,7 @@ export default function InventoryPage() {
           <SelectContent>
             <SelectItem value="all">Tous les entrepôts</SelectItem>
             {warehouses.map((wh) => (
-              <SelectItem key={wh.id} value={wh.id}>{wh.name}</SelectItem>
+              <SelectItem key={wh.id} value={wh.id}>{libelleEntrepot(wh, "lecture")}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -670,24 +682,23 @@ export default function InventoryPage() {
               <Label>Entrepôt *</Label>
               <SearchableSelectAsyncWithEmpty
                 value={newSession.warehouse || null}
-                onValueChange={(val) =>
+                onValueChange={(val) => {
+                  // Le décompte de l'entrepôt précédent ne vaut plus : on ne
+                  // dit rien tant que celui-ci n'est pas lu.
+                  setArticlesDansLEntrepot(null);
                   setNewSession((prev) => ({
                     ...prev,
                     warehouse: val || "",
                     category_ids: [],
-                  }))
-                }
-                onSearch={
-                  session?.accessToken && organization?.id
-                    ? createWarehouseSearchHandler(session.accessToken, organization.id)
-                    : async () => []
-                }
+                  }));
+                }}
+                onSearch={entrepots.chercher.action}
                 emptyLabel="-"
                 placeholder="Sélectionner un entrepôt"
                 searchPlaceholder="Rechercher un entrepôt..."
                 disabled={!session?.accessToken || !organization?.id}
               />
-              {newSession.warehouse && (warehouseStockCounts[newSession.warehouse] || 0) === 0 && (
+              {entrepotVide && (
                 <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   <span>Cet entrepôt ne contient aucun produit en stock.</span>
@@ -851,7 +862,7 @@ export default function InventoryPage() {
               onClick={handleCreate}
               disabled={
                 isCreating ||
-                (newSession.warehouse && (warehouseStockCounts[newSession.warehouse] || 0) === 0) as boolean ||
+                entrepotVide ||
                 !hasEligibleCategoriesForSelectedWarehouse
               }
               className="bg-orange-500 hover:bg-orange-600"

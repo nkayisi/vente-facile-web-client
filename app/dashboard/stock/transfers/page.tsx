@@ -16,7 +16,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
-import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
+import { useEntrepots } from "@/hooks/use-entrepots";
+import { usePermissions } from "@/components/auth/permissions-provider";
+import {
+  cotesDuTransfert,
+  destinationsDeTransfert,
+  filtrerParTerme,
+  libelleEntrepot,
+} from "@/lib/stock/entrepots";
 import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
@@ -74,7 +81,6 @@ import {
   shipStockTransfer,
   receiveStockTransfer,
   cancelStockTransfer,
-  getWarehouses,
   getStocks,
   Stock,
   StockTransfer,
@@ -104,7 +110,11 @@ export default function TransfersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
   const [transfers, setTransfers] = useState<StockTransfer[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  // La SOURCE se choisit parmi ses entrepôts ; la DESTINATION dans l'annuaire,
+  // qui porte tous les entrepôts actifs de l'établissement, noms seuls.
+  const entrepots = useEntrepots({ liste: true, annuaire: true });
+  const warehouses: Warehouse[] = entrepots.tous;
+  const { relireSiRefus } = usePermissions();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
@@ -213,12 +223,6 @@ export default function TransfersPage() {
         // d'attente, avant la première requête utile de la page.
         if (organization) {
           const org = organization;
-
-          // Fetch warehouses
-          const warehousesResult = await getWarehouses(session.accessToken, org.id);
-          if (warehousesResult.success && warehousesResult.data) {
-            setWarehouses(warehousesResult.data);
-          }
 
           // Fetch transfers
           await fetchTransfers(org.id);
@@ -438,6 +442,7 @@ export default function TransfersPage() {
           items: [],
         });
       } else {
+        relireSiRefus(result);
         toast.error(result.message || "Erreur lors de la création");
       }
     } catch (error) {
@@ -477,6 +482,7 @@ export default function TransfersPage() {
         toast.success(result.message);
         fetchTransfers();
       } else {
+        if (result) relireSiRefus(result);
         toast.error(result?.message || "Erreur lors de l'action");
       }
     } catch (error) {
@@ -628,7 +634,7 @@ export default function TransfersPage() {
                           Voir détails
                         </DropdownMenuItem>
 
-                        {transfer.status === "draft" && (
+                        {transfer.status === "draft" && cotesDuTransfert(entrepots.membre, transfer).source && (
                           <DropdownMenuItem
                             onClick={() => handleAction(transfer.id, "approve")}
                           >
@@ -637,14 +643,16 @@ export default function TransfersPage() {
                           </DropdownMenuItem>
                         )}
 
-                        {(transfer.status === "draft" || transfer.status === "pending") && (
+                        {(transfer.status === "draft" || transfer.status === "pending") &&
+                          cotesDuTransfert(entrepots.membre, transfer).source && (
                           <DropdownMenuItem onClick={() => handleAction(transfer.id, "ship")}>
                             <Truck className="h-4 w-4 mr-2" />
                             Expédier
                           </DropdownMenuItem>
                         )}
 
-                        {transfer.status === "in_transit" && (
+                        {transfer.status === "in_transit" &&
+                          cotesDuTransfert(entrepots.membre, transfer).destination && (
                           <DropdownMenuItem
                             onClick={() => handleAction(transfer.id, "receive")}
                           >
@@ -653,7 +661,9 @@ export default function TransfersPage() {
                           </DropdownMenuItem>
                         )}
 
-                        {transfer.status !== "completed" && transfer.status !== "cancelled" && (
+                        {transfer.status !== "completed" &&
+                          transfer.status !== "cancelled" &&
+                          cotesDuTransfert(entrepots.membre, transfer).source && (
                           <DropdownMenuItem
                             onClick={() => handleAction(transfer.id, "cancel")}
                             className="text-red-600"
@@ -704,11 +714,7 @@ export default function TransfersPage() {
                   onValueChange={value =>
                     setFormData({ ...formData, source_warehouse: value || "" })
                   }
-                  onSearch={
-                    session?.accessToken && organization?.id
-                      ? createWarehouseSearchHandler(session.accessToken, organization.id)
-                      : async () => []
-                  }
+                  onSearch={entrepots.chercher.action}
                   emptyLabel="-"
                   placeholder="Source"
                   searchPlaceholder="Rechercher un entrepôt..."
@@ -723,21 +729,18 @@ export default function TransfersPage() {
                   onValueChange={value =>
                     setFormData({ ...formData, destination_warehouse: value || "" })
                   }
-                  onSearch={
-                    session?.accessToken && organization?.id
-                      ? // LA SOURCE EST RETIRÉE DE LA LISTE. Proposer un
-                        // transfert sur place, que le serveur refuse, c'est
-                        // laisser découvrir le refus au moment de valider - et
-                        // le message n'arrivait qu'en toast, après coup.
-                        async (q: string) =>
-                          (
-                            await createWarehouseSearchHandler(
-                              session.accessToken!,
-                              organization.id
-                            )(q)
-                          ).filter(o => o.value !== formData.source_warehouse)
-                      : async () => []
+                  // ⚠ L'ANNUAIRE, PAS LA LISTE DE LECTURE : on expédie vers
+                  // n'importe quel entrepôt actif, même hors de son périmètre.
+                  // La liste de lecture ne montrait que les siens, si bien qu'un
+                  // magasinier ne pouvait expédier qu'à lui-même. La SOURCE est
+                  // retirée : un transfert sur place se refuserait au serveur.
+                  onSearch={async (q: string) =>
+                    filtrerParTerme(
+                      destinationsDeTransfert(entrepots.annuaire, formData.source_warehouse),
+                      q
+                    ).map(e => ({ value: e.id, label: libelleEntrepot(e, "action") }))
                   }
+                  resetKey={`${formData.source_warehouse}|${entrepots.annuaire.length}`}
                   emptyLabel="-"
                   placeholder="Destination"
                   searchPlaceholder="Rechercher un entrepôt..."
@@ -748,6 +751,12 @@ export default function TransfersPage() {
                 {!formData.source_warehouse && (
                   <p className="text-xs text-muted-foreground">
                     Choisissez d&apos;abord la source.
+                  </p>
+                )}
+                {entrepots.annuaireDegrade && (
+                  <p className="text-xs text-muted-foreground">
+                    Seuls vos entrepôts sont proposés : la liste de tout l&apos;établissement
+                    n&apos;est pas disponible sur ce serveur.
                   </p>
                 )}
               </div>

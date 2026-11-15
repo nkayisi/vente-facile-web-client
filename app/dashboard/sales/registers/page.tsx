@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
-import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
+import { useEntrepots } from "@/hooks/use-entrepots";
 import {
   Dialog,
   DialogContent,
@@ -94,6 +94,7 @@ export default function RegistersPage() {
   // State
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
+  const entrepots = useEntrepots();
   const { currency: defaultCurrency } = useCurrency();
   const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
   const printer = useReceiptPrinter();
@@ -107,6 +108,10 @@ export default function RegistersPage() {
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showOpenSessionDialog, setShowOpenSessionDialog] = useState(false);
+  // Le refus d'ouverture s'écrit DANS la boîte : « vous avez déjà une session
+  // ouverte sur Caisse 2 » nomme la caisse à fermer, et un toast de quatre
+  // secondes ne laisse pas le temps de le lire.
+  const [refusOuverture, setRefusOuverture] = useState<string | null>(null);
   const [showCloseSessionDialog, setShowCloseSessionDialog] = useState(false);
   const [selectedRegister, setSelectedRegister] = useState<Register | null>(null);
   const [selectedSession, setSelectedSession] = useState<RegisterSession | null>(null);
@@ -259,6 +264,7 @@ export default function RegistersPage() {
     if (!session?.accessToken || !organization?.id || !selectedRegister) return;
 
     setIsSubmitting(true);
+    setRefusOuverture(null);
 
     try {
       const result = await openSession(session.accessToken, organization.id, {
@@ -286,7 +292,7 @@ export default function RegistersPage() {
         // Redirect to POS
         router.push("/dashboard/sales/pos");
       } else {
-        toast.error(result.message || "Erreur lors de l'ouverture");
+        setRefusOuverture(result.message || "La session n'a pas pu être ouverte.");
       }
     } catch (error) {
       toast.error("Une erreur est survenue");
@@ -751,6 +757,7 @@ export default function RegistersPage() {
                         className="w-full bg-green-600 hover:bg-green-700"
                         onClick={() => {
                           setSelectedRegister(register);
+                          setRefusOuverture(null);
                           setShowOpenSessionDialog(true);
                         }}
                         disabled={!register.is_active}
@@ -813,12 +820,14 @@ export default function RegistersPage() {
               <SearchableSelectAsyncWithEmpty
                 value={formData.warehouse || null}
                 onValueChange={value => setFormData({ ...formData, warehouse: value || "" })}
-                onSearch={
-                  session?.accessToken && organization?.id
-                    ? createWarehouseSearchHandler(session.accessToken, organization.id, {
-                        is_active: true,
-                      })
-                    : async () => []
+                onSearch={entrepots.chercher.action}
+                // L'entrepôt ACTUEL d'une caisse s'affiche même s'il n'est plus
+                // proposé (désactivé, ou hors de vos entrepôts) : un champ vide
+                // ferait croire que la caisse n'en a pas.
+                initialOption={
+                  selectedRegister?.warehouse
+                    ? { value: selectedRegister.warehouse, label: selectedRegister.warehouse_name || "Entrepôt actuel" }
+                    : null
                 }
                 emptyLabel="-"
                 placeholder="Sélectionner un entrepôt"
@@ -883,7 +892,16 @@ export default function RegistersPage() {
           <form onSubmit={handleOpenSession} className="space-y-4">
             <p className="text-sm text-gray-600">
               La session démarre avec un solde d&apos;ouverture à zéro. Vous serez redirigé vers le point de vente.
+              Une seule session ouverte par personne : on ne vend que dans la sienne.
             </p>
+            {refusOuverture && (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                {refusOuverture}
+              </p>
+            )}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowOpenSessionDialog(false)}>

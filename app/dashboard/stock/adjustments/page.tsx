@@ -16,7 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
-import { createWarehouseSearchHandler } from "@/lib/select-search-handlers";
+import { useEntrepots } from "@/hooks/use-entrepots";
+import { usePermissions } from "@/components/auth/permissions-provider";
 import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
 import {
   Dialog,
@@ -76,10 +77,8 @@ import {
   createStockAdjustment,
   approveStockAdjustment,
   rejectStockAdjustment,
-  getWarehouses,
   getStocks,
   StockAdjustment,
-  Warehouse,
   Stock,
   AdjustmentType,
   AdjustmentStatus,
@@ -131,7 +130,10 @@ export default function AdjustmentsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
   const [adjustments, setAdjustments] = useState<StockAdjustment[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  // ⚠ Un ajustement se fait là où l'on AGIT : un membre qui consulte tous les
+  // entrepôts n'ajuste que les siens.
+  const entrepots = useEntrepots();
+  const { relireSiRefus } = usePermissions();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
@@ -252,12 +254,6 @@ export default function AdjustmentsPage() {
         // d'attente, avant la première requête utile de la page.
         if (organization) {
           const org = organization;
-
-          // Fetch warehouses
-          const warehousesResult = await getWarehouses(session.accessToken, org.id);
-          if (warehousesResult.success && warehousesResult.data) {
-            setWarehouses(warehousesResult.data);
-          }
 
           // Fetch adjustments
           await fetchAdjustments(org.id);
@@ -539,6 +535,7 @@ export default function AdjustmentsPage() {
           items: [],
         });
       } else {
+        relireSiRefus(result);
         toast.error(result.message || "Erreur lors de la création");
       }
     } catch (error) {
@@ -566,6 +563,7 @@ export default function AdjustmentsPage() {
         toast.success(result.message);
         fetchAdjustments();
       } else {
+        if (result) relireSiRefus(result);
         toast.error(result?.message || "Erreur lors de l'action");
       }
     } catch (error) {
@@ -794,11 +792,7 @@ export default function AdjustmentsPage() {
                   onValueChange={value =>
                     setFormData({ ...formData, warehouse: value || "", items: [] })
                   }
-                  onSearch={
-                    session?.accessToken && organization?.id
-                      ? createWarehouseSearchHandler(session.accessToken, organization.id)
-                      : async () => []
-                  }
+                  onSearch={entrepots.chercher.action}
                   emptyLabel="-"
                   placeholder="Sélectionner un entrepôt"
                   searchPlaceholder="Rechercher un entrepôt..."

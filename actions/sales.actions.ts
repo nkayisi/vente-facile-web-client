@@ -325,6 +325,9 @@ export interface Quotation {
   reference: string;
   customer: string | null;
   customer_name: string | null;
+  /** L'entrepôt du devis : il borne qui le voit (« Voir tout » dans ses entrepôts). */
+  warehouse?: string | null;
+  warehouse_name?: string | null;
   status: QuotationStatus;
   status_display: string;
   subtotal: string;
@@ -508,6 +511,8 @@ export interface CreateQuotationItemData {
 
 export interface CreateQuotationData {
   customer?: string;
+  /** Facultatif ; à défaut, le serveur prend l'unique ou le principal du créateur. */
+  warehouse?: string;
   valid_until: string;
   notes?: string;
   terms?: string;

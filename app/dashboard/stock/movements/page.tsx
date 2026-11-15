@@ -25,10 +25,7 @@ import {
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SearchableSelectAsyncWithEmpty } from "@/components/ui/searchable-select-async-empty";
-import {
-  createWarehouseSearchHandler,
-  createCategorySearchHandler,
-} from "@/lib/select-search-handlers";
+import { createCategorySearchHandler } from "@/lib/select-search-handlers";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import {
   PeriodFilter,
@@ -88,6 +85,8 @@ import {
 } from "@/actions/stock.actions";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { usePermissions } from "@/components/auth/permissions-provider";
+import { useEntrepots } from "@/hooks/use-entrepots";
 
 const MOVEMENT_TYPES: {
   value: MovementType;
@@ -147,6 +146,8 @@ export default function MovementsPage() {
   /** Rechargement du tableau seul : la page reste affichée, les lignes deviennent des squelettes */
   const [isFetching, setIsFetching] = useState(true);
   const { organization } = useOrganization();
+  const entrepots = useEntrepots();
+  const { relireSiRefus } = usePermissions();
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [locations, setLocations] = useState<StockLocation[]>([]);
@@ -305,7 +306,7 @@ export default function MovementsPage() {
         if (organization) {
           const org = organization;
           // Les entrepôts ne sont pas préchargés : les deux sélecteurs de la page
-          // les cherchent à la demande via `createWarehouseSearchHandler`.
+          // les cherchent à la demande via `useEntrepots().chercher`.
           // Les mouvements sont chargés par l'effet des filtres, une fois
           // l'organisation connue : les charger ici aussi doublerait l'appel.
         } else {
@@ -619,6 +620,7 @@ export default function MovementsPage() {
         setSellingPrices({ selling_price: null, wholesale_price: null });
         setUpdateProductPrices(false);
       } else {
+        relireSiRefus(result);
         toast.error(result.message || "Erreur lors de la création");
       }
     } catch (error) {
@@ -765,11 +767,7 @@ export default function MovementsPage() {
           <SearchableSelectAsyncWithEmpty
             value={selectedWarehouse === "all" ? null : selectedWarehouse}
             onValueChange={value => setSelectedWarehouse(value ?? "all")}
-            onSearch={
-              session?.accessToken && organization?.id
-                ? createWarehouseSearchHandler(session.accessToken, organization.id)
-                : async () => []
-            }
+            onSearch={entrepots.chercher.lecture}
             emptyLabel="Tous les entrepôts"
             placeholder="Entrepôt"
             searchPlaceholder="Rechercher un entrepôt..."
@@ -1053,11 +1051,7 @@ export default function MovementsPage() {
                   onValueChange={value =>
                     setFormData({ ...formData, warehouse: value || "" })
                   }
-                  onSearch={
-                    session?.accessToken && organization?.id
-                      ? createWarehouseSearchHandler(session.accessToken, organization.id)
-                      : async () => []
-                  }
+                  onSearch={entrepots.chercher.action}
                   emptyLabel="-"
                   placeholder="Sélectionner un entrepôt"
                   searchPlaceholder="Rechercher un entrepôt..."

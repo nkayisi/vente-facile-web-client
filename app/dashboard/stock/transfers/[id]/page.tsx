@@ -33,6 +33,9 @@ import {
 import { toast } from "sonner";
 import { formatPrice, formatDecimal, formatDateTime } from "@/lib/format";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { usePermissions } from "@/components/auth/permissions-provider";
+import { membreDepuisPermissions } from "@vente-facile/core";
+import { cotesDuTransfert } from "@/lib/stock/entrepots";
 import {
   getStockTransfer,
   approveStockTransfer,
@@ -63,6 +66,7 @@ export default function TransferDetailPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
+  const { permissions, relireSiRefus } = usePermissions();
   const [transfer, setTransfer] = useState<StockTransfer | null>(null);
   const [showActionDialog, setShowActionDialog] = useState(false);
   const [actionType, setActionType] = useState<"approve" | "ship" | "receive" | "cancel">("approve");
@@ -245,6 +249,7 @@ export default function TransferDetailPage() {
           setTransfer(transferResult.data);
         }
       } else {
+        if (result) relireSiRefus(result);
         toast.error(result?.message || "Erreur lors de l'action");
       }
     } catch (error) {
@@ -330,6 +335,11 @@ export default function TransferDetailPage() {
 
   const statusConfig = STATUS_CONFIG[transfer.status] || STATUS_CONFIG.draft;
   const StatusIcon = statusConfig.icon;
+  // Approuver, expédier, annuler : la SOURCE. Réceptionner : la DESTINATION.
+  const cotes = cotesDuTransfert(
+    permissions ? membreDepuisPermissions(permissions) : null,
+    transfer
+  );
   const items = transfer.items || [];
 
   return (
@@ -354,7 +364,7 @@ export default function TransferDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {transfer.status === "draft" && (
+          {transfer.status === "draft" && cotes.source && (
             <>
               <Button
                 variant="outline"
@@ -372,7 +382,7 @@ export default function TransferDetailPage() {
               </Button>
             </>
           )}
-          {transfer.status === "pending" && (
+          {transfer.status === "pending" && cotes.source && (
             <Button
               onClick={() => openActionDialog("ship")}
               className="bg-blue-600 hover:bg-blue-700"
@@ -381,7 +391,7 @@ export default function TransferDetailPage() {
               Expédier
             </Button>
           )}
-          {transfer.status === "in_transit" && (
+          {transfer.status === "in_transit" && cotes.destination && (
             <Button
               onClick={() => openActionDialog("receive")}
               className="bg-green-600 hover:bg-green-700"
@@ -390,7 +400,7 @@ export default function TransferDetailPage() {
               Réceptionner
             </Button>
           )}
-          {transfer.status !== "completed" && transfer.status !== "cancelled" && (
+          {transfer.status !== "completed" && transfer.status !== "cancelled" && cotes.source && (
             <Button
               variant="destructive"
               onClick={() => openActionDialog("cancel")}

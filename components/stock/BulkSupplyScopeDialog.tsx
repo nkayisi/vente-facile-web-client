@@ -17,6 +17,8 @@
  * donc elle reste au pied de la feuille, près du bouton d'envoi.
  */
 
+import { membreDepuisPermissions } from "@vente-facile/core";
+import { usePermissions } from "@/components/auth/permissions-provider";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Sparkles, X } from "lucide-react";
 
@@ -92,12 +94,19 @@ export function BulkSupplyScopeDialog({
     initial ?? PERIMETRE_VIDE
   );
 
+  // ⚠ L'appro se fait là où l'on AGIT : un membre qui consulte tous les
+  // entrepôts n'approvisionne que les siens.
+  const { permissions } = usePermissions();
+  const membre = useMemo(
+    () => (permissions ? membreDepuisPermissions(permissions) : null),
+    [permissions]
+  );
   const chercheEntrepot = useMemo(
     () =>
       accessToken
-        ? createWarehouseSearchHandler(accessToken, organizationId)
+        ? createWarehouseSearchHandler(accessToken, organizationId, "action", { membre })
         : async () => [],
-    [accessToken, organizationId]
+    [accessToken, organizationId, membre]
   );
   const chercheCategorie = useMemo(
     () =>

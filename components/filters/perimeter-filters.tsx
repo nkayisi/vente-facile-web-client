@@ -6,20 +6,21 @@
  * ┌──────────────────────────────────────────────────────────────────────────┐
  * │ UN VERROU DE DROIT S'AFFICHE FERMÉ ; UNE DONNÉE SANS AUTEUR DISPARAÎT. │
  * │                                                                          │
- * │ `cashier`, `un-seul-entrepot` et `aucun-entrepot` parlent de VOUS : on   │
- * │ vous refuse quelque chose que d'autres ont, et retirer le contrôle se    │
- * │ lirait comme une fonction manquante. Un contrôle fermé QUI DIT POURQUOI  │
- * │ se lit comme une règle.                                                  │
+ * │ `propres-donnees`, `un-seul-entrepot` et `aucun-entrepot` parlent de     │
+ * │ VOUS : on vous refuse quelque chose que d'autres ont, et retirer le      │
+ * │ contrôle se lirait comme une fonction manquante. Un contrôle fermé QUI   │
+ * │ DIT POURQUOI se lit comme une règle.                                     │
  * │                                                                          │
  * │ `withUser={false}` parle de la DONNÉE : un niveau de stock n'a jamais eu │
  * │ d'auteur, pour personne. Expliquer l'absence d'une chose que nul n'a     │
  * │ demandée est du bruit permanent - on retire le champ, comme le terminal. │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
- * ⚠ AUCUN `useWarehouses` : `WarehouseViewSet` porte déjà
- * `WarehouseScopedQuerysetMixin` avec `warehouse_scope_field='id'`, donc
- * `/warehouses/` est DÉJÀ borné par le rôle. Un hook serait un second chemin
- * vers la même liste, donc un second périmètre à tenir en phase.
+ * ⚠ LE FILTRE « ENTREPÔT » EST UNE LECTURE : il propose tout ce que
+ * `/warehouses/` rend, déjà borné au périmètre de lecture par le serveur
+ * (`WarehouseScopedQuerysetMixin`), inactifs compris avec leur badge. Le
+ * re-filtrer ici sur des droits lus il y a une minute cacherait l'entrepôt
+ * qu'on vient d'affecter.
  */
 import { useSession } from "next-auth/react";
 
@@ -66,7 +67,7 @@ export function PerimeterFilters({
   const token = session?.accessToken ?? "";
   const orgId = organization?.id ?? "";
 
-  const userLock = perimetre.isCashier ? "cashier" : null;
+  const userLock = perimetre.userLock;
 
   return (
     <div className={className ?? "flex flex-wrap items-center gap-3"}>
@@ -82,7 +83,7 @@ export function PerimeterFilters({
           // nouveau périmètre ne propose plus.
           onValueChange={(v) => onChange({ warehouse: v ?? null, user: null })}
           onSearch={
-            pret ? createWarehouseSearchHandler(token, orgId) : async () => []
+            pret ? createWarehouseSearchHandler(token, orgId, "lecture") : async () => []
           }
           emptyLabel="Tous les entrepôts"
           placeholder="Entrepôt"

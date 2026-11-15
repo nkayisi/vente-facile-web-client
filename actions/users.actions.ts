@@ -14,6 +14,8 @@ export interface AssignedWarehouse {
   id: string;
   name: string;
   code: string;
+  /** Absent sur un serveur antérieur : on le lit alors dans la liste des entrepôts. */
+  is_active?: boolean;
 }
 
 export interface OrganizationMember {
@@ -37,6 +39,11 @@ export interface OrganizationMember {
   /** ``all`` = administrateur (tous les entrepôts) ; ``restricted`` = périmètre assigné */
   warehouse_access?: "all" | "restricted";
   assigned_warehouses?: AssignedWarehouse[];
+  /**
+   * « Consulter tous les entrepôts » : le membre LIT partout et n'agit que dans
+   * ses entrepôts. Écrite par le propriétaire seul.
+   */
+  consult_all_warehouses?: boolean;
   /** Permissions additionnelles accordées à ce membre */
   extra_permissions?: string[];
   /** Permissions héritées du rôle */
@@ -70,6 +77,8 @@ export interface UpdateMemberData {
   is_active?: boolean;
   warehouse_ids?: string[];
   extra_permissions?: string[];
+  /** Le propriétaire seul : un gérant reçoit 403 `reserve_au_proprietaire`. */
+  consult_all_warehouses?: boolean;
 }
 
 interface MembersListResponse {

@@ -43,8 +43,7 @@ import { jourISO, lireNombreRequis } from "@/lib/stock/nombres";
 import { createPurchaseOrder } from "@/actions/purchases.actions";
 import { getSuppliers } from "@/actions/contacts.actions";
 import { getProducts } from "@/actions/products.actions";
-import { getWarehouses } from "@/actions/stock.actions";
-import type { Warehouse } from "@/actions/stock.actions";
+import { useEntrepots } from "@/hooks/use-entrepots";
 import {
   getOrganizationCurrencies,
   type OrganizationCurrency,
@@ -74,9 +73,22 @@ export default function NewPurchaseOrderPage() {
     [devisesOrg, defaultCurrency]
   );
 
-  const [entrepots, setEntrepots] = useState<Warehouse[]>([]);
+  // ⚠ Une commande se livre là où l'on AGIT : ses entrepôts affectés et
+  // ACTIFS. La liste de lecture d'un membre qui consulte tout en porterait
+  // d'autres, où la réception lui serait refusée.
+  const { actionnables: entrepots } = useEntrepots({ liste: true });
   const [fournisseur, setFournisseur] = useState<string | null>(null);
-  const [entrepot, setEntrepot] = useState<string>("");
+  // `null` : le marchand n'a rien choisi, on propose le défaut. Le défaut est
+  // DÉRIVÉ, pas posé par un effet : il arrive avec la liste, sans écraser un
+  // choix déjà fait.
+  const [entrepotChoisi, setEntrepot] = useState<string | null>(null);
+  // ⚠ UN CHOIX UNIQUE N'EST PAS UN CHOIX : l'entrepôt principal (ou l'unique)
+  // est proposé d'emblée. Mais entre plusieurs dépôts sans principal, on ne
+  // choisit RIEN - deviner ferait réceptionner au mauvais endroit, et le
+  // magasinier ne s'en apercevrait qu'à l'inventaire suivant.
+  const entrepotParDefaut =
+    entrepots.find((w) => w.is_default)?.id ?? (entrepots.length === 1 ? entrepots[0].id : "");
+  const entrepot = entrepotChoisi ?? entrepotParDefaut;
   const [devise, setDevise] = useState<string>("");
   const [dateCommande, setDateCommande] = useState(jourISO(new Date()));
   const [dateAttendue, setDateAttendue] = useState("");
@@ -90,19 +102,6 @@ export default function NewPurchaseOrderPage() {
 
   useEffect(() => {
     if (!jeton || !organization) return;
-    getWarehouses(jeton, organization.id).then((r) => {
-      if (r.success && r.data) {
-        const liste = r.data;
-        setEntrepots(liste);
-        // ⚠ UN CHOIX UNIQUE N'EST PAS UN CHOIX : l'entrepôt principal (ou
-        // l'unique) est proposé d'emblée. Mais entre plusieurs dépôts sans
-        // principal, on ne choisit RIEN - deviner ferait réceptionner au
-        // mauvais endroit, et le magasinier ne s'en apercevrait qu'à
-        // l'inventaire suivant.
-        const defaut = liste.find((w) => w.is_default) ?? (liste.length === 1 ? liste[0] : null);
-        if (defaut) setEntrepot(defaut.id);
-      }
-    });
     getOrganizationCurrencies(jeton, organization.id).then((r) => {
       if (r.success && r.data) {
         setDevisesOrg(r.data);

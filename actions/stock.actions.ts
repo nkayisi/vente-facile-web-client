@@ -1,7 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { formatAxiosErrorMessage, getErrorBody } from "@/lib/api/drf-error";
+import {
+  codeDuCorps,
+  formatAxiosErrorMessage,
+  getErrorBody,
+  isAxiosLikeError,
+} from "@/lib/api/drf-error";
+import { lireToutesLesPages } from "@/lib/api/pages";
+import { annuaireDepuisListe } from "@/lib/stock/entrepots";
 import axios from "@/lib/auth/api-helper";
 import {
   fetchExportFile,
@@ -29,6 +36,12 @@ export interface Warehouse {
   is_active: boolean;
   allow_negative_stock: boolean;
   stock_value?: string;
+  /**
+   * Nombre d'articles en stock dans cet entrepôt, ANNOTÉ par la liste. Absent
+   * sur un serveur antérieur : on le lit alors au détail d'un seul entrepôt,
+   * jamais par un appel par entrepôt.
+   */
+  stocked_products?: number;
   locations?: StockLocation[];
   created_at?: string;
   updated_at?: string;
@@ -392,6 +405,11 @@ export interface WarehouseFilters {
   is_default?: boolean;
   branch?: string;
   search?: string;
+  /**
+   * Une seule page, de cette taille (les recherches d'un sélecteur). Absent :
+   * TOUTES les pages - voir `getWarehouses`.
+   */
+  page_size?: number;
 }
 
 export interface StockFilters {
@@ -464,6 +482,10 @@ interface ApiResponse<T> {
   message?: string;
   data?: T;
   errors?: Record<string, string[]>;
+  /** Le code nommé d'un refus (`consultation_seule`, `entrepot_principal`…). */
+  code?: string;
+  /** Le statut HTTP d'un refus : un 404 ne se dit pas comme une panne. */
+  status?: number;
 }
 
 interface PaginatedResponse<T> {
@@ -489,6 +511,50 @@ function getHeaders(accessToken: string, organizationId: string) {
 // WAREHOUSE ACTIONS
 // =============================================================================
 
+/** La plus grande page que le serveur accepte (`max_page_size`). */
+const TAILLE_PAGE_ENTREPOTS = 200;
+/** Garde de boucle : au-delà, un abonnement n'autorise de toute façon pas autant d'entrepôts. */
+const PAGES_ENTREPOTS_MAX = 20;
+
+/** Le statut HTTP d'un refus, quand il y en a un (un 404 ne se dit pas comme un 500). */
+function statutDe(error: unknown): number | undefined {
+  return isAxiosLikeError(error) ? error.response.status : undefined;
+}
+
+/**
+ * Ce qu'un refus porte : la phrase, le corps (erreurs de champ), le code nommé
+ * et le statut. Un écran qui ne reçoit que la phrase ne peut ni relire ses
+ * droits (`consultation_seule`), ni distinguer « introuvable » d'une panne.
+ */
+function refus(error: unknown, repli: string) {
+  const corps = getErrorBody(error);
+  return {
+    success: false as const,
+    message: formatAxiosErrorMessage(error, repli),
+    errors: corps as Record<string, string[]> | undefined,
+    code: codeDuCorps(corps),
+    status: statutDe(error),
+  };
+}
+
+/**
+ * Les entrepôts du périmètre de LECTURE, toutes pages lues.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ LA LISTE S'ARRÊTAIT À VINGT, ET LE PAGE_SIZE PARTAIT DANS LE VIDE.      │
+ * │                                                                          │
+ * │ Seule la PREMIÈRE page était gardée (20 entrepôts, la pagination par     │
+ * │ défaut), et le `page_size` que posait le sélecteur n'était jamais        │
+ * │ transmis - un `as never` le masquait au compilateur. Au-delà de vingt,   │
+ * │ un entrepôt existant n'apparaissait ni dans la page Stock, ni dans la    │
+ * │ boîte d'affectation d'un membre, ni dans une commande : on le croyait    │
+ * │ perdu. C'est l'une des causes de « l'entrepôt ne s'affiche pas ».        │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ⚠ Le serveur borne cette liste au périmètre de lecture du demandeur :
+ * l'entrepôt d'un autre n'y figure que si le propriétaire lui a ouvert la
+ * consultation de tous. Les inactifs y sont, avec leur `is_active`.
+ */
 export async function getWarehouses(
   accessToken: string,
   organizationId: string,
@@ -501,23 +567,85 @@ export async function getWarehouses(
     if (filters?.branch) params.append("branch", filters.branch);
     if (filters?.search) params.append("search", filters.search);
 
-    const response = await axios.get(
-      `${API_BASE_URL}/warehouses/?${params.toString()}`,
-      { headers: getHeaders(accessToken, organizationId) }
+    const unePage = filters?.page_size !== undefined;
+    params.set("page_size", String(unePage ? filters!.page_size : TAILLE_PAGE_ENTREPOTS));
+
+    const entrepots = await lireToutesLesPages<Warehouse>(
+      async (page) => {
+        params.set("page", String(page));
+        const response = await axios.get(
+          `${API_BASE_URL}/warehouses/?${params.toString()}`,
+          { headers: getHeaders(accessToken, organizationId) }
+        );
+        return response.data;
+      },
+      { pagesMax: PAGES_ENTREPOTS_MAX, unePage },
     );
 
-    // Handle both paginated and non-paginated responses
-    const data = Array.isArray(response.data)
-      ? response.data
-      : response.data.results || [];
-
-    return { success: true, data };
+    return { success: true, data: entrepots };
   } catch (error: unknown) {
     console.error("[stock] Get warehouses error:", getErrorBody(error) || (error as Error)?.message);
     return { success: false, message: "Erreur lors de la récupération des entrepôts" };
   }
 }
 
+/** Une entrée de l'annuaire : un nom, rien d'autre. */
+export interface WarehouseDirectoryEntry {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
+/**
+ * L'ANNUAIRE des entrepôts de l'établissement : la destination d'un transfert.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ ON EXPÉDIE PARTOUT, ON NE LIT PAS PARTOUT.                              │
+ * │                                                                          │
+ * │ Un transfert part de SES entrepôts vers n'importe quel entrepôt actif.   │
+ * │ La liste de lecture ne montre que les siens : le magasinier ne pouvait   │
+ * │ donc expédier qu'à lui-même. L'annuaire rend tous les entrepôts, mais    │
+ * │ leurs NOMS seuls - ni adresse, ni stock, ni valeur.                      │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ⚠ REPLI SUR UN SERVEUR ANTÉRIEUR : `/warehouses/directory/` y répond 404. On
+ * se rabat alors sur la liste de lecture (ses entrepôts seulement), et
+ * `degrade` le dit : l'écran peut l'annoncer plutôt que de faire croire que
+ * l'établissement n'a pas d'autre entrepôt.
+ */
+export async function getWarehouseDirectory(
+  accessToken: string,
+  organizationId: string,
+): Promise<ApiResponse<{ entrepots: WarehouseDirectoryEntry[]; degrade: boolean }>> {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/warehouses/directory/`, {
+      headers: getHeaders(accessToken, organizationId),
+    });
+    const liste: WarehouseDirectoryEntry[] = Array.isArray(response.data)
+      ? response.data
+      : response.data?.results ?? [];
+    return { success: true, data: { entrepots: liste, degrade: false } };
+  } catch (error: unknown) {
+    if (statutDe(error) !== 404) {
+      console.error("[stock] Get warehouse directory error:", getErrorBody(error) || (error as Error)?.message);
+      return { success: false, message: "Erreur lors de la récupération des entrepôts" };
+    }
+    const lecture = await getWarehouses(accessToken, organizationId);
+    if (!lecture.success || !lecture.data) {
+      return { success: false, message: lecture.message };
+    }
+    return {
+      success: true,
+      data: { entrepots: annuaireDepuisListe(lecture.data), degrade: true },
+    };
+  }
+}
+
+/**
+ * Le détail d'un entrepôt. `status` vaut 404 quand il n'existe pas OU qu'il est
+ * hors du périmètre de lecture : le serveur ne distingue pas les deux, et c'est
+ * voulu (dire « il existe, mais pas pour vous » révélerait son existence).
+ */
 export async function getWarehouse(
   accessToken: string,
   organizationId: string,
@@ -532,10 +660,18 @@ export async function getWarehouse(
     return { success: true, data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Get warehouse error:", getErrorBody(error) || (error as Error)?.message);
-    return { success: false, message: "Erreur lors de la récupération de l'entrepôt" };
+    return refus(error, "Erreur lors de la récupération de l'entrepôt");
   }
 }
 
+/**
+ * Créer un entrepôt : le PROPRIÉTAIRE seul.
+ *
+ * ⚠ LA RÉPONSE DOIT PORTER SON `id`. Le serializer d'écriture n'en rendait pas :
+ * la page ajoutait l'entrepôt sans identifiant, et sa carte menait à
+ * « introuvable ». Un serveur antérieur le rend encore sans : l'appelant relit
+ * alors la liste au lieu d'y insérer un objet incomplet.
+ */
 export async function createWarehouse(
   accessToken: string,
   organizationId: string,
@@ -552,15 +688,16 @@ export async function createWarehouse(
 
     return { success: true, message: "Entrepôt créé avec succès", data: response.data };
   } catch (error: unknown) {
-    console.error("[stock] Create warehouse error:", (error as any).response?.data || (error as Error).message);
-    return {
-      success: false,
-      message: formatAxiosErrorMessage(error, "Erreur lors de la création de l'entrepôt"),
-      errors: (error as any).response?.data,
-    };
+    console.error("[stock] Create warehouse error:", getErrorBody(error) || (error as Error)?.message);
+    return refus(error, "Erreur lors de la création de l'entrepôt");
   }
 }
 
+/**
+ * Modifier un entrepôt. Un gérant ne touche qu'au nom et à l'adresse de SES
+ * entrepôts : l'appelant n'envoie que ce qui a changé (`champsModifies`), sans
+ * quoi un PATCH qui renverrait `is_default` tel quel se ferait refuser.
+ */
 export async function updateWarehouse(
   accessToken: string,
   organizationId: string,
@@ -575,19 +712,20 @@ export async function updateWarehouse(
     );
 
     revalidatePath("/dashboard/stock");
-    revalidatePath(`/dashboard/stock/${warehouseId}`);
+    revalidatePath(`/dashboard/stock/warehouses/${warehouseId}`);
 
     return { success: true, message: "Entrepôt mis à jour avec succès", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Update warehouse error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la mise à jour de l'entrepôt",
-      errors: getErrorBody(error),
-    };
+    return refus(error, "Erreur lors de la mise à jour de l'entrepôt");
   }
 }
 
+/**
+ * Supprimer un entrepôt : le propriétaire seul, et le serveur NOMME ce qui
+ * bloque (principal, stock restant, session ouverte, transfert en route,
+ * inventaire en cours, seul entrepôt actif d'un membre).
+ */
 export async function deleteWarehouse(
   accessToken: string,
   organizationId: string,
@@ -604,10 +742,7 @@ export async function deleteWarehouse(
     return { success: true, message: "Entrepôt supprimé avec succès" };
   } catch (error: unknown) {
     console.error("[stock] Delete warehouse error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la suppression de l'entrepôt",
-    };
+    return refus(error, "Erreur lors de la suppression de l'entrepôt");
   }
 }
 
@@ -691,11 +826,7 @@ export async function createStockLocation(
     return { success: true, message: "Emplacement créé avec succès", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Create stock location error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la création de l'emplacement",
-      errors: getErrorBody(error),
-    };
+    return refus(error, "Erreur lors de la création de l'emplacement");
   }
 }
 
@@ -969,11 +1100,7 @@ export async function createStockMovement(
     return { success: true, message: "Mouvement créé avec succès", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Create stock movement error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la création du mouvement",
-      errors: getErrorBody(error),
-    };
+    return refus(error, "Erreur lors de la création du mouvement");
   }
 }
 
@@ -1042,11 +1169,7 @@ export async function createStockTransfer(
     return { success: true, message: "Transfert créé avec succès", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Create stock transfer error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la création du transfert",
-      errors: getErrorBody(error),
-    };
+    return refus(error, "Erreur lors de la création du transfert");
   }
 }
 
@@ -1065,10 +1188,7 @@ export async function approveStockTransfer(
     return { success: true, message: "Transfert approuvé", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Approve transfer error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.error || "Erreur lors de l'approbation du transfert",
-    };
+    return refus(error, "Erreur lors de l'approbation du transfert");
   }
 }
 
@@ -1087,10 +1207,7 @@ export async function shipStockTransfer(
     return { success: true, message: "Transfert expédié", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Ship transfer error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.error || "Erreur lors de l'expédition du transfert",
-    };
+    return refus(error, "Erreur lors de l'expédition du transfert");
   }
 }
 
@@ -1120,10 +1237,7 @@ export async function receiveStockTransfer(
     return { success: true, message: "Transfert reçu", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Receive transfer error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.error || "Erreur lors de la réception du transfert",
-    };
+    return refus(error, "Erreur lors de la réception du transfert");
   }
 }
 
@@ -1142,10 +1256,7 @@ export async function cancelStockTransfer(
     return { success: true, message: "Transfert annulé", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Cancel transfer error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.error || "Erreur lors de l'annulation du transfert",
-    };
+    return refus(error, "Erreur lors de l'annulation du transfert");
   }
 }
 
@@ -1215,11 +1326,7 @@ export async function createStockAdjustment(
     return { success: true, message: "Ajustement créé avec succès", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Create stock adjustment error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.detail || "Erreur lors de la création de l'ajustement",
-      errors: getErrorBody(error),
-    };
+    return refus(error, "Erreur lors de la création de l'ajustement");
   }
 }
 
@@ -1238,10 +1345,7 @@ export async function approveStockAdjustment(
     return { success: true, message: "Ajustement approuvé et appliqué", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Approve adjustment error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.error || "Erreur lors de l'approbation de l'ajustement",
-    };
+    return refus(error, "Erreur lors de l'approbation de l'ajustement");
   }
 }
 
@@ -1260,10 +1364,7 @@ export async function rejectStockAdjustment(
     return { success: true, message: "Ajustement rejeté", data: response.data };
   } catch (error: unknown) {
     console.error("[stock] Reject adjustment error:", getErrorBody(error) || (error as Error)?.message);
-    return {
-      success: false,
-      message: getErrorBody(error)?.error || "Erreur lors du rejet de l'ajustement",
-    };
+    return refus(error, "Erreur lors du rejet de l'ajustement");
   }
 }
 
