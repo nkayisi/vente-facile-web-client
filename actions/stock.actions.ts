@@ -34,7 +34,6 @@ export interface Warehouse {
   manager_name?: string;
   is_default: boolean;
   is_active: boolean;
-  allow_negative_stock: boolean;
   stock_value?: string;
   /**
    * Nombre d'articles en stock dans cet entrepôt, ANNOTÉ par la liste. Absent
@@ -305,7 +304,6 @@ export interface CreateWarehouseData {
   manager?: string | null;
   is_default?: boolean;
   is_active?: boolean;
-  allow_negative_stock?: boolean;
 }
 
 export interface CreateStockLocationData {

@@ -72,7 +72,6 @@ export default function NewProductPage() {
     is_taxable: true,
     tax_rate: 0,
     track_inventory: true,
-    allow_negative_stock: false,
     has_expiry_date: false,
     min_stock_level: 0,
     reorder_point: 5,
@@ -474,21 +473,6 @@ export default function NewProductPage() {
                   />
                 </div>
 
-                <div className="flex items-center justify-between rounded-lg bg-gray-50 p-4">
-                  <div className="pr-4">
-                    <Label htmlFor="allow_negative_stock">Autoriser le stock négatif</Label>
-                    <p className="text-sm text-gray-500">
-                      Vendre même sans stock enregistré
-                    </p>
-                  </div>
-                  <Switch
-                    id="allow_negative_stock"
-                    checked={formData.allow_negative_stock}
-                    onCheckedChange={(checked) =>
-                      handleChange("allow_negative_stock", checked)
-                    }
-                  />
-                </div>
               </>
             )}
           </CardContent>

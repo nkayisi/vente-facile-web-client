@@ -415,11 +415,18 @@ export interface LockedProductsResponse {
 
 export async function getLockedProducts(
   accessToken: string,
-  organizationId: string
+  organizationId: string,
+  /**
+   * L'entrepôt de la CAISSE : un verrou ne vaut que dans l'entrepôt de la
+   * vente. Un serveur qui ne l'honore pas encore rend ceux de tous les
+   * entrepôts lisibles, et `verrousDeLaCaisse` fait le tri.
+   */
+  warehouseId?: string
 ): Promise<ApiResponse<LockedProductsResponse>> {
   try {
+    const query = warehouseId ? `?warehouse=${encodeURIComponent(warehouseId)}` : "";
     const response = await axios.get(
-      `${API_BASE_URL}/inventory-sessions/locked-products/`,
+      `${API_BASE_URL}/inventory-sessions/locked-products/${query}`,
       { headers: getHeaders(accessToken, organizationId) }
     );
 

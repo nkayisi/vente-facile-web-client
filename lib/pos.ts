@@ -40,6 +40,11 @@ export {
   addableSealed,
   inCart,
   verifierAjout,
+  // Ce qui ferme « Encaisser » : le verrou d'inventaire d'abord, puis le
+  // stock, dans l'ordre du serveur. Rien ne ferme l'AJOUT.
+  lignesEnRupture,
+  motifsEncaissement,
+  panierServable,
 } from "@vente-facile/core/pos";
 
 export type {
@@ -55,4 +60,6 @@ export type {
   LoyaltyProgramLike,
   CreditCustomerLike,
   CreditVerdict,
+  LigneStockee,
+  Rupture,
 } from "@vente-facile/core/pos";

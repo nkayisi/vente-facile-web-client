@@ -121,7 +121,6 @@ export interface Product {
   price_with_tax?: string;
   profit_margin?: string;
   track_inventory: boolean;
-  allow_negative_stock: boolean;
   has_expiry_date: boolean;
   /**
    * Les quatre seuils de stock, en CHAÎNE.
@@ -207,7 +206,6 @@ export interface CreateProductData {
   tax_rate?: number;
   is_taxable?: boolean;
   track_inventory?: boolean;
-  allow_negative_stock?: boolean;
   has_expiry_date?: boolean;
   min_stock_level?: number;
   max_stock_level?: number | null;
@@ -228,8 +226,14 @@ export interface ProductFilters {
   is_active?: boolean;
   is_featured?: boolean;
   in_stock?: boolean;
-  /** Liste catalogue dashboard : tous les produits de l’org (POS inchangé sans ce flag). */
+  /**
+   * Tous les produits de l'organisation, quel que soit l'entrepôt qui les
+   * stocke. Le comptoir l'emploie : tout le catalogue vendable s'y voit, le
+   * stock affiché restant celui de l'entrepôt passé dans `warehouse`.
+   */
   full_catalog?: boolean;
+  /** Seulement les articles vendables (pas les consommables ni les matières). */
+  is_sellable?: boolean;
   ordering?: string;
   page?: number;
   page_size?: number;
@@ -284,6 +288,8 @@ export async function getProducts(
     if (filters?.in_stock !== undefined) params.append("in_stock", String(filters.in_stock));
     if (filters?.full_catalog !== undefined)
       params.append("full_catalog", String(filters.full_catalog));
+    if (filters?.is_sellable !== undefined)
+      params.append("is_sellable", String(filters.is_sellable));
     if (filters?.ordering) params.append("ordering", filters.ordering);
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.page_size) params.append("page_size", String(filters.page_size));

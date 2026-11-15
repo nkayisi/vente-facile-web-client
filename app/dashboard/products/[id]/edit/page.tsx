@@ -116,7 +116,6 @@ export default function EditProductPage() {
           tax_rate: parseFloat(product.tax_rate),
           is_taxable: product.is_taxable,
           track_inventory: product.track_inventory,
-          allow_negative_stock: product.allow_negative_stock,
           has_expiry_date: product.has_expiry_date,
           // Le serveur rend des chaînes, le formulaire travaille en nombres.
           min_stock_level: parseFloat(product.min_stock_level) || 0,
@@ -557,19 +556,6 @@ export default function EditProductPage() {
 
               {formData.track_inventory && (
                 <>
-                  {/* Allow Negative Stock */}
-                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div>
-                      <Label htmlFor="allow_negative_stock">Autoriser stock négatif</Label>
-                      <p className="text-sm text-gray-500">Permettre les ventes même si le stock est insuffisant</p>
-                    </div>
-                    <Switch
-                      id="allow_negative_stock"
-                      checked={formData.allow_negative_stock ?? false}
-                      onCheckedChange={(checked: boolean) => handleChange("allow_negative_stock", checked)}
-                    />
-                  </div>
-
                   {/* Has Expiry Date */}
                   <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div>

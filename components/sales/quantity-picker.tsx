@@ -103,8 +103,10 @@ export interface QuantityPickerProps {
   /** Quantité déjà saisie, pour rouvrir une ligne existante en édition. */
   initial?: PackagedSelection;
   /**
-   * Unités de détail encore ajoutables, `null` si le produit n'est pas suivi
-   * en stock ou si l'entrepôt tolère le négatif.
+   * Unités de détail que le stock couvre encore, `null` si le produit n'est
+   * pas suivi en stock. ⚠ C'est une INFORMATION, plus une borne : l'ajout
+   * n'est jamais refusé, c'est « Encaisser » qui ferme tant qu'une ligne
+   * dépasse le disponible.
    */
   maxBase: number | null;
   /**
@@ -113,10 +115,17 @@ export interface QuantityPickerProps {
    */
   looseAvailable: number | null;
   /**
-   * Contenants encore scellés, seuls réellement vendables en gros. `null` si la
-   * borne n'existe pas (entrepôt tolérant le découvert) ou n'est pas connue.
+   * Contenants encore scellés, seuls réellement vendables en gros. `null` si
+   * le produit n'est pas suivi ou que le partage n'est pas connu.
    */
   sealedAvailable?: number | null;
+  /**
+   * L'article est bloqué par un inventaire en cours dans l'entrepôt de la
+   * caisse : la référence de la session (chaîne vide si on l'ignore). Absent :
+   * aucun verrou. Il s'ajoute quand même au panier (proforma, devis), et
+   * l'écran le DIT.
+   */
+  lockReference?: string | null;
   /**
    * Ouvre `packages` conditionnements en stock. Fourni seulement quand le
    * caissier en a le droit ; sans lui, le sélecteur se contente d'expliquer le
@@ -155,6 +164,7 @@ export function QuantityPicker({
   maxBase,
   looseAvailable,
   sealedAvailable = null,
+  lockReference = null,
   onUnpack,
   onConfirm,
   submitLabel = "Ajouter au panier",
@@ -174,6 +184,7 @@ export function QuantityPicker({
       maxBase={maxBase}
       looseAvailable={looseAvailable}
       sealedAvailable={sealedAvailable}
+      lockReference={lockReference}
       onUnpack={onUnpack}
       submitLabel={submitLabel}
       discountPercent={discountPercent}
@@ -252,6 +263,7 @@ function QuantityPickerBody({
   maxBase,
   looseAvailable,
   sealedAvailable,
+  lockReference,
   onUnpack,
   submitLabel,
   discountPercent,
@@ -268,6 +280,7 @@ function QuantityPickerBody({
   maxBase: number | null;
   looseAvailable: number | null;
   sealedAvailable: number | null;
+  lockReference: string | null;
   onUnpack?: (packages: number) => Promise<void>;
   submitLabel: string;
   discountPercent?: number;
@@ -410,7 +423,17 @@ function QuantityPickerBody({
   // │ (`SaleItem.quantity` : `DecimalField(15, 3)` et                       │
   // │ `MinValueValidator(0.001)`).                                          │
   // └──────────────────────────────────────────────────────────────────────┘
-  const canSubmit = base >= MIN_QUANTITY && !overStock && !overSealed && !needsOpening;
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │ LE STOCK N'EST PLUS UNE BORNE ICI, C'EST UNE INFORMATION.             │
+  // │                                                                      │
+  // │ Tout le catalogue s'ajoute, en toute quantité, même sans stock et    │
+  // │ même sous inventaire : c'est ce qui permet de chiffrer une commande  │
+  // │ et d'en sortir une proforma. « Encaisser » reste fermé tant qu'une   │
+  // │ ligne dépasse le disponible (`motifsEncaissement` du noyau, la règle │
+  // │ du serveur), et cet écran dit pourquoi AVANT l'ajout.                │
+  // └──────────────────────────────────────────────────────────────────────┘
+  const canSubmit = base >= MIN_QUANTITY;
+  const locked = lockReference !== null && lockReference !== undefined;
 
   // Ouverture manuelle : elle ne se propose que si elle est possible, c'est à
   // dire s'il reste des contenants scellés à ouvrir. Le message renvoyait
@@ -689,7 +712,7 @@ function QuantityPickerBody({
           className={cn(
             "h-11 min-w-0 flex-1 rounded-lg border text-center text-lg font-bold tabular-nums outline-none transition-colors",
             overStock || needsOpening
-              ? "border-red-300 bg-red-50 text-red-700 focus:border-red-500"
+              ? "border-warning/40 bg-warning/10 text-slate-900 focus:border-warning"
               : "border-orange-200 bg-orange-50/60 text-slate-900 focus:border-orange-500"
           )}
         />
@@ -741,9 +764,20 @@ function QuantityPickerBody({
         </p>
       ) : null}
 
+      {locked ? (
+        <p className="flex items-start gap-1 rounded-lg bg-warning/10 px-1.5 py-1 text-[10px] font-medium leading-snug text-warning">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+          <span>
+            Bloqué par un inventaire en cours{lockReference ? ` (${lockReference})` : ""} : il
+            s&apos;ajoute au panier, mais ne s&apos;encaissera pas avant la fin de
+            l&apos;inventaire.
+          </span>
+        </p>
+      ) : null}
+
       {overStock || overSealed || needsOpening ? (
-        <div className="space-y-1 rounded-lg bg-red-50 px-1.5 py-1">
-          <p className="flex items-start gap-1 text-[10px] font-medium leading-snug text-red-700">
+        <div className="space-y-1 rounded-lg bg-warning/10 px-1.5 py-1">
+          <p className="flex items-start gap-1 text-[10px] font-medium leading-snug text-warning">
             <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
             <span>
               {overStock
@@ -752,7 +786,9 @@ function QuantityPickerBody({
                   ? `Il ne reste que ${formatUnitQuantity(sealedAvailable ?? 0, packageWord)} ${
                       (sealedAvailable ?? 0) > 1 ? "scellés" : "scellé"
                     }. Les ${pluralizeUnit(retailWord, 2)} déjà sorties d'un emballage ne peuvent pas y être remises.`
-                  : `Aucune ${retailWord} à l'unité disponible : ouvrez un ${packageWord} pour continuer.`}
+                  : `Aucune ${retailWord} à l'unité disponible : ouvrez un ${packageWord} pour continuer.`}{" "}
+              L&apos;article s&apos;ajoute au panier, mais l&apos;encaissement restera fermé
+              tant que le stock ne couvre pas la ligne.
             </span>
           </p>
 
@@ -762,7 +798,7 @@ function QuantityPickerBody({
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 w-full border-red-200 bg-white text-[11px] font-semibold text-red-700 hover:bg-red-50"
+              className="h-8 w-full border-warning/40 bg-white text-[11px] font-semibold text-warning hover:bg-warning/10"
               onClick={() => {
                 setPackages(fallbackSelection.packages);
                 setLoose(fallbackSelection.loose);
@@ -789,7 +825,7 @@ function QuantityPickerBody({
               variant="outline"
               size="sm"
               disabled={unpacking}
-              className="h-8 w-full border-red-200 bg-white text-[11px] font-semibold text-red-700 hover:bg-red-50"
+              className="h-8 w-full border-warning/40 bg-white text-[11px] font-semibold text-warning hover:bg-warning/10"
               onClick={async () => {
                 if (!onUnpack) return;
                 setUnpacking(true);

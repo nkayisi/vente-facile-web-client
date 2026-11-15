@@ -207,13 +207,11 @@ export function afficherPartage(cond: Packaging | null, p: PartageStock): string
  */
 export function alerteDisponible(
   s: SaisieQuantite,
-  dispo: PartageStock | null,
-  { negatifAutorise = false }: { negatifAutorise?: boolean } = {}
+  dispo: PartageStock | null
 ): string | null {
-  // Le dépôt tolère les soldes négatifs : le serveur n'oppose RIEN à
-  // l'expédition (`assert_sealed_available` sort en tête sur ce drapeau).
-  // Avertir d'un refus qui n'aura pas lieu apprend à ne plus lire l'écran.
-  if (negatifAutorise) return null;
+  // ⚠ Plus d'exception « dépôt tolérant le négatif » : le stock négatif a été
+  // retiré de la plateforme, aucune sortie ne passe sous zéro, et le serveur
+  // refuse toute expédition au-delà du disponible (`stock_insuffisant`).
   if (!dispo) return null;
 
   const cond = s.conditionnement;

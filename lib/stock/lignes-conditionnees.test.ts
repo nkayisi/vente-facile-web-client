@@ -173,12 +173,10 @@ describe("l'avertissement de disponible", () => {
     );
   });
 
-  it("se tait quand le dépôt tolère les soldes négatifs", () => {
-    // Le serveur n'oppose alors RIEN à l'expédition. Avertir d'un refus qui
-    // n'aura pas lieu apprend à ne plus lire l'écran.
-    expect(
-      alerteDisponible(saisie({ contenants: 99 }), dispo, { negatifAutorise: true })
-    ).toBeNull();
+  it("avertit toujours au-delà du disponible : le stock négatif n'existe plus", () => {
+    // Un ancien entrepôt « négatif autorisé » ne fait plus taire l'alerte :
+    // le serveur refuse désormais l'expédition au-delà du stock, partout.
+    expect(alerteDisponible(saisie({ contenants: 99 }), dispo)).not.toBeNull();
   });
 
   it("se tait sans ligne de stock : `null` n'est pas zéro", () => {

@@ -481,7 +481,6 @@ export default function ProductDetailPage() {
                   <DetailItem label="Seuil réappro." value={formatDecimal(product.reorder_point)} />
                   <DetailItem label="Qté réappro." value={formatDecimal(product.reorder_quantity)} />
                   <DetailItem label="Produit périssable" value={product.has_expiry_date ? "Oui" : "Non"} />
-                  <DetailItem label="Stock négatif" value={product.allow_negative_stock ? "Autorisé" : "Non autorisé"} />
                 </>
               )}
             </div>

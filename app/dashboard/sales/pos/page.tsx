@@ -3,7 +3,7 @@
 import { flattenDrfErrors } from "@/lib/api/drf-error";
 import { Customer, getCustomer, getCustomers, createCustomer, CreateCustomerData } from "@/actions/contacts.actions";
 import { getProducts, Product } from "@/actions/products.actions";
-import { getLockedProducts, LockedProductsResponse } from "@/actions/inventory.actions";
+import { getLockedProducts } from "@/actions/inventory.actions";
 import { getOrganizationCurrencies, OrganizationCurrency, getCustomerLoyalty, CustomerLoyalty, getLoyaltyProgram, LoyaltyProgram, getOrganizationSettings, OrganizationSettings } from "@/actions/settings.actions";
 import {
   closeSession,
@@ -104,8 +104,11 @@ import {
   addableChannels as coreAddableChannels,
   addableLoose as coreAddableLoose,
   addableSealed as coreAddableSealed,
+  lignesEnRupture,
   type BasketLine,
+  type LigneStockee,
 } from "@/lib/pos";
+import { verrousDeLaCaisse, type ReponseVerrous } from "@/lib/stock/verrous-caisse";
 import { unpackStock } from "@/actions/stock.actions";
 import { usePermissions } from "@/components/auth/permissions-provider";
 import { formatUnitQuantity, pluralizeUnit } from "@/lib/units";
@@ -272,6 +275,7 @@ function CartLineQuantityEditor({
   maxBase,
   looseAvailable,
   sealedAvailable,
+  lockReference,
   onUnpack,
   maxDiscountPercent,
   currencyCodes,
@@ -287,6 +291,8 @@ function CartLineQuantityEditor({
   maxBase: number | null;
   looseAvailable: number | null;
   sealedAvailable: number | null;
+  /** Référence de l'inventaire qui bloque l'article ici, ou `null`. */
+  lockReference: string | null;
   onUnpack?: (packages: number) => Promise<void>;
   maxDiscountPercent: number;
   /** Devises de l'établissement, pour annoncer une ligne dans l'une d'elles. */
@@ -322,6 +328,7 @@ function CartLineQuantityEditor({
         maxBase={maxBase}
         looseAvailable={looseAvailable}
         sealedAvailable={sealedAvailable}
+        lockReference={lockReference}
         onUnpack={onUnpack}
         discountPercent={item.discount_percentage}
         maxDiscountPercent={maxDiscountPercent}
@@ -386,6 +393,34 @@ function describeCartLine(item: CartItem): string {
  * caissier. Le préfixe évite toute collision avec un UUID de méthode.
  */
 const CREDIT_OPTION = "__credit__";
+
+/** Taille d'une page du catalogue du comptoir. */
+const CATALOGUE_PAR_PAGE = 50;
+
+/**
+ * Le catalogue du comptoir : TOUT le vendable de l'organisation, le stock
+ * annoté étant celui de l'entrepôt de la caisse. ⚠ Plus de `in_stock` : un
+ * article à zéro doit se trouver, pour être chiffré sur une proforma.
+ */
+function filtresCatalogue(warehouse: string | undefined, page: number) {
+  return {
+    is_active: true,
+    is_sellable: true,
+    full_catalog: true,
+    page,
+    page_size: CATALOGUE_PAR_PAGE,
+    ...(warehouse ? { warehouse } : {}),
+  };
+}
+
+/**
+ * Les articles vendables seulement. Le serveur le filtre déjà quand il honore
+ * `is_sellable` ; un serveur antérieur l'ignore, et un consommable ne doit pas
+ * paraître au comptoir.
+ */
+function vendables(produits: Product[] | undefined): Product[] {
+  return (produits ?? []).filter((p) => p.is_sellable !== false);
+}
 
 export default function POSPage() {
   const { data: session } = useSession();
@@ -490,9 +525,21 @@ export default function POSPage() {
   const loyaltyBalance = Number(customerLoyalty?.balance ?? 0) || 0;
   const canUseLoyalty = loyaltyBalance > 0;
 
-  // Inventory lock state
-  const [lockedProductIds, setLockedProductIds] = useState<Set<string>>(new Set());
-  const [activeInventorySessions, setActiveInventorySessions] = useState<LockedProductsResponse['active_sessions']>([]);
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │ TOUT LE CATALOGUE VENDABLE, ET RIEN NE FERME L'AJOUT.                 │
+  // │                                                                      │
+  // │ Le comptoir ne montrait que le disponible > 0 de l'entrepôt de la    │
+  // │ caisse, et la première page seulement : un article à zéro était      │
+  // │ introuvable, donc impossible à chiffrer sur une proforma ou un devis.│
+  // │ On montre tout le catalogue vendable, le stock affiché restant celui │
+  // │ de la CAISSE, et tout article s'ajoute en toute quantité, même sans  │
+  // │ stock et même sous inventaire. C'est « Encaisser » qui ferme, en     │
+  // │ nommant les lignes (`lignesEnRupture` du noyau, la règle du serveur).│
+  // └──────────────────────────────────────────────────────────────────────┘
+  const [reponseVerrous, setReponseVerrous] = useState<ReponseVerrous | null>(null);
+  const [productsPage, setProductsPage] = useState(1);
+  const [productsHasMore, setProductsHasMore] = useState(false);
+  const [isLoadingMoreProducts, setIsLoadingMoreProducts] = useState(false);
 
   // Fetch data
   useEffect(() => {
@@ -519,21 +566,19 @@ export default function POSPage() {
           // Fetch products, customers, payment methods, currencies, locked products
           const posWarehouseId = sessionResult.data?.warehouse || undefined;
           const [productsResult, customersResult, paymentMethodsResult, currenciesResult, lockedResult] = await Promise.all([
-            getProducts(session.accessToken, org.id, {
-              is_active: true,
-              in_stock: true,
-              ...(posWarehouseId ? { warehouse: posWarehouseId } : {}),
-            }),
+            getProducts(session.accessToken, org.id, filtresCatalogue(posWarehouseId, 1)),
             // `page_size` explicite : sans lui, seule la première page DRF
             // remontait et les clients suivants étaient introuvables au POS.
             getCustomers(session.accessToken, org.id, { page_size: 500 }),
             getPaymentMethods(session.accessToken, org.id, { is_active: true }),
             getOrganizationCurrencies(session.accessToken, org.id),
-            getLockedProducts(session.accessToken, org.id),
+            getLockedProducts(session.accessToken, org.id, posWarehouseId),
           ]);
 
           if (productsResult.success && productsResult.data) {
-            setProducts(productsResult.data.results || []);
+            setProducts(vendables(productsResult.data.results));
+            setProductsPage(1);
+            setProductsHasMore(Boolean(productsResult.data.next));
           } else {
             toast.error(productsResult.message || "Erreur lors du chargement des produits");
           }
@@ -547,14 +592,14 @@ export default function POSPage() {
             setOrgCurrencies(currenciesResult.data);
           }
 
-          // Set locked products from active inventory sessions
+          // Les verrous ne valent que dans l'entrepôt de la caisse.
           if (lockedResult.success && lockedResult.data) {
-            setLockedProductIds(new Set(lockedResult.data.locked_product_ids));
-            setActiveInventorySessions(lockedResult.data.active_sessions);
-            if (lockedResult.data.has_active_inventory) {
+            setReponseVerrous(lockedResult.data);
+            const ici = verrousDeLaCaisse(lockedResult.data, sessionResult.data?.warehouse_name);
+            if (ici.size > 0) {
               toast.warning(
-                `Inventaire en cours : ${pluriel(lockedResult.data.active_sessions.length, "session active", "sessions actives")}. Certains produits sont bloqués.`,
-                { duration: 5000 }
+                `Inventaire en cours dans cet entrepôt : ${pluriel(ici.size, "article bloqué", "articles bloqués")}. Ils s'ajoutent au panier, mais ne s'encaissent pas avant la fin de l'inventaire.`,
+                { duration: 6000 }
               );
             }
           }
@@ -624,19 +669,50 @@ export default function POSPage() {
     return available - inCart;
   };
 
-  /** Quantité max qu'on peut encore ajouter au panier (respect du stock). */
-  const getMaxAddableQty = (product: Product) => {
-    // `null` du paquet vaut « aucune borne » : stock non suivi, ou entrepôt
-    // tolérant le découvert. Le grand nombre garde la sémantique d'origine des
-    // appelants, qui comparent tous à une quantité.
-    const borne = coreAddableBase(product, cart as BasketLine[]);
-    return borne === null ? 9999 : borne;
-  };
+  /** Les verrous d'inventaire de l'entrepôt de la caisse, article par article. */
+  const verrous = useMemo(
+    () => verrousDeLaCaisse(reponseVerrous, currentSession?.warehouse_name),
+    [reponseVerrous, currentSession?.warehouse_name]
+  );
 
-  const canAddProductToCart = (product: Product) => {
-    if (lockedProductIds.has(product.id)) return false;
-    return getMaxAddableQty(product) > 0;
-  };
+  /**
+   * Ce qui ferme « Encaisser », ligne par ligne, dans l'ordre du serveur.
+   * ⚠ C'est le SEUL refus de stock du comptoir : l'ajout ne refuse plus rien.
+   */
+  const ruptures = useMemo(
+    () => lignesEnRupture(cart as unknown as LigneStockee[], { verrous }),
+    [cart, verrous]
+  );
+  const ruptureDeLaLigne = useMemo(
+    () => new Map(ruptures.map((r) => [r.index, r])),
+    [ruptures]
+  );
+  const encaissementFerme = ruptures.length > 0;
+  /**
+   * Ce qui ferme « Encaisser », écrit au-dessus du bouton. Un bouton grisé sans
+   * motif est un cul-de-sac ; la proforma, elle, reste ouverte.
+   */
+  const blocEncaissementFerme = encaissementFerme ? (
+    <div className="space-y-1 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-2 text-xs text-warning">
+      <p className="font-semibold">
+        L&apos;encaissement est fermé tant que {ruptures.length > 1 ? "ces lignes ne sont pas couvertes" : "cette ligne n'est pas couverte"} :
+      </p>
+      <ul className="space-y-0.5">
+        {ruptures.map((r) => (
+          <li key={`${r.index}-${r.productId}`} className="flex items-start gap-1">
+            <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+            <span>{r.raison}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[11px] opacity-90">La proforma reste disponible.</p>
+    </div>
+  ) : null;
+  const motifEncaissementFerme = encaissementFerme
+    ? ruptures.length === 1
+      ? ruptures[0].raison
+      : `${pluriel(ruptures.length, "ligne", "lignes")} ne s'encaissent pas encore : ${ruptures.map((r) => r.name).join(", ")}.`
+    : null;
 
   /**
    * Sortie de la caisse vers la liste des caisses.
@@ -694,46 +770,11 @@ export default function POSPage() {
       return;
     }
 
-    if (lockedProductIds.has(product.id)) {
-      const invSession = activeInventorySessions[0];
-      toast.error(
-        `"${product.name}" est bloqué par un inventaire en cours (${invSession?.reference || "Inventaire"}). Veuillez attendre la fin de l'inventaire.`,
-        { duration: 5000 }
-      );
-      return;
-    }
-
-    const available = getAvailableStock(product);
+    // ⚠ NI LE VERROU NI LE STOCK NE REFUSENT L'AJOUT : la ligne entre au
+    // panier (proforma, devis), et « Encaisser » se ferme en la nommant. Le
+    // sélecteur l'a déjà annoncé avant le geste ; on ne crie pas une seconde
+    // fois ici.
     const existingIndex = cart.findIndex(item => item.product.id === product.id);
-    const currentQty = existingIndex >= 0 ? cart[existingIndex].quantity : 0;
-
-    if (
-      product.track_inventory &&
-      !product.allow_negative_stock &&
-      roundQuantity(currentQty + qty) > available
-    ) {
-      toast.warning(
-        `Stock insuffisant pour « ${product.name} ». Disponible : ${formatQuantity(available)}, déjà au panier : ${formatQuantity(currentQty)}.`,
-        { duration: 4000 }
-      );
-      return;
-    }
-
-    // Fusion avec une ligne existante : le sélecteur a validé le scellé pour sa
-    // propre saisie, mais la somme des deux lignes peut dépasser ce qui reste.
-    // Sans ce contrôle, le refus n'arriverait qu'au 400 de l'encaissement.
-    const sealedLeft = addableSealed(product);
-    if (existingIndex >= 0 && packages > 0 && sealedLeft !== null && packages > sealedLeft) {
-      const packageWord = pluralizeUnit(
-        product.packaging_unit_name || "conditionnement",
-        sealedLeft
-      );
-      toast.warning(
-        `« ${product.name} » : il ne reste que ${formatQuantity(sealedLeft)} ${packageWord} scellé${sealedLeft > 1 ? "s" : ""} en tenant compte du panier.`,
-        { duration: 5000 }
-      );
-      return;
-    }
 
     if (existingIndex >= 0) {
       const newCart = [...cart];
@@ -794,21 +835,8 @@ export default function POSPage() {
       return;
     }
 
-    const available = getAvailableStock(item.product);
-    if (
-      item.product.track_inventory &&
-      !item.product.allow_negative_stock &&
-      nextQuantity > available
-    ) {
-      toast.warning(
-        `Stock insuffisant pour « ${item.product.name} ». Disponible : ${
-          item.product.stock_display || available
-        }.`,
-        { duration: 4000 }
-      );
-      return;
-    }
-
+    // Le stock ne borne plus la ligne : « Encaisser » la nommera s'il ne la
+    // couvre pas.
     const newCart = [...cart];
     newCart[index] = {
       ...item,
@@ -823,10 +851,7 @@ export default function POSPage() {
     setCart(newCart);
   };
 
-  /**
-   * Unités de détail encore ajoutables, `null` quand rien ne les borne
-   * (produit non suivi, ou entrepôt qui tolère le stock négatif).
-   */
+  /** Unités de détail que le stock couvre encore, `null` pour un article non suivi. */
   // Les bornes de stock vivent dans `@vente-facile/core/pos` : elles décident
   // des REFUS, et deux surfaces qui refusent différemment se remarquent au
   // comptoir, pas en relecture. `lines` est le panier tel quel : le paquet
@@ -846,16 +871,43 @@ export default function POSPage() {
   const addableSealed = (product: Product, ignoreCartLine = false): number | null =>
     coreAddableSealed(product, cart as BasketLine[], { ignoreCartLine });
 
-  /** Relit le catalogue de l'entrepôt courant après un mouvement de stock. */
+  /**
+   * Relit le catalogue après un mouvement de stock, sans perdre ce qui était
+   * déjà affiché : on relit d'un coup autant d'articles que de pages chargées.
+   */
   const refreshProducts = async () => {
     if (!session?.accessToken || !organization) return;
     const result = await getProducts(session.accessToken, organization.id, {
-      is_active: true,
-      in_stock: true,
-      ...(currentSession?.warehouse ? { warehouse: currentSession.warehouse } : {}),
+      ...filtresCatalogue(currentSession?.warehouse || undefined, 1),
+      page_size: CATALOGUE_PAR_PAGE * productsPage,
     });
     if (result.success && result.data) {
-      setProducts(result.data.results || []);
+      setProducts(vendables(result.data.results));
+      setProductsHasMore(Boolean(result.data.next));
+    }
+  };
+
+  /** La page suivante du catalogue, ajoutée sous la grille. */
+  const loadMoreProducts = async () => {
+    if (!session?.accessToken || !organization || isLoadingMoreProducts) return;
+    setIsLoadingMoreProducts(true);
+    try {
+      const suivante = productsPage + 1;
+      const result = await getProducts(
+        session.accessToken,
+        organization.id,
+        filtresCatalogue(currentSession?.warehouse || undefined, suivante)
+      );
+      if (result.success && result.data) {
+        const deja = new Set(products.map((p) => p.id));
+        setProducts([...products, ...vendables(result.data.results).filter((p) => !deja.has(p.id))]);
+        setProductsPage(suivante);
+        setProductsHasMore(Boolean(result.data.next));
+      } else {
+        toast.error(result.message || "Impossible de charger la suite du catalogue");
+      }
+    } finally {
+      setIsLoadingMoreProducts(false);
     }
   };
 
@@ -904,18 +956,7 @@ export default function POSPage() {
       return;
     }
 
-    // Check stock when increasing
-    if (delta > 0 && item.product.track_inventory && !item.product.allow_negative_stock) {
-      const available = getAvailableStock(item.product);
-      if (newQty > available) {
-        toast.warning(
-          `Stock insuffisant pour « ${item.product.name} ». Disponible : ${formatQuantity(available)}`,
-          { duration: 4000 }
-        );
-        return;
-      }
-    }
-
+    // Le stock ne borne plus la ligne : « Encaisser » la nommera.
     newCart[index].quantity = newQty;
     setCart(newCart);
   };
@@ -1157,6 +1198,13 @@ export default function POSPage() {
 
   // Open payment dialog
   const openPaymentDialog = () => {
+    // Le bouton est déjà fermé ; ce garde-fou couvre un appel qui passerait
+    // par un autre chemin. Aucun ticket ne sort pour une vente que le serveur
+    // refusera.
+    if (motifEncaissementFerme) {
+      toast.error(motifEncaissementFerme, { duration: 6000 });
+      return;
+    }
     const totalAmount = calculateTotal();
     if (totalAmount < 0) {
       toast.error("Le total ne peut pas être négatif. Réduisez les remises.");
@@ -1210,6 +1258,10 @@ export default function POSPage() {
 
     if (!session?.accessToken || !organization || !currentSession) {
       toast.error("Session invalide");
+      return;
+    }
+    if (motifEncaissementFerme) {
+      toast.error(motifEncaissementFerme, { duration: 6000 });
       return;
     }
 
@@ -1455,19 +1507,8 @@ export default function POSPage() {
         setLoyaltyToUse(0);
         setCustomerLoyalty(null);
 
-        // Refresh products to get updated stock
-        if (organization) {
-          const productsResult = await getProducts(session.accessToken, organization.id, {
-            is_active: true,
-            in_stock: true,
-            ...(currentSession?.warehouse ? { warehouse: currentSession.warehouse } : {}),
-          });
-          if (productsResult.success && productsResult.data) {
-            setProducts(productsResult.data.results || []);
-          } else {
-            toast.error(productsResult.message || "Erreur lors du rafraîchissement des produits");
-          }
-        }
+        // Le stock affiché suit la vente : on relit ce qui était chargé.
+        await refreshProducts();
       } else {
         // Parse backend errors récursivement : DRF retourne souvent des structures
         // imbriquées (errors.payments[0].amount = ["..."], errors.items[2].quantity).
@@ -1662,14 +1703,11 @@ export default function POSPage() {
         return;
       }
       const result = await getProducts(session.accessToken, organization.id, {
+        ...filtresCatalogue(currentSession?.warehouse || undefined, 1),
         search: query,
-        is_active: true,
-        in_stock: true,
-        page_size: 50,
-        ...(currentSession?.warehouse ? { warehouse: currentSession.warehouse } : {}),
       });
       if (result.success && result.data) {
-        setSearchResults(result.data.results || []);
+        setSearchResults(vendables(result.data.results));
       } else {
         setSearchResults([]);
         toast.error(result.message || "Erreur lors de la recherche des produits");
@@ -1786,32 +1824,20 @@ export default function POSPage() {
           ) : !searchQuery.trim() && products.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-2 px-6 text-center">
               <Package className="h-10 w-10 text-gray-300" />
-              <p className="font-medium text-gray-600">Aucun produit avec stock disponible</p>
+              <p className="font-medium text-gray-600">Aucun article vendable</p>
               <p className="max-w-md text-sm text-gray-500">
-                {currentSession?.warehouse_name
-                  ? `Aucun produit n'a de stock disponible dans l'entrepôt « ${currentSession.warehouse_name} ». Réceptionnez ou transférez du stock vers cet entrepôt pour le vendre ici.`
-                  : "Aucun produit n'a de stock disponible. Réceptionnez ou transférez du stock vers votre entrepôt pour le vendre ici."}
+                Le catalogue ne porte aucun article actif et vendable. Créez-en un, ou
+                rendez-le vendable depuis sa fiche, pour le proposer ici.
               </p>
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {!searchQuery.trim() && products.length > 20 && (
-                <div className="p-2 bg-blue-50 rounded-lg border border-blue-200 text-xs text-blue-700 flex items-center gap-2">
-                  <Search className="h-3.5 w-3.5 shrink-0" />
-                  <span>
-                    Affichage des 20 premiers produits sur {products.length}. Utilisez la
-                    recherche ci-dessus pour parcourir tout le catalogue.
-                  </span>
-                </div>
-              )}
               <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {(searchQuery.trim() ? displayedProducts : products.slice(0, 20)).map(product => {
-                const isLocked = lockedProductIds.has(product.id);
-                const canAdd = canAddProductToCart(product);
+              {displayedProducts.map(product => {
+                const lockReference = verrous.get(product.id);
+                const isLocked = lockReference !== undefined;
                 const stockDepleted =
-                  product.track_inventory &&
-                  !product.allow_negative_stock &&
-                  getRemainingStock(product) <= 0;
+                  product.track_inventory && getRemainingStock(product) <= 0;
                 const stockQty = getAvailableStock(product);
                 // ⚠ `product.reorder_point` est une CHAÎNE depuis que le seuil
                 // est décimal, et `"0.000" || 5` est TRUTHY : le repli à 5 ne
@@ -1821,9 +1847,7 @@ export default function POSPage() {
                 const stockLow =
                   product.track_inventory && getRemainingStock(product) <= seuilAlerte;
                 const stockEmpty =
-                  product.track_inventory &&
-                  !product.allow_negative_stock &&
-                  getRemainingStock(product) <= 0;
+                  product.track_inventory && getRemainingStock(product) <= 0;
                 const locationLabel = getProductLocationLabel(product);
 
                 // Le stock d'un produit vendu en gros doit se lire « 1 pqt + 10 btl »,
@@ -1983,15 +2007,16 @@ export default function POSPage() {
                       "relative flex h-full flex-col overflow-hidden py-0 transition-[box-shadow,transform] duration-150",
                       isQtyOpen && "z-10",
                       justAdded && "ring-2 ring-emerald-500",
+                      // Un article bloqué ou épuisé reste lisible et cliquable :
+                      // il s'ajoute, c'est l'encaissement qui le refusera.
                       isLocked
-                        ? "border-red-300 bg-red-50 opacity-60"
+                        ? "border-red-300 bg-red-50"
                         : stockDepleted
-                          ? "opacity-50"
+                          ? "opacity-75"
                           : ""
                     )}
                   >
-                    {canAdd ? (
-                      <QuantityPicker
+                    <QuantityPicker
                         product={product}
                         open={isQtyOpen}
                         onOpenChange={(next) =>
@@ -2000,6 +2025,7 @@ export default function POSPage() {
                         maxBase={addableBase(product)}
                         looseAvailable={addableLoose(product)}
                         sealedAvailable={addableSealed(product)}
+                        lockReference={lockReference ?? null}
                         onUnpack={unpackHandlerFor(product)}
                         currencyCodes={currencyCodes}
                         invoiceCurrency={invoiceCurrency}
@@ -2021,13 +2047,24 @@ export default function POSPage() {
                           {cardVisual}
                         </button>
                       </QuantityPicker>
-                    ) : (
-                      <div className="cursor-not-allowed">{cardVisual}</div>
-                    )}
                   </Card>
                 );
               })}
               </div>
+              {!searchQuery.trim() && productsHasMore ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mx-auto mt-1 h-10"
+                  disabled={isLoadingMoreProducts}
+                  onClick={loadMoreProducts}
+                >
+                  {isLoadingMoreProducts ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Afficher {CATALOGUE_PAR_PAGE} articles de plus
+                </Button>
+              ) : null}
             </div>
           )}
         </div>
@@ -2089,7 +2126,7 @@ export default function POSPage() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-bold text-gray-900">Panier</h2>
                 <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{cart.length} articles</Badge>
+                  <Badge variant="secondary">{pluriel(cart.length, "article", "articles")}</Badge>
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowMobileCart(false)}>
                     <X className="h-5 w-5" />
                   </Button>
@@ -2122,8 +2159,8 @@ export default function POSPage() {
             {/* Mobile Cart Items */}
             <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3">
               {cart.map((item, index) => {
-                const stockAvailable = getAvailableStock(item.product);
-                const overStock = item.product.track_inventory && !item.product.allow_negative_stock && item.quantity > stockAvailable;
+                const rupture = ruptureDeLaLigne.get(index);
+                const overStock = rupture !== undefined;
                 return (
                   <div key={item.product.id} className={`rounded-lg p-3 ${overStock ? 'bg-red-50 border border-red-200' : 'bg-gray-50'}`}>
                     <div className="flex items-start justify-between mb-2 gap-2">
@@ -2142,10 +2179,10 @@ export default function POSPage() {
                             </span>
                           ) : null}
                         </p>
-                        {overStock && (
-                          <p className="text-xs text-red-600 font-medium flex items-center gap-1 mt-1">
-                            <AlertTriangle className="h-3 w-3" />
-                            Stock insuffisant ! Disponible: {stockAvailable}
+                        {rupture && (
+                          <p className="mt-1 flex items-start gap-1 text-xs font-medium text-red-600">
+                            <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+                            {rupture.raison}
                           </p>
                         )}
                       </div>
@@ -2160,10 +2197,9 @@ export default function POSPage() {
                         openKey={editingLineProductId}
                         onOpenKeyChange={setEditingLineProductId}
                         maxBase={
-                          item.product.track_inventory && !item.product.allow_negative_stock
-                            ? getAvailableStock(item.product)
-                            : null
+                          item.product.track_inventory ? getAvailableStock(item.product) : null
                         }
+                        lockReference={verrous.get(item.product.id) ?? null}
                         looseAvailable={addableLoose(item.product, true)}
                         sealedAvailable={addableSealed(item.product, true)}
                         onUnpack={unpackHandlerFor(item.product)}
@@ -2203,6 +2239,7 @@ export default function POSPage() {
                 <span>Total</span>
                 <span className="text-orange-600">{formatPrice(total)}</span>
               </div>
+              {blocEncaissementFerme}
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   variant="outline"
@@ -2232,10 +2269,10 @@ export default function POSPage() {
                       ? "Ajoutez d'abord un produit au panier."
                       : total < 0
                         ? "Le total est négatif - réduisez les remises."
-                        : `Encaisser ${formatPrice(total)}`
+                        : motifEncaissementFerme ?? `Encaisser ${formatPrice(total)}`
                   }
                   className="h-10 min-w-0 bg-orange-500 px-2 text-sm font-medium hover:bg-orange-600"
-                  disabled={cart.length === 0 || total < 0 || isProcessing || isGeneratingProforma}
+                  disabled={cart.length === 0 || total < 0 || isProcessing || isGeneratingProforma || encaissementFerme}
                   onClick={() => {
                     setShowMobileCart(false);
                     openPaymentDialog();
@@ -2256,7 +2293,7 @@ export default function POSPage() {
         <div className="shrink-0 border-b px-3 py-2.5">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-lg font-bold text-gray-900">Panier</h2>
-            <Badge variant="secondary">{cart.length} articles</Badge>
+            <Badge variant="secondary">{pluriel(cart.length, "article", "articles")}</Badge>
           </div>
 
           {/* Customer Selection */}
@@ -2293,8 +2330,8 @@ export default function POSPage() {
             </div>
           ) : (
             cart.map((item, index) => {
-              const stockAvailable = getAvailableStock(item.product);
-              const overStock = item.product.track_inventory && !item.product.allow_negative_stock && item.quantity > stockAvailable;
+              const rupture = ruptureDeLaLigne.get(index);
+              const overStock = rupture !== undefined;
               return (
                 <div key={item.product.id} className={`rounded-lg p-3 ${overStock ? 'bg-red-50 border border-red-200' : 'bg-gray-50'}`}>
                   <div className="flex items-start justify-between mb-2 gap-2">
@@ -2315,10 +2352,10 @@ export default function POSPage() {
                           </span>
                         ) : null}
                       </p>
-                      {overStock && (
-                        <p className="text-xs text-red-600 font-medium flex items-center gap-1 mt-1">
-                          <AlertTriangle className="h-3 w-3" />
-                          Stock insuffisant ! Disponible: {stockAvailable}
+                      {rupture && (
+                        <p className="mt-1 flex items-start gap-1 text-xs font-medium text-red-600">
+                          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+                          {rupture.raison}
                         </p>
                       )}
                     </div>
@@ -2339,10 +2376,9 @@ export default function POSPage() {
                       openKey={editingLineProductId}
                       onOpenKeyChange={setEditingLineProductId}
                       maxBase={
-                        item.product.track_inventory && !item.product.allow_negative_stock
-                          ? getAvailableStock(item.product)
-                          : null
+                        item.product.track_inventory ? getAvailableStock(item.product) : null
                       }
+                      lockReference={verrous.get(item.product.id) ?? null}
                       looseAvailable={addableLoose(item.product, true)}
                       sealedAvailable={addableSealed(item.product, true)}
                       onUnpack={unpackHandlerFor(item.product)}
@@ -2439,6 +2475,7 @@ export default function POSPage() {
             </div>
           </div>
 
+          {blocEncaissementFerme}
           {/* Paiement / proforma - une ligne, hauteur réduite */}
           <div className="grid grid-cols-2 gap-2">
             <Button
@@ -2469,10 +2506,10 @@ export default function POSPage() {
                   ? "Ajoutez d'abord un produit au panier."
                   : total < 0
                     ? "Le total est négatif - réduisez les remises."
-                    : `Encaisser ${formatPrice(total)}`
+                    : motifEncaissementFerme ?? `Encaisser ${formatPrice(total)}`
               }
               className="h-10 min-w-0 bg-orange-500 px-2 text-sm font-medium hover:bg-orange-600"
-              disabled={cart.length === 0 || total < 0 || isProcessing || isGeneratingProforma}
+              disabled={cart.length === 0 || total < 0 || isProcessing || isGeneratingProforma || encaissementFerme}
               onClick={openPaymentDialog}
             >
               <CreditCard className="h-4 w-4 shrink-0" />
@@ -2716,7 +2753,10 @@ export default function POSPage() {
               <div className="p-3 bg-gray-50 rounded-xl space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">
-                    Sous-total ({formatQuantity(cart.reduce((s, i) => s + i.quantity, 0))} articles)
+                    Sous-total ({(() => {
+                      const unites = roundQuantity(cart.reduce((s, i) => s + i.quantity, 0));
+                      return `${formatQuantity(unites)} ${accord(unites, "article", "articles")}`;
+                    })()})
                   </span>
                   <span className="font-medium">{money(convMoney(calculateSubtotal(), primaryCode(), saleCurrency()))}</span>
                 </div>

@@ -191,9 +191,7 @@ export default function TransfersPage() {
       : (newItem.quantity_requested || null),
   };
   const recap = resumeConversion(saisie, "transférez");
-  const alerte = alerteDisponible(saisie, disponible, {
-    negatifAutorise: Boolean(sourceWarehouse?.allow_negative_stock),
-  });
+  const alerte = alerteDisponible(saisie, disponible);
 
   const searchProducts = useCallback(
     async (query: string) => {
