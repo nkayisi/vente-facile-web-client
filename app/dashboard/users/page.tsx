@@ -84,6 +84,7 @@ import {
   type MemberFilters,
   type MemberPermissions,
 } from "@/actions/users.actions";
+import { LIBELLES_CASES_PERIMETRE } from "@vente-facile/core";
 import { Switch } from "@/components/ui/switch";
 import { useEntrepots } from "@/hooks/use-entrepots";
 import {
@@ -1043,10 +1044,9 @@ export default function UsersPage() {
             {editingMember && caseVoirToutUtile(editRole) && (
               <div className="flex items-start justify-between gap-4 rounded-md border px-3 py-2">
                 <div>
-                  <Label htmlFor="edit-voir-tout">Voir tout</Label>
+                  <Label htmlFor="edit-voir-tout">{LIBELLES_CASES_PERIMETRE.voirTout.titre}</Label>
                   <p className="text-xs text-muted-foreground">
-                    Voir le travail de ses collègues (ventes, dépenses, caisse, retours, devis),
-                    dans ses entrepôts seulement.
+                    {LIBELLES_CASES_PERIMETRE.voirTout.aide}
                   </p>
                 </div>
                 <Switch
@@ -1062,10 +1062,11 @@ export default function UsersPage() {
               <div className="space-y-2 rounded-md border px-3 py-2">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <Label htmlFor="edit-consulte-tout">Consulter tous les entrepôts</Label>
+                    <Label htmlFor="edit-consulte-tout">
+                      {LIBELLES_CASES_PERIMETRE.consulterTous.titre}
+                    </Label>
                     <p className="text-xs text-muted-foreground">
-                      Lire les données de tous les entrepôts, quel qu&apos;en soit l&apos;auteur.
-                      Il n&apos;agit toujours que dans ses entrepôts.
+                      {LIBELLES_CASES_PERIMETRE.consulterTous.aide}
                     </p>
                   </div>
                   <Switch

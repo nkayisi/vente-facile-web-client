@@ -23,15 +23,13 @@
 import { useMemo } from "react";
 
 import {
+  afficheFiltreEntrepot,
+  afficheFiltreUtilisateur,
   choixEntrepotRecevable,
   estBorneParAuteur,
-  LIBELLES_VERROU_PERIMETRE,
   litTousLesEntrepots,
   membreDepuisPermissions,
-  verrouEntrepot,
-  verrouUtilisateur,
   type MembrePerimetre,
-  type MotifVerrouPerimetre,
 } from "@vente-facile/core";
 
 import { usePermissions } from "@/components/auth/permissions-provider";
@@ -43,13 +41,6 @@ export interface AssignedWarehouse {
   is_active?: boolean;
 }
 
-/**
- * Pourquoi un filtre est fermé. `null` : il est ouvert.
- *
- * Le nom reste anglais comme le reste du hook ; les VALEURS viennent du paquet,
- * pour qu'un motif ajouté d'un côté ne puisse pas manquer de l'autre.
- */
-export type LockReason = MotifVerrouPerimetre;
 
 export interface Perimeter {
   role: string | null;
@@ -59,13 +50,15 @@ export interface Perimeter {
   assignedWarehouses: AssignedWarehouse[];
   /** La case « Consulter tous les entrepôts » ou le propriétaire : il LIT partout. */
   readsAll: boolean;
-  /** Le filtre « Entrepôt » d'une LECTURE (historique, rapports). */
-  warehouseLock: LockReason | null;
-  /** Le filtre « Utilisateur » : fermé quand on ne voit que son propre travail. */
-  userLock: LockReason | null;
+  /**
+   * Le champ « Entrepôt » s'affiche : le propriétaire et la case « Consulter
+   * tous les entrepôts » seulement. Pour les autres il n'apparaît pas du tout.
+   */
+  showWarehouse: boolean;
+  /** Le champ « Utilisateur » s'affiche : seulement pour qui voit ses collègues. */
+  showUser: boolean;
   /** `true` quand l'équipe ne servirait à rien : on n'appelle alors pas le serveur. */
   skipTeam: boolean;
-  lockLabel: (reason: LockReason) => string;
   /**
    * Le périmètre EFFECTIF, seul autorisé à partir aux server actions.
    *
@@ -94,10 +87,9 @@ export interface Perimeter {
   };
 }
 
-// ⚠ Pas de motif « sans auteur » ici : une donnée qui n'en a jamais eu RETIRE
-// son champ plutôt que de l'expliquer (voir `PerimeterFilters`). Le terminal
-// porte ce motif en plus, sur ses propres écrans ; le paquet ne tient que les
-// motifs COMMUNS.
+// ⚠ Plus aucun verrou n'est AFFICHÉ au back-office : un champ qu'on ne peut pas
+// changer n'est pas montré (`showWarehouse`, `showUser`, voir
+// `PerimeterFilters`). Le périmètre, lui, s'applique toujours au serveur.
 
 export function usePerimeter(): Perimeter {
   const { permissions } = usePermissions();
@@ -108,21 +100,16 @@ export function usePerimeter(): Perimeter {
     const readsAll = litTousLesEntrepots(membre);
     const borneParAuteur = estBorneParAuteur(membre, "lecture");
 
-    // En LECTURE, un membre qui ne lit pas tout lit exactement ses affectés,
-    // inactifs compris (on relit leur passé) : leur nombre suffit au verrou.
-    const warehouseLock = verrouEntrepot(membre, assigned.length, "lecture");
-
     return {
       role: membre.role,
       membre,
       assignedWarehouses: assigned,
       readsAll,
-      warehouseLock,
-      userLock: verrouUtilisateur(membre, "lecture"),
+      showWarehouse: afficheFiltreEntrepot(membre),
+      showUser: afficheFiltreUtilisateur(membre),
       // L'équipe est fermée à qui ne voit que son propre travail : le serveur
       // la lui rend vide, l'appeler serait une requête de trop.
       skipTeam: borneParAuteur,
-      lockLabel: (reason) => LIBELLES_VERROU_PERIMETRE[reason],
       effective: (chosen) => {
         // Un choix hors périmètre est écarté plutôt qu'envoyé : le serveur
         // rendrait 400, et l'écran crierait pour une règle qu'on connaissait.

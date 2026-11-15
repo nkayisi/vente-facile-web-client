@@ -4,16 +4,22 @@
  * Les deux filtres de périmètre, partagés par toutes les pages du back-office.
  *
  * ┌──────────────────────────────────────────────────────────────────────────┐
- * │ UN VERROU DE DROIT S'AFFICHE FERMÉ ; UNE DONNÉE SANS AUTEUR DISPARAÎT. │
+ * │ UN CHAMP QU'ON NE PEUT PAS CHANGER N'EST PAS MONTRÉ.                    │
  * │                                                                          │
- * │ `propres-donnees`, `un-seul-entrepot` et `aucun-entrepot` parlent de     │
- * │ VOUS : on vous refuse quelque chose que d'autres ont, et retirer le      │
- * │ contrôle se lirait comme une fonction manquante. Un contrôle fermé QUI   │
- * │ DIT POURQUOI se lit comme une règle.                                     │
+ * │ Décision du marchand (2026-11-15) : le champ « Entrepôt » n'apparaît     │
+ * │ qu'au propriétaire et au membre à qui l'on a coché « Consulter tous les  │
+ * │ entrepôts » ; le champ « Utilisateur » qu'à qui voit le travail de ses   │
+ * │ collègues (« Voir tout dans son entrepôt », le rôle de gérant ou de      │
+ * │ magasinier, ou la même case). Sans aucune des deux options, le composant │
+ * │ ne rend RIEN. Les anciens champs fermés « avec leur motif » occupaient   │
+ * │ la barre pour dire une chose que le membre n'a pas à décider.            │
+ * │                                                                          │
+ * │ ⚠ Masquer n'est pas lever : le serveur borne toujours au périmètre.     │
+ * │ La règle vit dans le noyau (`afficheFiltreEntrepot`,                     │
+ * │ `afficheFiltreUtilisateur`), partagée avec le terminal.                  │
  * │                                                                          │
  * │ `withUser={false}` parle de la DONNÉE : un niveau de stock n'a jamais eu │
- * │ d'auteur, pour personne. Expliquer l'absence d'une chose que nul n'a     │
- * │ demandée est du bruit permanent - on retire le champ, comme le terminal. │
+ * │ d'auteur, pour personne ; le champ est retiré quel que soit le membre.   │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  * ⚠ LE FILTRE « ENTREPÔT » EST UNE LECTURE : il propose tout ce que
@@ -67,11 +73,14 @@ export function PerimeterFilters({
   const token = session?.accessToken ?? "";
   const orgId = organization?.id ?? "";
 
-  const userLock = perimetre.userLock;
+  const champEntrepot = withWarehouse && perimetre.showWarehouse;
+  const champUtilisateur = withUser && perimetre.showUser;
+  // Rien à régler : le composant ne rend rien, pas même son conteneur.
+  if (!champEntrepot && !champUtilisateur) return null;
 
   return (
     <div className={className ?? "flex flex-wrap items-center gap-3"}>
-      {withWarehouse ? (
+      {champEntrepot ? (
         <div className="flex flex-col gap-1">
         <SearchableSelectAsyncWithEmpty
           value={value.warehouse}
@@ -89,17 +98,12 @@ export function PerimeterFilters({
           placeholder="Entrepôt"
           searchPlaceholder="Rechercher un entrepôt..."
           className="max-w-max"
-          disabled={!pret || Boolean(perimetre.warehouseLock)}
+          disabled={!pret}
         />
-        {perimetre.warehouseLock ? (
-          <span className="text-xs text-muted-foreground">
-            {perimetre.lockLabel(perimetre.warehouseLock)}
-          </span>
-        ) : null}
         </div>
       ) : null}
 
-      {withUser ? (
+      {champUtilisateur ? (
         <div className="flex flex-col gap-1">
         <SearchableSelectAsyncWithEmpty
           value={value.user}
@@ -121,13 +125,8 @@ export function PerimeterFilters({
           placeholder="Utilisateur"
           searchPlaceholder="Rechercher un utilisateur..."
           className="max-w-max"
-          disabled={!pret || Boolean(userLock)}
+          disabled={!pret}
         />
-        {userLock ? (
-          <span className="text-xs text-muted-foreground">
-            {perimetre.lockLabel(userLock)}
-          </span>
-        ) : null}
         </div>
       ) : null}
     </div>
