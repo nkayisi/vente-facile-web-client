@@ -6,7 +6,7 @@
  * ┌──────────────────────────────────────────────────────────────────────────┐
  * │ UN DEVIS N'ENGAGE PAS LE STOCK, ET L'ÉCRAN LE DIT.                      │
  * │                                                                          │
- * │ La réservation n'a lieu qu'à la CONVERSION, qui inscrit une dette comme  │
+ * │ Le stock ne sort qu'à la CONVERSION, qui inscrit une dette comme         │
  * │ une vente à crédit. Sans cette phrase, un commerçant croit avoir mis la  │
  * │ marchandise de côté, et la vend entre-temps.                             │
  * └──────────────────────────────────────────────────────────────────────────┘
@@ -210,8 +210,8 @@ export function QuotationDialog({
         <DialogHeader>
           <DialogTitle>Nouveau devis</DialogTitle>
           <DialogDescription>
-            Un devis <strong>n&apos;engage pas le stock</strong> : la réservation
-            n&apos;a lieu qu&apos;à sa conversion en vente.
+            Un devis <strong>n&apos;engage pas le stock</strong> : la marchandise
+            ne sort qu&apos;à sa conversion en vente.
           </DialogDescription>
         </DialogHeader>
 

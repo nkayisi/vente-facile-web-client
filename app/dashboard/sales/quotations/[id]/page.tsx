@@ -6,9 +6,9 @@
  * ┌──────────────────────────────────────────────────────────────────────────┐
  * │ CONVERTIR INSCRIT UNE DETTE, ET LE DIALOGUE L'ANNONCE AVANT.            │
  * │                                                                          │
- * │ La conversion crée une vente à crédit : le stock est réservé et le       │
- * │ montant est porté au compte du client. Ce n'est pas ce qu'on attend      │
- * │ d'un bouton qui dit « convertir », et c'est irréversible.                 │
+ * │ La conversion crée une vente à crédit : la marchandise sort du stock     │
+ * │ et le montant est porté au compte du client. Ce n'est pas ce qu'on       │
+ * │ attend d'un bouton qui dit « convertir », et c'est irréversible.          │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  * **Un devis PÉRIMÉ ne se convertit pas**, et le statut en base ne bascule pas
@@ -348,7 +348,7 @@ export default function QuotationDetailPage() {
           <DialogHeader>
             <DialogTitle>Convertir ce devis en vente ?</DialogTitle>
             <DialogDescription>
-              Une vente à crédit est créée : le stock est réservé et{" "}
+              Une vente à crédit est créée : la marchandise sort du stock et{" "}
               {money.money(parseFloat(devis.total || "0"), money.primaryCode)} sont
               portés au compte de {devis.customer_name || "ce client"}.{" "}
               {perime && (

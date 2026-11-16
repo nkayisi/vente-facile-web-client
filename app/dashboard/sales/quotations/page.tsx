@@ -12,8 +12,8 @@
  * │ elles, étaient écrites - avec zéro appelant.                             │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
- * **Un devis n'engage PAS le stock**, et l'écran le dit : la réservation
- * n'a lieu qu'à la conversion, qui inscrit une DETTE comme une vente à crédit.
+ * **Un devis n'engage PAS le stock**, et l'écran le dit : la marchandise ne
+ * sort du rayon qu'à la conversion, qui inscrit une DETTE comme une vente à crédit.
  */
 
 import { toast } from "sonner";
@@ -180,8 +180,8 @@ export default function QuotationsPage() {
             <h1 className="text-2xl font-bold">Devis</h1>
             {/* La règle la plus utile de cet écran, et la moins évidente. */}
             <p className="text-sm text-muted-foreground">
-              Un devis n&apos;engage pas le stock : la réservation n&apos;a lieu
-              qu&apos;à la conversion.
+              Un devis n&apos;engage pas le stock : la marchandise ne sort du
+              rayon qu&apos;à la conversion.
             </p>
           </div>
         </div>
