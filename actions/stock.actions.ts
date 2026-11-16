@@ -408,6 +408,12 @@ export interface WarehouseFilters {
    * TOUTES les pages - voir `getWarehouses`.
    */
   page_size?: number;
+  /**
+   * Tous les entrepôts LISIBLES, et pas seulement le défaut. Une liste de
+   * CHOIX (le filtre « Entrepôt ») en a besoin : sous la case « Consulter tous
+   * les entrepôts », le défaut du serveur ne rend que les entrepôts du membre.
+   */
+  all_warehouses?: boolean;
 }
 
 export interface StockFilters {
@@ -564,6 +570,7 @@ export async function getWarehouses(
     if (filters?.is_default !== undefined) params.append("is_default", String(filters.is_default));
     if (filters?.branch) params.append("branch", filters.branch);
     if (filters?.search) params.append("search", filters.search);
+    if (filters?.all_warehouses) params.append("all_warehouses", "1");
 
     const unePage = filters?.page_size !== undefined;
     params.set("page_size", String(unePage ? filters!.page_size : TAILLE_PAGE_ENTREPOTS));

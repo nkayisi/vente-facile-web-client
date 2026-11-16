@@ -24,10 +24,13 @@ import type {
 } from "@/actions/products.actions";
 import { getCustomers, getSuppliers } from "@/actions/contacts.actions";
 import type { Customer, Supplier } from "@/actions/contacts.actions";
-import { getWarehouses } from "@/actions/stock.actions";
-import type { Warehouse } from "@/actions/stock.actions";
-import type { MembrePerimetre } from "@vente-facile/core";
-import { optionsEntrepots, type UsageEntrepot } from "@/lib/stock/entrepots";
+import { getWarehouseDirectory, getWarehouses } from "@/actions/stock.actions";
+import { entrepotsLisibles, type MembrePerimetre } from "@vente-facile/core";
+import {
+  optionsEntrepots,
+  type EntrepotProposable,
+  type UsageEntrepot,
+} from "@/lib/stock/entrepots";
 import { getBranches } from "@/actions/organization.actions";
 import type { Branch } from "@/actions/organization.actions";
 import { getPaymentMethods } from "@/actions/sales.actions";
@@ -183,7 +186,7 @@ export function createWarehouseSearchHandler(
   usage: UsageEntrepot,
   options?: { membre?: MembrePerimetre | null; branch?: string },
 ): SearchHandler {
-  let liste: Promise<Warehouse[]> | null = null;
+  let liste: Promise<EntrepotProposable[]> | null = null;
   return async (query: string) => {
     // Une recherche VIDE est le chargement d'ouverture : on relit, pour qu'un
     // entrepôt créé ou affecté depuis apparaisse. Les frappes suivantes
@@ -191,7 +194,20 @@ export function createWarehouseSearchHandler(
     if (!liste || !query.trim()) {
       liste = getWarehouses(accessToken, organizationId, {
         ...(options?.branch ? { branch: options.branch } : {}),
-      }).then((r) => (r.success && r.data ? r.data : []));
+        // Un choix de LECTURE propose tout ce qui est lisible, pas le seul
+        // défaut : c'est par ce choix que la case « Consulter tous » élargit.
+        ...(usage === "lecture" ? { all_warehouses: true } : {}),
+      }).then(async (r): Promise<EntrepotProposable[]> => {
+        if (r.success && r.data) return r.data;
+        // ⚠ UN CAISSIER « CONSULTER TOUS » N'A PAS `warehouses.view` : la liste
+        // lui répond 403, et son filtre restait vide alors qu'il lit tous les
+        // dépôts. L'ANNUAIRE (les noms seuls, ouvert à tout membre) prend le
+        // relais, borné à ce qu'il peut lire. En action, rien : on n'agit que
+        // là où la liste d'action le permet.
+        if (usage !== "lecture" || !options?.membre) return [];
+        const a = await getWarehouseDirectory(accessToken, organizationId);
+        return a.success && a.data ? entrepotsLisibles(options.membre, a.data.entrepots) : [];
+      });
     }
     return optionsEntrepots(await liste, usage, options?.membre ?? null, query);
   };
@@ -221,16 +237,27 @@ export function createWarehouseSearchHandler(
 export function createMemberSearchHandler(
   accessToken: string,
   organizationId: string,
-  options?: { warehouse?: string },
+  options?: {
+    /**
+     * Les entrepôts dont on propose les membres (un choix, ou le défaut « mes
+     * entrepôts ») ; absent : tous ceux que l'équipe rend. Le propriétaire
+     * n'a aucune affectation : il reste toujours proposé.
+     */
+    warehouses?: string[];
+    /** Un membre à ne pas proposer (soi-même, quand c'est déjà le défaut). */
+    exclude?: string;
+  },
 ): SearchHandler {
   return async (query: string) => {
     const result = await getTeam(accessToken, organizationId);
     if (!result.success || !result.data?.visible) return [];
     const terme = query.trim().toLowerCase();
+    const bornes = options?.warehouses;
     return result.data.members
       .filter((m) => {
-        if (options?.warehouse && m.role !== "owner") {
-          if (!m.warehouses.includes(options.warehouse)) return false;
+        if (options?.exclude && m.user_id === options.exclude) return false;
+        if (bornes && m.role !== "owner") {
+          if (!m.warehouses.some((id) => bornes.includes(id))) return false;
         }
         return !terme || m.name.toLowerCase().includes(terme);
       })

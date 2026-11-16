@@ -17,9 +17,11 @@
  * de proposer un geste qu'on sait refusé.
  */
 import {
+  caseVoirToutUtile as caseVoirToutUtileDuNoyau,
   entrepotsActionnables,
   PERMISSION_VOIR_TOUT,
   type MembrePerimetre,
+  type Role,
 } from "@vente-facile/core";
 
 import { estActif } from "@/lib/stock/entrepots";
@@ -79,7 +81,8 @@ export function permissionsAccordables(
  * l'usage. C'est `sales.view_all`, et rien d'autre.
  */
 export function caseVoirToutUtile(role: string): boolean {
-  return role === "cashier";
+  // La règle vit dans le noyau, partagée avec le terminal.
+  return caseVoirToutUtileDuNoyau(role as Role);
 }
 
 export function voitLeTravailDesCollegues(effectives: readonly string[] | undefined): boolean {

@@ -25,10 +25,16 @@ import { useMemo } from "react";
 import {
   afficheFiltreEntrepot,
   afficheFiltreUtilisateur,
+  CHOIX_TOUS,
   choixEntrepotRecevable,
+  defautDuPerimetre,
   estBorneParAuteur,
+  libelleDefautEntrepot,
+  libelleDefautUtilisateur,
   litTousLesEntrepots,
   membreDepuisPermissions,
+  proposeTousLesEntrepots,
+  proposeTousLesUtilisateurs,
   type MembrePerimetre,
 } from "@vente-facile/core";
 
@@ -57,6 +63,26 @@ export interface Perimeter {
   showWarehouse: boolean;
   /** Le champ « Utilisateur » s'affiche : seulement pour qui voit ses collègues. */
   showUser: boolean;
+  /**
+   * Ce que le champ annonce quand rien n'est choisi : le DÉFAUT, nommé
+   * (« Mes entrepôts », « Moi uniquement »…). Voir `defautDuPerimetre`.
+   */
+  defaultWarehouseLabel: string;
+  defaultUserLabel: string;
+  /**
+   * Les entrepôts du DÉFAUT quand il est plus étroit que ce qu'on peut lire
+   * (la case « Consulter tous » : ses seuls entrepôts), sinon `null`. Les
+   * membres proposés au filtre « Utilisateur » s'y bornent tant que l'entrepôt
+   * n'est pas élargi : le serveur garde ce défaut, et un collègue d'ailleurs
+   * rendrait une liste vide.
+   */
+  defaultWarehouses: string[] | null;
+  /** Le défaut est « Moi uniquement » : se proposer soi-même en serait une redite. */
+  defaultIsSelf: boolean;
+  /** Le choix explicite « Tous les entrepôts » est proposé (case « Consulter tous »). */
+  offersAllWarehouses: boolean;
+  /** Le choix explicite « Tous les utilisateurs » est proposé (caissier qui a une case). */
+  offersAllUsers: boolean;
   /** `true` quand l'équipe ne servirait à rien : on n'appelle alors pas le serveur. */
   skipTeam: boolean;
   /**
@@ -79,6 +105,11 @@ export interface Perimeter {
    * │ d'élargissement : tous les endpoints concernés bornent déjà par le    │
    * │ périmètre de lecture (`WarehouseScopedQuerysetMixin`, les `_scope_*`  │
    * │ des rapports, `borner_ventes` du tableau de bord).                    │
+   * │                                                                      │
+   * │ RIEN choisi : rien ne part, et le serveur applique le DÉFAUT du      │
+   * │ membre (un caissier ne voit que ses données). « Tous » part en `*`,   │
+   * │ que le serveur lit comme `all_warehouses` / `all_users` : c'est le    │
+   * │ seul moyen d'élargir au-delà du défaut.                               │
    * └──────────────────────────────────────────────────────────────────────┘
    */
   effective: (chosen: { warehouse?: string; user?: string }) => {
@@ -99,6 +130,7 @@ export function usePerimeter(): Perimeter {
     const assigned: AssignedWarehouse[] = permissions?.assigned_warehouses ?? [];
     const readsAll = litTousLesEntrepots(membre);
     const borneParAuteur = estBorneParAuteur(membre, "lecture");
+    const defaut = defautDuPerimetre(membre);
 
     return {
       role: membre.role,
@@ -107,6 +139,12 @@ export function usePerimeter(): Perimeter {
       readsAll,
       showWarehouse: afficheFiltreEntrepot(membre),
       showUser: afficheFiltreUtilisateur(membre),
+      defaultWarehouseLabel: libelleDefautEntrepot(membre),
+      defaultUserLabel: libelleDefautUtilisateur(membre),
+      defaultWarehouses: defaut.entrepots,
+      defaultIsSelf: defaut.auteurBorne,
+      offersAllWarehouses: proposeTousLesEntrepots(membre),
+      offersAllUsers: proposeTousLesUtilisateurs(membre),
       // L'équipe est fermée à qui ne voit que son propre travail : le serveur
       // la lui rend vide, l'appeler serait une requête de trop.
       skipTeam: borneParAuteur,
@@ -115,11 +153,21 @@ export function usePerimeter(): Perimeter {
         // rendrait 400, et l'écran crierait pour une règle qu'on connaissait.
         // Un VERROU, lui, n'est pas un choix : il ne part pas (voir l'encadré).
         const permis = new Set(assigned.map((w) => w.id));
+        // « Tous les entrepôts » n'a de sens que sous la case : pour le
+        // propriétaire c'est déjà le défaut, et pour les autres un refus.
         const warehouse =
-          choixEntrepotRecevable(chosen.warehouse, permis, readsAll) ?? undefined;
+          chosen.warehouse === CHOIX_TOUS && !proposeTousLesEntrepots(membre)
+            ? undefined
+            : (choixEntrepotRecevable(chosen.warehouse, permis, readsAll) ?? undefined);
         // Borné par auteur : le serveur applique `user = lui` seul, et le champ
-        // est fermé. On n'envoie rien.
-        const user = borneParAuteur ? undefined : chosen.user || undefined;
+        // est fermé. On n'envoie rien. « Tous les utilisateurs » ne part que
+        // pour le caissier dont le défaut est « moi » ; pour un gérant c'est
+        // déjà le défaut.
+        let user: string | undefined;
+        if (borneParAuteur) user = undefined;
+        else if (chosen.user === CHOIX_TOUS)
+          user = proposeTousLesUtilisateurs(membre) ? CHOIX_TOUS : undefined;
+        else user = chosen.user || undefined;
         return { warehouse, user };
       },
     };
