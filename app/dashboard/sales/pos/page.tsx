@@ -1,8 +1,14 @@
 "use client";
 
+import { chromeDeSecours } from "@/lib/receipt/chrome";
 import { flattenDrfErrors } from "@/lib/api/drf-error";
 import { Customer, getCustomer, getCustomers, createCustomer, CreateCustomerData } from "@/actions/contacts.actions";
-import { getProducts, Product } from "@/actions/products.actions";
+import { getProducts, Product, searchProductByBarcode } from "@/actions/products.actions";
+import { CreateProductSuggestion } from "@/components/products/create-product-suggestion";
+import { ScanCameraDialog } from "@/components/sales/scan-camera-dialog";
+import { useDouchette } from "@/hooks/use-douchette";
+import { candidatsDuScan } from "@/lib/pos/douchette";
+import { preRemplissageDeCreation } from "@/lib/products/terme-creation";
 import { getLockedProducts } from "@/actions/inventory.actions";
 import { getOrganizationCurrencies, OrganizationCurrency, getCustomerLoyalty, CustomerLoyalty, getLoyaltyProgram, LoyaltyProgram, getOrganizationSettings, OrganizationSettings } from "@/actions/settings.actions";
 import {
@@ -66,12 +72,13 @@ import {
   HandCoins,
   CircleDollarSign,
   Gift,
+  ScanBarcode,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { formatPrice, formatDecimal } from "@/lib/format";
+import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { StatValue } from "@/components/shared/StatValue";
 import { ProductThumb } from "@/components/products/product-thumb";
@@ -91,6 +98,7 @@ import {
   maxGlobalDiscount,
   totalInSaleCurrency,
   tendersIn,
+  monnaieARendre,
   lineGross as coreLineGross,
   packagingFactorOf as corePackagingFactorOf,
   looseQuantityOf as coreLooseQuantityOf,
@@ -116,6 +124,7 @@ import { pasDeLigne } from "@/lib/stock/pas-de-ligne";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
   buildSaleReceipt,
+  echeanceImprimee,
   type SaleReceiptData,
   type SaleReceiptItem,
 } from "@/lib/receipt";
@@ -453,6 +462,18 @@ export default function POSPage() {
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   // Produit dont le sélecteur de quantité est ouvert depuis la grille.
   const [qtyPickerProductId, setQtyPickerProductId] = useState<string | null>(null);
+  /**
+   * L'article SCANNÉ, dont la saisie de quantité est ouverte.
+   *
+   * À part de `qtyPickerProductId` : l'article scanné n'est pas forcément dans
+   * la grille, qui pagine par cinquante, donc sa saisie ne s'accroche à aucune
+   * carte. Elle s'ouvre dans une boîte, avec les données que le serveur a
+   * rendues pour CE code (stock de l'entrepôt de la caisse compris).
+   */
+  const [articleScanne, setArticleScanne] = useState<Product | null>(null);
+  /** Le dernier code scanné qu'aucun article ne porte : on propose de le créer. */
+  const [codeIntrouvable, setCodeIntrouvable] = useState<string | null>(null);
+  const [cameraOuverte, setCameraOuverte] = useState(false);
   // Ligne de panier dont le sélecteur est ouvert (édition), par id produit.
   const [editingLineProductId, setEditingLineProductId] = useState<string | null>(null);
   // Ligne qui vient d'être ajoutée : sert au retour visuel bref sur la carte.
@@ -1065,7 +1086,6 @@ export default function POSPage() {
 
   const getPrimaryCurrency = () => orgCurrencies.find(c => c.is_primary);
   const primaryCode = () => currencies.primary;
-  const rateOf = (code: string) => currencies.rateOf(code);
   const symbolOf = (code: string) => currencies.symbolOf(code);
   const convertAmount = (amount: number, from: string, to: string) =>
     currencies.convert(amount, from, to);
@@ -1084,6 +1104,16 @@ export default function POSPage() {
   };
   // Devise de la vente (facture).
   const saleCurrency = () => invoiceCurrency || primaryCode();
+  /**
+   * Le taux, dit dans le sens où une unité vaut au moins une unité de l'autre.
+   * « 1 CDF = 0,000435 $ » ne se lit pas : on écrit « 1 USD = 2 300 FC »,
+   * quelle que soit la devise reçue. Même règle que le terminal.
+   */
+  const libelleDuTaux = (recue: string, facture: string) => {
+    const [forte, faible] =
+      convertAmount(1, recue, facture) >= 1 ? [recue, facture] : [facture, recue];
+    return `1 ${forte} = ${money(convMoney(1, forte, faible), faible)}`;
+  };
 
   /**
    * Les sous-totaux ANNONCÉS, par devise. Une seule entrée quand tout partage
@@ -1158,12 +1188,18 @@ export default function POSPage() {
       (amount: number) => formatPrice(amount),
     );
 
-  // Monnaie à rendre, dans la devise choisie par le caissier.
-  const changeInChangeCurrency = () => {
-    const over = paidInSale() - totalInSale();
-    if (over <= MONEY_EPS) return 0;
-    return convMoney(over, saleCurrency(), changeCurrency || saleCurrency());
-  };
+  // Monnaie à rendre, dans la devise choisie par le caissier : depuis les
+  // billets remis, avec un seul arrondi (`monnaieARendre`). Passer par le
+  // surplus en devise de facture, arrondi au centime, rendait 377 499 FC sur
+  // 575 $ réglés 1 700 000 FC. Le serveur rejoue la même règle.
+  const changeInChangeCurrency = () =>
+    monnaieARendre({
+      tenders,
+      total: totalInSale(),
+      invoiceCurrency: saleCurrency(),
+      changeCurrency: changeCurrency || saleCurrency(),
+      currencies,
+    });
 
   // Règlement unique (grille de moyens de paiement - un seul règlement).
   const newTenderId = () => Math.random().toString(36).slice(2);
@@ -1369,11 +1405,15 @@ export default function POSPage() {
         {
           const receiptData: SaleReceiptData = {
             kind: backendAmountDue > 0 ? "credit_sale" : "sale",
-            chrome: chrome ?? { org: { name: organization.name || "Vente Facile" } },
+            chrome: chrome ?? chromeDeSecours(organization.name),
             number: saleAuthoritative.reference,
             date: new Date().toLocaleString("fr-CD"),
             registerName: currentSession.register_name,
             cashierName: currentSession.opened_by_name,
+            // Le dépôt et l'échéance que le ticket du terminal imprime déjà :
+            // sans l'échéance, une vente à crédit sortait sans date de paiement.
+            warehouseName: currentSession.warehouse_name || undefined,
+            dueDate: echeanceImprimee(saleAuthoritative.due_date),
             customerName: selectedCustomer?.name,
             customerPhone: selectedCustomer?.phone || undefined,
             // Lignes reprises de la réponse du serveur, qui fait autorité sur
@@ -1576,7 +1616,7 @@ export default function POSPage() {
 
       const receiptData: SaleReceiptData = {
         kind: "proforma",
-        chrome: chrome ?? { org: { name: organization.name || "Vente Facile" } },
+        chrome: chrome ?? chromeDeSecours(organization.name),
         number: ref,
         date: new Date().toLocaleString("fr-CD"),
         registerName: currentSession.register_name,
@@ -1723,6 +1763,70 @@ export default function POSPage() {
     };
   }, []);
 
+  /**
+   * Un code lu (douchette, caméra, ou tapé puis Entrée) : on cherche l'article
+   * qui le porte, et l'on ouvre sa saisie de quantité, qui propose 1 : Entrée
+   * l'ajoute, une touche le remplace. Rien n'entre au panier sans ce geste.
+   */
+  const rechercherCode = useCallback(
+    async (code: string, secours: string[] = []) => {
+      if (!session?.accessToken || !organization) return;
+      const r = await searchProductByBarcode(session.accessToken, organization.id, code, {
+        warehouse: currentSession?.warehouse || undefined,
+      });
+      if (r.success && r.data) {
+        setCodeIntrouvable(null);
+        setArticleScanne(r.data);
+      } else if (r.introuvable && secours.length > 0) {
+        // Le code lu n'existe pas : on essaie le suivant (le champ entier,
+        // quand la rafale a perdu sa tête) avant de proposer une création.
+        const [suivant, ...reste] = secours;
+        await rechercherCode(suivant, reste);
+      } else if (r.introuvable) {
+        setArticleScanne(null);
+        setCodeIntrouvable(code);
+      } else {
+        toast.error(r.message || "La recherche du code a échoué");
+      }
+    },
+    [session?.accessToken, organization, currentSession?.warehouse]
+  );
+
+  useDouchette({
+    // Aucune lecture pendant qu'une boîte est ouverte : un code s'écrirait
+    // dans un montant, ou validerait un encaissement.
+    actif:
+      !articleScanne &&
+      !cameraOuverte &&
+      !showPaymentDialog &&
+      !showCustomerDialog &&
+      !showCloseSessionDialog &&
+      !showLeaveDialog,
+    champRecherche: searchInputRef,
+    onCode: (code, valeurDuChamp) => {
+      // La douchette a tapé le code DANS la recherche : on l'en retire, et la
+      // recherche texte qu'il avait déclenchée est abandonnée.
+      if (valeurDuChamp !== null) handleProductSearch("");
+      const [premier, ...secours] = candidatsDuScan(code, valeurDuChamp);
+      void rechercherCode(premier, secours);
+    },
+  });
+
+  /**
+   * Revenir sur l'onglet après avoir créé un article (dans un autre onglet) :
+   * on relance ce qu'on cherchait, pour que l'article apparaisse sans rien
+   * retaper - y compris le code scanné qu'aucun article ne portait.
+   */
+  useEffect(() => {
+    const auRetour = () => {
+      if (document.visibilityState !== "visible") return;
+      if (codeIntrouvable) void rechercherCode(codeIntrouvable);
+      else if (searchQuery.trim()) handleProductSearch(searchQuery);
+    };
+    document.addEventListener("visibilitychange", auRetour);
+    return () => document.removeEventListener("visibilitychange", auRetour);
+  }, [codeIntrouvable, rechercherCode, searchQuery, handleProductSearch]);
+
   // Produits affichés : résultats de recherche backend ou produits initiaux
   const displayedProducts = searchQuery.trim() ? searchResults : products;
 
@@ -1751,7 +1855,10 @@ export default function POSPage() {
       {/* Products Section */}
       <div className="flex-1 flex flex-col min-h-0 pb-20 lg:pb-0">
         {/* Search Bar */}
-        <div className="mb-4 flex gap-2 items-center justify-between lg:gap-4">
+        {/* La rangée se REPLIE : sans cela, le champ de recherche - l'outil
+            principal du comptoir - était écrasé à quelques pixels dès que la
+            colonne rétrécit, par les boutons qui l'entourent. */}
+        <div className="mb-4 flex flex-wrap gap-2 items-center justify-between lg:gap-4">
           {/* Sortie de caisse : premier élément de la ligne, donc premier au clavier */}
           <Button
             variant="outline"
@@ -1762,15 +1869,42 @@ export default function POSPage() {
             <ArrowLeft className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">Retour</span>
           </Button>
-          <div className="w-full relative">
+          <div className="relative min-w-[16rem] flex-1 basis-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
             <Input
               ref={searchInputRef}
-              placeholder="Rechercher un produit (nom, SKU, code-barres)..."
+              // Court : le champ ne fait que ~16 rem à 1280 px, et la phrase
+              // longue s'y coupait en « Rechercher ou scanner un ».
+              placeholder="Nom, SKU ou code-barres…"
+              aria-label="Rechercher ou scanner un article (nom, SKU, code-barres)"
               value={searchQuery}
               onChange={e => handleProductSearch(e.target.value)}
-              className="pl-10 h-12 text-lg bg-white"
+              onKeyDown={e => {
+                // Un code tapé à la main puis Entrée vaut un scan : il ouvre
+                // la saisie de quantité de SON article, sans passer par la
+                // grille où d'autres articles le contiendraient en partie.
+                if (e.key !== "Enter") return;
+                const pre = preRemplissageDeCreation(searchQuery);
+                if (pre?.champ !== "code_barres") return;
+                e.preventDefault();
+                handleProductSearch("");
+                void rechercherCode(pre.valeur);
+              }}
+              className="pl-10 pr-12 h-12 text-lg bg-white"
             />
+            {/* La caméra DANS le champ : elle cherche la même chose, et un
+                bouton de plus sur la rangée prenait sa largeur au champ. */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1/2 h-10 w-10 -translate-y-1/2 text-gray-500"
+              onClick={() => setCameraOuverte(true)}
+              aria-label="Scanner un code avec la caméra"
+              title="Scanner avec la caméra"
+            >
+              <ScanBarcode className="h-5 w-5" />
+            </Button>
           </div>
           {/*
             ⚠ UN CHOIX UNIQUE N'EST PAS UN CHOIX : la rangée ne paraît que sur
@@ -1810,6 +1944,29 @@ export default function POSPage() {
           </div>
         </div>
 
+        {codeIntrouvable && (
+          <div
+            role="status"
+            className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
+          >
+            <span>
+              Aucun article ne porte le code <strong className="font-mono">{codeIntrouvable}</strong>.
+            </span>
+            <span className="flex items-center gap-2">
+              <CreateProductSuggestion terme={codeIntrouvable} scanne origine="pos" />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setCodeIntrouvable(null)}
+                aria-label="Fermer"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </span>
+          </div>
+        )}
+
         {/* Products Grid */}
         <div className="flex-1 overflow-y-auto">
           {isSearching ? (
@@ -1818,8 +1975,10 @@ export default function POSPage() {
               <p className="text-gray-500">Recherche...</p>
             </div>
           ) : searchQuery.trim() && displayedProducts.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
               <p className="text-gray-500">Aucun produit trouvé</p>
+              {/* La création s'ouvre dans un nouvel onglet : le panier reste là. */}
+              <CreateProductSuggestion terme={searchQuery} origine="pos" />
             </div>
           ) : !searchQuery.trim() && products.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-2 px-6 text-center">
@@ -1831,8 +1990,19 @@ export default function POSPage() {
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            // ┌──────────────────────────────────────────────────────────────┐
+            // │ LA GRILLE SUIT SA PROPRE LARGEUR, PAS CELLE DE LA FENÊTRE.   │
+            // │                                                              │
+            // │ Elle prenait `xl:grid-cols-3` à 1280 px, alors que le menu et │
+            // │ le panier ne lui laissent que ~576 px : le nom d'un article   │
+            // │ disposait de 19 px (0 à 1024, 73 à 1440), et le caissier ne  │
+            // │ lisait plus que « AAC 3… ». Mesuré au navigateur. D'où les    │
+            // │ requêtes de CONTENEUR (`@container`), le piège déjà payé ici │
+            // │ avec `sm:`, et le prix passé SOUS le nom : chaque carte garde│
+            // │ au moins ~150 px de texte, à toute largeur.                  │
+            // └──────────────────────────────────────────────────────────────┘
+            <div className="@container flex flex-col gap-2">
+              <div className="grid grid-cols-1 items-stretch gap-2 @lg:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4">
               {displayedProducts.map(product => {
                 const lockReference = verrous.get(product.id);
                 const isLocked = lockReference !== undefined;
@@ -1939,36 +2109,32 @@ export default function POSPage() {
 
                     {/* Infos - disposition horizontale optimisée */}
                     <div className="flex min-w-0 flex-1 flex-col justify-between gap-0.5">
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
                         <h3
                           className={cn(
-                            "line-clamp-2 min-w-0 flex-1 text-[12px] font-semibold leading-tight",
+                            "line-clamp-2 text-[12px] font-semibold leading-tight",
                             isLocked ? "text-red-800" : "text-slate-900"
                           )}
                           title={product.name}
                         >
                           {product.name}
                         </h3>
-                        <div className="shrink-0 text-right">
-                          <p
+                        <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 leading-tight tabular-nums">
+                          <span
                             className={cn(
-                              "text-[12px] font-bold leading-tight tabular-nums",
+                              "text-[12px] font-bold",
                               isLocked ? "text-red-600" : "text-orange-600"
                             )}
                           >
                             {mainPriceLabel}
-                          </p>
+                          </span>
                           {secondaryPriceLabel && (
-                            <p className="text-[10px] leading-tight tabular-nums text-slate-500">
-                              {secondaryPriceLabel}
-                            </p>
+                            <span className="text-[10px] text-slate-500">{secondaryPriceLabel}</span>
                           )}
                           {convertedPriceLabel && (
-                            <p className="text-[10px] leading-tight tabular-nums text-slate-500">
-                              {convertedPriceLabel}
-                            </p>
+                            <span className="text-[10px] text-slate-500">{convertedPriceLabel}</span>
                           )}
-                        </div>
+                        </p>
                       </div>
 
                       <div className="min-w-0 space-y-0.5">
@@ -2753,10 +2919,10 @@ export default function POSPage() {
               <div className="p-3 bg-gray-50 rounded-xl space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">
-                    Sous-total ({(() => {
-                      const unites = roundQuantity(cart.reduce((s, i) => s + i.quantity, 0));
-                      return `${formatQuantity(unites)} ${accord(unites, "article", "articles")}`;
-                    })()})
+                    {/* Des ARTICLES, comme le panier : additionner les quantités
+                        de lignes d'unités différentes (2 boîtes + 0,5 kg) écrivait
+                        « 2,5 articles », et 0,5 kg seul « 0,5 article ». */}
+                    Sous-total ({pluriel(cart.length, "article", "articles")})
                   </span>
                   <span className="font-medium">{money(convMoney(calculateSubtotal(), primaryCode(), saleCurrency()))}</span>
                 </div>
@@ -2815,7 +2981,11 @@ export default function POSPage() {
               const payCur = t.currency;
               // Montants exprimés dans la devise reçue (« montant converti »).
               const totalInPay = convMoney(totalInSale(), saleCurrency(), payCur);
-              const paidInPay = convMoney(paidInSale(), saleCurrency(), payCur);
+              // ⚠ Chaque règlement converti DIRECTEMENT vers la devise reçue.
+              // Passer par la devise de vente arrondie au centime renvoyait
+              // « 1 699 999 FC » à qui venait de taper 1 700 000 : un centime
+              // de dollar vaut 23 FC, et l'aller-retour en perdait un.
+              const paidInPay = tendersIn(tenders, currencies, payCur);
               const missingInPay = roundMoney(totalInPay - paidInPay, payCur);
               return (
             <div className="space-y-3">
@@ -2949,12 +3119,7 @@ export default function POSPage() {
                 {t.currency !== saleCurrency() && amt > 0 && (
                   <p className="text-xs text-blue-600">
                     = {money(convMoney(amt, t.currency, saleCurrency()))}
-                    {"  "}(1 {t.currency} ={" "}
-                    {/* ⚠ `formatNumber` est un formateur d'ENTIERS : un taux inverse,
-                        comme un franc congolais vers le dollar, s'y affichait « 0 ».
-                        Six décimales, comme `formatPrice` en emploie. */}
-                    {formatDecimal(rateOf(t.currency) / rateOf(saleCurrency()), 6)}{" "}
-                    {symbolOf(saleCurrency())})
+                    {"  "}({libelleDuTaux(t.currency, saleCurrency())})
                   </p>
                 )}
                 {method?.requires_reference && !isCreditSale && (
@@ -3012,7 +3177,9 @@ export default function POSPage() {
                 )}
 
                 {/* Monnaie à rendre + devise de la monnaie (choix caissier) */}
-                {!isCreditSale && paidInSale() - totalInSale() > MONEY_EPS && (
+                {/* La monnaie, pas le surplus arrondi : 1 322 510 FC sur 575 $
+                    soldent la facture au centime près ET rendent 10 FC. */}
+                {!isCreditSale && changeInChangeCurrency() > 0 && (
                   <div className="pt-2 border-t border-gray-200 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-green-700 font-medium">Monnaie à rendre</span>
@@ -3090,6 +3257,47 @@ export default function POSPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* L'article scanné : sa saisie de quantité, dans une boîte. Mêmes
+          garde-fous que la carte de la grille (verrou, stock, conditionnement). */}
+      {articleScanne && (
+        <QuantityPicker
+          product={articleScanne}
+          open
+          presentation="dialog"
+          onOpenChange={(ouvert) => {
+            if (!ouvert) {
+              setArticleScanne(null);
+              searchInputRef.current?.focus();
+            }
+          }}
+          maxBase={addableBase(articleScanne)}
+          looseAvailable={addableLoose(articleScanne)}
+          sealedAvailable={addableSealed(articleScanne)}
+          lockReference={verrous.get(articleScanne.id) ?? null}
+          onUnpack={unpackHandlerFor(articleScanne)}
+          currencyCodes={currencyCodes}
+          invoiceCurrency={invoiceCurrency}
+          onConfirm={(selection) => {
+            addToCart(articleScanne, selection);
+            setArticleScanne(null);
+            // Le scan suivant : la recherche reprend la main.
+            searchInputRef.current?.focus();
+          }}
+        >
+          {null}
+        </QuantityPicker>
+      )}
+
+      {cameraOuverte && (
+        <ScanCameraDialog
+          onClose={() => setCameraOuverte(false)}
+          onCode={(code) => {
+            setCameraOuverte(false);
+            void rechercherCode(code);
+          }}
+        />
+      )}
 
       {/* Close Session Dialog */}
       <Dialog open={showCloseSessionDialog} onOpenChange={setShowCloseSessionDialog}>

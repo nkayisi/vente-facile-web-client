@@ -49,11 +49,13 @@ export {
   buildPaymentReceipt,
   type PaymentReceiptData,
 } from "./documents/payment";
-export { saleReceiptFromSale, type FromSaleOptions } from "./documents/from-sale";
+export { saleReceiptFromSale, echeanceImprimee, type FromSaleOptions } from "./documents/from-sale";
 export {
   buildCashSessionReceipt,
   buildExpenseReceipt,
+  buildExpenseRequest,
   type CashSessionReceiptData,
   type CashSessionCurrencyLine,
   type ExpenseReceiptData,
+  type ExpenseRequestData,
 } from "./documents/cash-session";

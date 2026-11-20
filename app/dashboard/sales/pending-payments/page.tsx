@@ -1,5 +1,6 @@
 "use client";
 
+import { chromeDeSecours } from "@/lib/receipt/chrome";
 import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -347,7 +348,7 @@ export default function PendingPaymentsPage() {
 
         const receiptData: PaymentReceiptData = {
           kind: "debt_payment",
-          chrome: chrome ?? { org: { name: organization.name || "Vente Facile" } },
+          chrome: chrome ?? chromeDeSecours(organization.name),
           number: settledPayment?.receipt_number || selectedSale.reference,
           date: new Date().toLocaleString("fr-CD"),
           customerName: selectedSale.customer_name || "Client anonyme",

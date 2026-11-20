@@ -30,6 +30,19 @@ export interface FromSaleOptions {
   primaryCurrency?: string;
 }
 
+/**
+ * L'échéance d'une vente à crédit, telle qu'elle s'imprime : « 05/12/2026 ».
+ *
+ * ⚠ Lue par DÉCOUPAGE, jamais par `new Date("2026-12-05")` : la forme courte est
+ * interprétée en UTC, et sur un poste dont le fuseau est en retard sur Greenwich
+ * le ticket annoncerait la veille - c'est-à-dire un jour de moins pour payer.
+ * Même règle que le ticket du terminal (`echeanceImprimee`).
+ */
+export function echeanceImprimee(iso: string | null | undefined): string | undefined {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : undefined;
+}
+
 export function saleReceiptFromSale(
   sale: Sale,
   options: FromSaleOptions
@@ -60,9 +73,7 @@ export function saleReceiptFromSale(
     warehouseName: sale.warehouse_name || undefined,
     customerName: sale.customer_name || undefined,
     customerPhone: sale.customer_phone || undefined,
-    dueDate: sale.due_date
-      ? new Date(sale.due_date).toLocaleDateString("fr-CD")
-      : undefined,
+    dueDate: echeanceImprimee(sale.due_date),
     isDuplicate: options.isDuplicate,
 
     items,

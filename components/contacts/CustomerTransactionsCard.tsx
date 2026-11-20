@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDateTime } from "@/lib/format";
+import { usePermissions } from "@/components/auth/permissions-provider";
 import type { MoneyHelpers } from "@/lib/currency";
 import {
   getCustomerTransactions,
@@ -104,6 +105,7 @@ export function CustomerTransactionsCard({
   defaultCurrency: string;
 }) {
   const [filtre, setFiltre] = useState("all");
+  const peutOuvrirLesVentes = usePermissions().hasPermission("sales.view");
   const [lignes, setLignes] = useState<CustomerTransaction[]>([]);
   const [charge, setCharge] = useState(true);
 
@@ -196,14 +198,20 @@ export function CustomerTransactionsCard({
                     <p className="text-sm font-medium">
                       {txn.transaction_type_display}
                     </p>
-                    {txn.sale_reference && (
-                      <Link
-                        href={`/dashboard/sales/${txn.sale}`}
-                        className="text-xs text-orange-600 hover:underline"
-                      >
-                        {txn.sale_reference}
-                      </Link>
-                    )}
+                    {txn.sale_reference &&
+                      (peutOuvrirLesVentes ? (
+                        <Link
+                          href={`/dashboard/sales/${txn.sale}`}
+                          className="text-xs text-orange-600 hover:underline"
+                        >
+                          {txn.sale_reference}
+                        </Link>
+                      ) : (
+                        // Le magasinier lit le compte d'un client sans pouvoir
+                        // ouvrir ses ventes : un lien le menait à « pas la
+                        // permission ». La référence reste lisible.
+                        <span className="text-xs text-gray-500">{txn.sale_reference}</span>
+                      ))}
                   </div>
                   <div className="flex items-center gap-2 text-xs text-gray-500">
                     <span>{formatDateTime(txn.created_at)}</span>

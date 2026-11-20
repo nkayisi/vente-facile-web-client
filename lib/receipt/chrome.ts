@@ -11,7 +11,12 @@
 import type { Organization } from "@/actions/organization.actions";
 import type { OrganizationSettings } from "@/actions/settings.actions";
 import { getMediaUrl } from "@/lib/format";
-import type { LoadedLogo, OrgIdentity, ReceiptChrome } from "./identity";
+import {
+  logoPlateformeCharge,
+  type LoadedLogo,
+  type OrgIdentity,
+  type ReceiptChrome,
+} from "./identity";
 import type { PaperWidth } from "./tokens";
 
 export interface ChromeSources {
@@ -24,6 +29,20 @@ export interface ChromeSources {
   /** En-tête et pied propres à la caisse, prioritaires sur ceux de l'org. */
   register?: { receipt_header?: string | null; receipt_footer?: string | null } | null;
   logo?: LoadedLogo | null;
+  /**
+   * Le logo de Vente Facile, imprimé quand celui de l'établissement manque.
+   *
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ UN REÇU PORTE TOUJOURS UN LOGO.                                      │
+   * │                                                                      │
+   * │ Celui de l'établissement s'il est chargé, sinon celui de la          │
+   * │ plateforme - que le marchand n'en ait pas, ou que le sien soit       │
+   * │ injoignable (CORS, fichier retiré). Décision du marchand : un ticket │
+   * │ sans logo se lit comme un papier quelconque. Le terminal applique la │
+   * │ même règle (`chromeDeLaSession`), avec le même dessin.               │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
+  logoPlateforme?: LoadedLogo | null;
 }
 
 export function buildOrgIdentity(sources: ChromeSources): OrgIdentity {
@@ -38,7 +57,7 @@ export function buildOrgIdentity(sources: ChromeSources): OrgIdentity {
     rccm: org.rccm || undefined,
     idNat: org.id_nat || undefined,
     taxId: org.tax_id || undefined,
-    logo: sources.logo || undefined,
+    logo: sources.logo || sources.logoPlateforme || undefined,
   };
 }
 
@@ -94,4 +113,22 @@ export function logoUrlOf(
   organization: Pick<Organization, "logo"> | null | undefined
 ): string | undefined {
   return getMediaUrl(organization?.logo);
+}
+
+/** Le logo de repli, servi par le site lui-même : même origine, aucun CORS. */
+export const URL_LOGO_PLATEFORME = "/logo-recu.png";
+
+/**
+ * L'identité minimale d'un reçu imprimé avant que le chrome soit prêt.
+ *
+ * Un écran qui imprime sans attendre le chrome (un encaissement client) passait
+ * `{ org: { name } }` : son reçu sortait sans aucun logo, seul de tous.
+ */
+export function chromeDeSecours(
+  nom: string | null | undefined,
+  logoPlateforme: LoadedLogo | null = logoPlateformeCharge()
+): ReceiptChrome {
+  return {
+    org: { name: nom || "Vente Facile", logo: logoPlateforme || undefined },
+  };
 }

@@ -24,7 +24,7 @@
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,10 +41,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
+import { CreateProductSuggestion } from "@/components/products/create-product-suggestion";
+import { createProductSearchHandler } from "@/lib/product-search";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { createMoneyHelpers } from "@/lib/currency";
 import { createQuotation } from "@/actions/sales.actions";
-import { getProducts, type Product } from "@/actions/products.actions";
+import type { Product } from "@/actions/products.actions";
 import { getCustomers, type Customer } from "@/actions/contacts.actions";
 import {
   Select,
@@ -119,23 +122,37 @@ export function QuotationDialog({
     actionnables.find((w) => w.is_default)?.id ?? (actionnables.length === 1 ? actionnables[0].id : "");
   const entrepot = entrepotChoisi ?? entrepotParDefaut;
 
-  const charger = useCallback(async () => {
-    // En PARALLÈLE : les deux listes ne dépendent pas l'une de l'autre, et les
-    // enchaîner ferait deux allers-retours là où la latence domine.
-    const [p, c] = await Promise.all([
-      getProducts(accessToken, organizationId, { page_size: 200 }),
-      getCustomers(accessToken, organizationId, { page_size: 200 }),
-    ]);
-    setProduits(p.success && p.data ? p.data.results : []);
-    // `getCustomers` rend une réponse PAGINÉE, contrairement à ce que son type
-    // laisse croire au premier regard : sans `.results`, c'est l'enveloppe
-    // entière qui atterrit dans l'état, et la liste sort vide sans une erreur.
-    setClients(c.success && c.data ? c.data.results : []);
-  }, [accessToken, organizationId]);
+  // ┌────────────────────────────────────────────────────────────────────────┐
+  // │ L'ARTICLE SE CHERCHE AU SERVEUR, IL NE SE CHOISIT PLUS DANS UNE LISTE. │
+  // │                                                                        │
+  // │ La boîte chargeait les 200 premiers articles et filtrait dans le       │
+  // │ navigateur : au-delà, un article existant était introuvable, et la    │
+  // │ proposition « Créer » aurait fait naître son doublon. Un devis ne      │
+  // │ réserve rien : tout le catalogue vendable se propose (`full_catalog`), │
+  // │ comme au comptoir.                                                     │
+  // └────────────────────────────────────────────────────────────────────────┘
+  const chercherProduit = useMemo(
+    () =>
+      createProductSearchHandler(accessToken, organizationId, {
+        extraFilters: { full_catalog: true, is_sellable: true },
+        onResults: setProduits,
+      }),
+    [accessToken, organizationId]
+  );
 
   useEffect(() => {
-    if (open) charger();
-  }, [open, charger]);
+    if (!open) return;
+    let abandonne = false;
+    void getCustomers(accessToken, organizationId, { page_size: 200 }).then((c) => {
+      // `getCustomers` rend une réponse PAGINÉE, contrairement à ce que son type
+      // laisse croire au premier regard : sans `.results`, c'est l'enveloppe
+      // entière qui atterrit dans l'état, et la liste sort vide sans une erreur.
+      if (!abandonne) setClients(c.success && c.data ? c.data.results : []);
+    });
+    return () => {
+      abandonne = true;
+    };
+  }, [open, accessToken, organizationId]);
 
   const ajouter = (productId: string) => {
     const produit = produits.find((p) => p.id === productId);
@@ -282,14 +299,16 @@ export function QuotationDialog({
 
           <div className="space-y-1">
             <Label>Ajouter un article</Label>
-            <SearchableSelect
-              options={produits.map((p) => ({
-                value: p.id,
-                label: `${p.name}${p.sku ? ` (${p.sku})` : ""}`,
-              }))}
-              value={choixProduit}
+            <SearchableSelectAsync
+              value={choixProduit || undefined}
               onValueChange={ajouter}
+              onSearch={chercherProduit}
               placeholder="Rechercher un article…"
+              searchPlaceholder="Nom, SKU ou code-barres…"
+              emptyMessage="Aucun article ne correspond."
+              emptyAction={(terme) => (
+                <CreateProductSuggestion terme={terme} origine="devis" />
+              )}
             />
           </div>
 

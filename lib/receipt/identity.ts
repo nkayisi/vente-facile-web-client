@@ -61,3 +61,36 @@ export async function loadLogo(url: string | undefined): Promise<LoadedLogo | nu
     return null;
   }
 }
+
+let promesseLogoPlateforme: Promise<LoadedLogo | null> | null = null;
+let logoPlateformeCourant: LoadedLogo | null = null;
+
+/**
+ * Le logo de la plateforme s'il est déjà chargé, sans attendre.
+ *
+ * Pour `chromeDeSecours` : un reçu imprimé avant que le chrome soit prêt ne
+ * peut pas attendre une image, mais il peut reprendre celle qu'un écran a déjà
+ * fait charger.
+ */
+export function logoPlateformeCharge(): LoadedLogo | null {
+  return logoPlateformeCourant;
+}
+
+/**
+ * Le logo de Vente Facile, chargé UNE fois par onglet.
+ *
+ * Mis en cache au niveau du module : chaque écran qui imprime monte son propre
+ * `useReceiptChrome`, et redemander l'image à chacun ferait autant d'allers-
+ * retours pour le même fichier. Un échec n'est pas retenu : la prochaine
+ * demande réessaie.
+ */
+export function chargerLogoPlateforme(url: string): Promise<LoadedLogo | null> {
+  if (!promesseLogoPlateforme) {
+    promesseLogoPlateforme = loadLogo(url).then((logo) => {
+      if (logo) logoPlateformeCourant = logo;
+      else promesseLogoPlateforme = null;
+      return logo;
+    });
+  }
+  return promesseLogoPlateforme;
+}

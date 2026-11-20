@@ -18,6 +18,7 @@
  *   factures réellement soldées (`settled_invoices`), et le numéro (`RGL-` ou
  *   `AVC-`) vient du serveur.
  */
+import { chromeDeSecours } from "@/lib/receipt/chrome";
 import { useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { HandCoins, Loader2 } from "lucide-react";
@@ -180,7 +181,7 @@ export function CustomerPaymentDialog({
       job.present(
         buildPaymentReceipt({
           kind,
-          chrome: chrome ?? { org: { name: organization.name || "Vente Facile" } },
+          chrome: chrome ?? chromeDeSecours(organization.name),
           number: d.receipt_number,
           date: new Date().toLocaleString("fr-CD"),
           customerName: customer.name,

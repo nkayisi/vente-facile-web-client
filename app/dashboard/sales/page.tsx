@@ -32,6 +32,7 @@ import { createMoneyHelpers } from "@/lib/currency";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { getOrganizationCurrencies, OrganizationCurrency } from "@/actions/settings.actions";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { usePermissions } from "@/components/auth/permissions-provider";
 import {
   getSales,
   getSalesStats,
@@ -70,6 +71,9 @@ const QUICK_LINKS = [
   },
   {
     href: "/dashboard/sales/returns",
+    // La liste des retours exige `sale_returns.view`, que le caissier n'a
+    // pas : la vignette ne se montre qu'à qui pourra l'ouvrir.
+    permission: "sale_returns.view",
     label: "Retours",
     icon: PackageX,
     tint: "bg-rose-100 text-rose-600",
@@ -107,6 +111,7 @@ function formatOpenSince(openedAt?: string | null): string | null {
 export default function SalesPage() {
   const { data: session } = useSession();
   const { organization } = useOrganization();
+  const { hasPermission } = usePermissions();
   const router = useRouter();
 
   // State
@@ -415,7 +420,9 @@ export default function SalesPage() {
       {/* Raccourcis : rangée compacte, l'icône à gauche du libellé plutôt
           qu'empilée, pour rendre la hauteur à la liste des ventes. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {QUICK_LINKS.map(link => {
+        {QUICK_LINKS.filter(
+          (link) => !("permission" in link) || hasPermission(link.permission)
+        ).map(link => {
           const Icon = link.icon;
           const badge =
             link.href === "/dashboard/sales/pending-payments" && outstanding.count > 0

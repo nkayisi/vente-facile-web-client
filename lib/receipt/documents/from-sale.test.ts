@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Sale } from "@/actions/sales.actions";
 import { buildSaleReceipt } from "./sale";
-import { saleReceiptFromSale } from "./from-sale";
+import { echeanceImprimee, saleReceiptFromSale } from "./from-sale";
 
 const vente = {
   reference: "VT-20261114-B3U7-0002",
@@ -44,5 +44,16 @@ describe("saleReceiptFromSale : la monnaie rendue", () => {
 
   it("retombe sur la devise de la facture quand le serveur n'en dit rien", () => {
     expect(ligneMonnaie({ ...vente, change_amount: "5.00", change_currency: "" })).toContain("$");
+  });
+});
+
+describe("echeanceImprimee", () => {
+  it("lit la date par découpage, sans fuseau", () => {
+    expect(echeanceImprimee("2026-12-05")).toBe("05/12/2026");
+    expect(echeanceImprimee("2026-12-05T00:00:00Z")).toBe("05/12/2026");
+  });
+  it("rend undefined sans échéance, pour que la ligne disparaisse", () => {
+    expect(echeanceImprimee(null)).toBeUndefined();
+    expect(echeanceImprimee("")).toBeUndefined();
   });
 });

@@ -523,13 +523,26 @@ export async function deleteProduct(
   }
 }
 
+/**
+ * L'article d'un code scanné, sous la forme d'une carte du point de vente.
+ *
+ * Le serveur cherche le code-barres, celui d'une variante, puis le SKU ; il
+ * rend le stock de l'entrepôt de la caisse (`warehouse`). `full_catalog` : le
+ * comptoir vend tout le catalogue, comme sa grille.
+ *
+ * ⚠ Le code est ENCODÉ : un QR peut porter une adresse, donc des `&` et des
+ * `?` qui couperaient la requête.
+ */
 export async function searchProductByBarcode(
   accessToken: string,
   organizationId: string,
-  barcode: string
-): Promise<ApiResponse<Product>> {
+  barcode: string,
+  options: { warehouse?: string } = {}
+): Promise<ApiResponse<Product> & { introuvable?: boolean }> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/products/search-barcode/?barcode=${barcode}`, {
+    const params = new URLSearchParams({ barcode, full_catalog: "true", sellable: "true" });
+    if (options.warehouse) params.set("warehouse", options.warehouse);
+    const response = await axios.get(`${API_BASE_URL}/products/search-barcode/?${params.toString()}`, {
       headers: getHeaders(accessToken, organizationId),
     });
 
@@ -538,10 +551,16 @@ export async function searchProductByBarcode(
       data: response.data,
     };
   } catch (error: unknown) {
-    console.error("[Products] Search barcode error:", getErrorBody(error) || (error as Error)?.message);
+    const corps = getErrorBody(error);
+    // Un code inconnu n'est pas une panne : c'est la réponse attendue d'un
+    // article qui n'existe pas encore, et l'écran propose de le créer.
+    if (corps?.code === "produit_introuvable") {
+      return { success: false, introuvable: true, message: corps.detail };
+    }
+    console.error("[Products] Search barcode error:", corps || (error as Error)?.message);
     return {
       success: false,
-      message: getErrorBody(error)?.error || "Produit non trouvé",
+      message: corps?.detail || corps?.error || "La recherche du code a échoué",
     };
   }
 }

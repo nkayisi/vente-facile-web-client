@@ -16,8 +16,18 @@ import {
   getOrganizationSettings,
   type OrganizationSettings,
 } from "@/actions/settings.actions";
-import { buildChrome, logoUrlOf, paperWidthOf } from "@/lib/receipt/chrome";
-import { loadLogo, type LoadedLogo, type ReceiptChrome } from "@/lib/receipt/identity";
+import {
+  buildChrome,
+  logoUrlOf,
+  paperWidthOf,
+  URL_LOGO_PLATEFORME,
+} from "@/lib/receipt/chrome";
+import {
+  chargerLogoPlateforme,
+  loadLogo,
+  type LoadedLogo,
+  type ReceiptChrome,
+} from "@/lib/receipt/identity";
 import type { PaperWidth } from "@/lib/receipt/tokens";
 
 export interface ReceiptChromeState {
@@ -52,6 +62,7 @@ export function useReceiptChrome(
    */
   const [settledFor, setSettledFor] = useState<string | null>(null);
   const [logo, setLogo] = useState<LoadedLogo | null>(null);
+  const [logoPlateforme, setLogoPlateforme] = useState<LoadedLogo | null>(null);
 
   /**
    * Ce qu'il y a à demander. `null` = rien, donc rien à attendre.
@@ -100,15 +111,25 @@ export function useReceiptChrome(
     };
   }, [logoUrl]);
 
+  useEffect(() => {
+    let cancelled = false;
+    chargerLogoPlateforme(URL_LOGO_PLATEFORME).then((loaded) => {
+      if (!cancelled) setLogoPlateforme(loaded);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return useMemo(
     () => ({
       chrome:
         organization && settingsSettled
-          ? buildChrome({ organization, settings, register, logo })
+          ? buildChrome({ organization, settings, register, logo, logoPlateforme })
           : null,
       paperWidth: paperWidthOf(settings),
       settings,
     }),
-    [organization, settings, settingsSettled, register, logo]
+    [organization, settings, settingsSettled, register, logo, logoPlateforme]
   );
 }

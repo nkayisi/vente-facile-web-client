@@ -25,6 +25,8 @@ import { formatPrice } from "@/lib/format";
 import { StatValue } from "@/components/shared/StatValue";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { useOrganization } from "@/components/auth/organization-checker";
+import { usePermissions } from "@/components/auth/permissions-provider";
+import { accord } from "@/lib/accord";
 import {
   getCustomers,
   getSuppliers,
@@ -42,6 +44,18 @@ export default function ContactsPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │ UNE MOITIÉ SANS DROIT N'EST PAS UNE MOITIÉ VIDE.                     │
+  // │                                                                      │
+  // │ La section s'ouvre à qui voit les clients OU les fournisseurs. Le    │
+  // │ caissier n'a que les clients : le serveur lui refusait la liste des  │
+  // │ fournisseurs, et l'écran affichait « 0 Fournisseurs » et « Aucun     │
+  // │ fournisseur » - un chiffre faux, là où il n'a simplement pas le droit │
+  // │ de regarder. Une moitié sans droit n'est ni demandée, ni montrée.    │
+  // └──────────────────────────────────────────────────────────────────────┘
+  const { hasPermission, isLoading: permissionsEnCours } = usePermissions();
+  const voitClients = hasPermission("customers.view");
+  const voitFournisseurs = hasPermission("suppliers.view");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const { currency: defaultCurrency } = useCurrency();
@@ -53,7 +67,7 @@ export default function ContactsPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!session?.accessToken) return;
+      if (!session?.accessToken || permissionsEnCours) return;
 
       try {
         // L'organisation vient du contexte d'`OrganizationChecker`,
@@ -63,23 +77,24 @@ export default function ContactsPage() {
         if (organization) {
           const org = organization;
 
+          const rien = Promise.resolve(null);
           const [customersResult, suppliersResult, statsResult, debtResult] = await Promise.all([
-            getCustomers(session.accessToken, org.id, { is_active: true }),
-            getSuppliers(session.accessToken, org.id, { is_active: true }),
-            getCustomerStats(session.accessToken, org.id),
-            getDebtSummary(session.accessToken, org.id),
+            voitClients ? getCustomers(session.accessToken, org.id, { is_active: true }) : rien,
+            voitFournisseurs ? getSuppliers(session.accessToken, org.id, { is_active: true }) : rien,
+            voitClients ? getCustomerStats(session.accessToken, org.id) : rien,
+            voitClients ? getDebtSummary(session.accessToken, org.id) : rien,
           ]);
 
-          if (customersResult.success && customersResult.data) {
+          if (customersResult?.success && customersResult.data) {
             setCustomers(customersResult.data.results || []);
           }
-          if (suppliersResult.success && suppliersResult.data) {
+          if (suppliersResult?.success && suppliersResult.data) {
             setSuppliers(suppliersResult.data.results || []);
           }
-          if (statsResult.success && statsResult.data) {
+          if (statsResult?.success && statsResult.data) {
             setStats(statsResult.data);
           }
-          if (debtResult.success && debtResult.data) {
+          if (debtResult?.success && debtResult.data) {
             setDebtSummary(debtResult.data);
           }
         }
@@ -92,7 +107,7 @@ export default function ContactsPage() {
     };
 
     fetchData();
-  }, [session?.accessToken, organization?.id]);
+  }, [session?.accessToken, organization?.id, permissionsEnCours, voitClients, voitFournisseurs]);
 
   if (isLoading) {
     return (
@@ -116,25 +131,34 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => router.push("/dashboard/contacts/suppliers")}
-          >
-            <Truck className="h-4 w-4 mr-2" />
-            Fournisseurs
-          </Button>
-          <Button
-            className="bg-orange-500 hover:bg-orange-600"
-            onClick={() => router.push("/dashboard/contacts/customers")}
-          >
-            <UserPlus className="h-4 w-4 mr-2" />
-            Clients
-          </Button>
+          {voitFournisseurs && (
+            <Button
+              variant="outline"
+              onClick={() => router.push("/dashboard/contacts/suppliers")}
+            >
+              <Truck className="h-4 w-4 mr-2" />
+              Fournisseurs
+            </Button>
+          )}
+          {voitClients && (
+            <Button
+              className="bg-orange-500 hover:bg-orange-600"
+              onClick={() => router.push("/dashboard/contacts/customers")}
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              Clients
+            </Button>
+          )}
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div
+        className={`grid grid-cols-2 gap-4 ${
+          voitClients && voitFournisseurs ? "lg:grid-cols-4" : "lg:grid-cols-3"
+        }`}
+      >
+        {voitClients && (
         <Card className="p-0">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -148,7 +172,9 @@ export default function ContactsPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
+        {voitFournisseurs && (
         <Card className="p-0">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -162,7 +188,9 @@ export default function ContactsPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
+        {voitClients && (
         <Card className="p-0">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -176,7 +204,9 @@ export default function ContactsPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
+        {voitClients && (
         <Card className="p-0">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -192,10 +222,16 @@ export default function ContactsPage() {
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div
+        className={`grid grid-cols-1 gap-4 ${
+          voitClients && voitFournisseurs ? "sm:grid-cols-2" : ""
+        }`}
+      >
+        {voitClients && (
         <Link href="/dashboard/contacts/customers">
           <Card className="p-0 hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-blue-500">
             <CardContent className="p-5 flex items-center justify-between">
@@ -214,7 +250,9 @@ export default function ContactsPage() {
             </CardContent>
           </Card>
         </Link>
+        )}
 
+        {voitFournisseurs && (
         <Link href="/dashboard/contacts/suppliers">
           <Card className="p-0 hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-purple-500">
             <CardContent className="p-5 flex items-center justify-between">
@@ -233,11 +271,13 @@ export default function ContactsPage() {
             </CardContent>
           </Card>
         </Link>
+        )}
       </div>
 
       {/* Recent Contacts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Recent Customers */}
+        {voitClients && (
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -296,6 +336,7 @@ export default function ContactsPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Principaux débiteurs. `debt-summary` existait côté API depuis la
             refonte de la dette sans qu'aucun écran ne l'affiche : le marchand
@@ -308,15 +349,20 @@ export default function ContactsPage() {
                   <CreditCard className="h-4 w-4 text-red-500" />
                   Principaux débiteurs
                 </CardTitle>
-                <Link
-                  href="/dashboard/reports/receivables"
-                  className="text-xs font-medium text-orange-600 hover:underline"
-                >
-                  Voir les créances
-                </Link>
+                {/* La balance âgée est un RAPPORT : sans `reports.view`, le lien
+                    menait le caissier à « pas la permission ». */}
+                {hasPermission("reports.view") && (
+                  <Link
+                    href="/dashboard/reports/receivables"
+                    className="text-xs font-medium text-orange-600 hover:underline"
+                  >
+                    Voir les créances
+                  </Link>
+                )}
               </div>
               <p className="text-xs text-gray-500">
-                {debtSummary.debtors_count} client{debtSummary.debtors_count > 1 ? "s" : ""} doivent{" "}
+                {debtSummary.debtors_count} client{debtSummary.debtors_count > 1 ? "s" : ""}{" "}
+                {accord(debtSummary.debtors_count, "doit", "doivent")}{" "}
                 {formatPrice(debtSummary.total_receivable)}
                 {parseFloat(debtSummary.total_advances) > 0 && (
                   <> · {formatPrice(debtSummary.total_advances)} d&apos;avances reçues</>
@@ -354,6 +400,7 @@ export default function ContactsPage() {
         )}
 
         {/* Recent Suppliers */}
+        {voitFournisseurs && (
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -409,6 +456,7 @@ export default function ContactsPage() {
             )}
           </CardContent>
         </Card>
+        )}
       </div>
     </div>
   );

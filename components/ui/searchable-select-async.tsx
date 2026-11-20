@@ -59,6 +59,11 @@ interface SearchableSelectAsyncProps {
    * └──────────────────────────────────────────────────────────────────┘
    */
   resetKey?: string
+  /**
+   * Ce que la liste propose quand une recherche ne trouve rien : typiquement
+   * « Créer cet article ». Reçoit le terme tapé ; rien n'est rendu sans terme.
+   */
+  emptyAction?: (terme: string) => React.ReactNode
 }
 
 export function SearchableSelectAsync({
@@ -74,6 +79,7 @@ export function SearchableSelectAsync({
   disabled = false,
   debounceMs = 300,
   resetKey,
+  emptyAction,
 }: SearchableSelectAsyncProps) {
   const [open, setOpen] = React.useState(false)
   const [options, setOptions] = React.useState<AsyncSelectOption[]>(initialOptions)
@@ -192,7 +198,12 @@ export function SearchableSelectAsync({
               </div>
             ) : (
               <>
-                <CommandEmpty>{emptyMessage}</CommandEmpty>
+                <CommandEmpty>
+                  {emptyMessage}
+                  {emptyAction && searchQuery.trim() ? (
+                    <div className="mt-3 flex justify-center">{emptyAction(searchQuery)}</div>
+                  ) : null}
+                </CommandEmpty>
                 <CommandGroup>
                   {options.map((option) => (
                     <CommandItem

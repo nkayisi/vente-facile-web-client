@@ -66,6 +66,7 @@ import { blendedUnitCost } from "@/lib/pricing";
 import { formatPrice, formatDateTime, formatDecimal } from "@/lib/format";
 import { getProduct, Product } from "@/actions/products.actions";
 import { createProductSearchHandler } from "@/lib/product-search";
+import { CreateProductSuggestion } from "@/components/products/create-product-suggestion";
 import {
   libelleCanal,
   motCanal,
@@ -1040,6 +1041,9 @@ export default function MovementsPage() {
                 onValueChange={value => setFormData({ ...formData, product: value })}
                 placeholder="Sélectionner un produit"
                 searchPlaceholder="Rechercher un produit..."
+                emptyAction={(terme) => (
+                  <CreateProductSuggestion terme={terme} origine="mouvement" />
+                )}
               />
               </div>
 

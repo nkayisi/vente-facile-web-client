@@ -155,6 +155,12 @@ export interface CashMovement {
   created_by: string;
   created_by_name: string;
   created_at: string;
+  /**
+   * La caisse dont les billets sont sortis. Portée par les seuls mouvements
+   * d'une fiche de dépense (`ExpenseCashMovementSerializer`), vide pour un
+   * paiement qui ne touche à aucun tiroir.
+   */
+  register_name?: string | null;
 }
 
 export interface CreateCashMovementData {

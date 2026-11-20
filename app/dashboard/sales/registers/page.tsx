@@ -50,6 +50,9 @@ import {
   CreateRegisterData,
 } from "@/actions/sales.actions";
 import { usePermissions } from "@/components/auth/permissions-provider";
+import { getOrganizationCurrencies, type OrganizationCurrency } from "@/actions/settings.actions";
+import { createMoneyHelpers } from "@/lib/currency";
+import { lireNombre, phraseDeRefus } from "@/lib/stock/nombres";
 import { useCurrency } from "@/components/providers/currency-provider";
 import {
   buildCashSessionReceipt,
@@ -57,6 +60,8 @@ import {
   type CashSessionReceiptData,
 } from "@/lib/receipt";
 import { chromeDeLaCaisse } from "@/lib/receipt/chrome";
+import { formatMoney } from "@vente-facile/core/receipt";
+import { chargeDuJeton } from "@/lib/auth/charge-du-jeton";
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import { useOrganization } from "@/components/auth/organization-checker";
@@ -87,6 +92,9 @@ function formatOpenSince(openedAt?: string | null): string | null {
 
 export default function RegistersPage() {
   const { data: session } = useSession();
+  // `session.user.id` n'est pas porté par la session NextAuth : l'identifiant
+  // du compte se lit dans le jeton d'accès, comme le font les filtres.
+  const monId = chargeDuJeton(session?.accessToken)?.user_id;
   const router = useRouter();
   const { hasPermission } = usePermissions();
   const canManageRegisters = hasPermission("sales.manage_registers");
@@ -96,6 +104,7 @@ export default function RegistersPage() {
   const { organization } = useOrganization();
   const entrepots = useEntrepots();
   const { currency: defaultCurrency } = useCurrency();
+
   const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
   const printer = useReceiptPrinter();
   const [registers, setRegisters] = useState<Register[]>([]);
@@ -112,6 +121,14 @@ export default function RegistersPage() {
   // ouverte sur Caisse 2 » nomme la caisse à fermer, et un toast de quatre
   // secondes ne laisse pas le temps de le lire.
   const [refusOuverture, setRefusOuverture] = useState<string | null>(null);
+  // Fonds saisi à l'ouverture, PAR DEVISE. Vide = reprise de la dernière
+  // clôture, que le serveur applique (`fonds_herite`) et que la caisse annonce.
+  const [fondsSaisis, setFondsSaisis] = useState<Record<string, string>>({});
+  const [orgCurrencies, setOrgCurrencies] = useState<OrganizationCurrency[]>([]);
+  const money = useMemo(
+    () => createMoneyHelpers(orgCurrencies, defaultCurrency),
+    [orgCurrencies, defaultCurrency]
+  );
   const [showCloseSessionDialog, setShowCloseSessionDialog] = useState(false);
   const [selectedRegister, setSelectedRegister] = useState<Register | null>(null);
   const [selectedSession, setSelectedSession] = useState<RegisterSession | null>(null);
@@ -134,6 +151,17 @@ export default function RegistersPage() {
   });
 
   // Fetch data
+  useEffect(() => {
+    if (!session?.accessToken || !organization?.id) return;
+    let annule = false;
+    getOrganizationCurrencies(session.accessToken, organization.id).then((r) => {
+      if (!annule && r.success && r.data) setOrgCurrencies(r.data);
+    });
+    return () => {
+      annule = true;
+    };
+  }, [session?.accessToken, organization?.id]);
+
   useEffect(() => {
     const fetchData = async () => {
       if (!session?.accessToken) return;
@@ -263,12 +291,25 @@ export default function RegistersPage() {
     e.preventDefault();
     if (!session?.accessToken || !organization?.id || !selectedRegister) return;
 
+    // Une saisie illisible ou négative RETIENT l'ouverture : l'ignorer ferait
+    // reprendre la dernière clôture à la place du montant voulu, en silence.
+    const opening_balances: { currency: string; amount: string }[] = [];
+    for (const [currency, saisie] of Object.entries(fondsSaisis)) {
+      const lu = lireNombre(saisie);
+      if (!lu.ok) {
+        setRefusOuverture(`Fonds en ${currency} : ${phraseDeRefus(lu.motif)}`);
+        return;
+      }
+      if (lu.valeur !== null) opening_balances.push({ currency, amount: lu.valeur.toFixed(2) });
+    }
+
     setIsSubmitting(true);
     setRefusOuverture(null);
 
     try {
       const result = await openSession(session.accessToken, organization.id, {
         register: selectedRegister.id,
+        ...(opening_balances.length ? { opening_balances } : {}),
       });
 
       if (result.success) {
@@ -301,21 +342,47 @@ export default function RegistersPage() {
     }
   };
 
-  // Solde attendu = solde d'ouverture + total ventes cash de la session.
-  // On utilise `sales_total` comme proxy si le backend ne renvoie pas
-  // encore `expected_balance` (champ calculé à la fermeture).
-  const closeExpectedBalance = useMemo(() => {
-    if (!selectedSession) return 0;
-    const opening = parseFloat(selectedSession.opening_balance || "0") || 0;
-    const salesCash = parseFloat(selectedSession.sales_total || "0") || 0;
-    return opening + salesCash;
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │ L'ATTENDU VIENT DU SERVEUR, PAR DEVISE : C'EST CELUI DE LA CLÔTURE.  │
+  // │                                                                      │
+  // │ Il était refait ici : fonds + total des ventes, en devise principale.│
+  // │ Une vente réglée en francs entrait comme des dollars, la monnaie     │
+  // │ rendue et les dépenses n'en sortaient pas : « 2 347,4 $ » attendus   │
+  // │ pour un tiroir de 1 760,40 $ et 1 322 501 FC (vu le 2026-11-20).     │
+  // └──────────────────────────────────────────────────────────────────────┘
+  const closeAttendus = useMemo(() => {
+    const m = new Map<string, { opening: number; cashIn: number; cashOut: number; expected: number }>();
+    for (const e of selectedSession?.expected_balances ?? []) {
+      m.set(e.currency, {
+        opening: parseFloat(e.opening) || 0,
+        cashIn: parseFloat(e.cash_in) || 0,
+        cashOut: parseFloat(e.cash_out) || 0,
+        expected: parseFloat(e.expected) || 0,
+      });
+    }
+    return m;
   }, [selectedSession]);
 
   // Devises présentes dans le tiroir de la session (multi-devise RDC).
   const closeCurrencies = useMemo(
-    () => (selectedSession?.currency_balances || []).map(c => c.currency),
-    [selectedSession],
+    () => [
+      ...new Set([
+        ...closeAttendus.keys(),
+        ...(selectedSession?.currency_balances || []).map(c => c.currency),
+      ]),
+    ],
+    [selectedSession, closeAttendus],
   );
+
+  const closeExpectedBalance = useMemo(() => {
+    if (!selectedSession) return 0;
+    const seule = closeCurrencies.length === 1 ? closeAttendus.get(closeCurrencies[0]) : undefined;
+    if (seule) return seule.expected;
+    // Repli d'un serveur antérieur, qui n'exposait pas l'attendu.
+    const opening = parseFloat(selectedSession.opening_balance || "0") || 0;
+    const salesCash = parseFloat(selectedSession.sales_total || "0") || 0;
+    return opening + salesCash;
+  }, [selectedSession, closeAttendus, closeCurrencies]);
   const isMultiCurrencyClose = closeCurrencies.length > 1;
 
   const closeCountedNum = useMemo(() => {
@@ -423,7 +490,14 @@ export default function RegistersPage() {
             openedByName: closed.opened_by_name,
             closedByName: closed.closed_by_name || undefined,
             salesCount: closed.sales_count,
-            paymentsSummary: closed.payments_summary ?? [],
+            // Le formateur de PAPIER, comme le Z du terminal : « 1 700 000 FC »,
+            // jamais un nombre nu, et dans la devise du billet reçu.
+            paymentsSummary: (closed.payments_summary ?? []).map((p) => ({
+              method: p.method,
+              total: p.currency
+                ? formatMoney(parseFloat(p.total) || 0, p.currency)
+                : p.total,
+            })),
             balances,
           };
 
@@ -607,6 +681,14 @@ export default function RegistersPage() {
 
             const openedBy =
               activeSession?.opened_by_name || register.current_session?.opened_by;
+            // ┌────────────────────────────────────────────────────────────┐
+            // │ ON NE VEND QUE DANS SA SESSION, TOUS RÔLES (lot E1).       │
+            // │ « Continuer » sur la session d'un collègue menait au       │
+            // │ comptoir, qui ne la retrouvait pas et renvoyait ici : un   │
+            // │ bouton qui ramène d'où l'on vient. La CLÔTURE, elle, reste │
+            // │ ouverte à tout membre de l'entrepôt.                       │
+            // └────────────────────────────────────────────────────────────┘
+            const estLaMienne = !!activeSession && activeSession.opened_by === monId;
             const openSince = formatOpenSince(
               activeSession?.opened_at || register.current_session?.opened_at
             );
@@ -743,13 +825,15 @@ export default function RegistersPage() {
                           <Square className="h-4 w-4 mr-2" />
                           Fermer
                         </Button>
-                        <Button
-                          size="sm"
-                          className="flex-1 bg-orange-500 hover:bg-orange-600"
-                          onClick={() => router.push("/dashboard/sales/pos")}
-                        >
-                          Continuer
-                        </Button>
+                        {estLaMienne && (
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-orange-500 hover:bg-orange-600"
+                            onClick={() => router.push("/dashboard/sales/pos")}
+                          >
+                            Continuer
+                          </Button>
+                        )}
                       </>
                     ) : (
                       <Button
@@ -758,6 +842,7 @@ export default function RegistersPage() {
                         onClick={() => {
                           setSelectedRegister(register);
                           setRefusOuverture(null);
+                          setFondsSaisis({});
                           setShowOpenSessionDialog(true);
                         }}
                         disabled={!register.is_active}
@@ -890,10 +975,75 @@ export default function RegistersPage() {
           </DialogHeader>
 
           <form onSubmit={handleOpenSession} className="space-y-4">
-            <p className="text-sm text-gray-600">
-              La session démarre avec un solde d&apos;ouverture à zéro. Vous serez redirigé vers le point de vente.
-              Une seule session ouverte par personne : on ne vend que dans la sienne.
-            </p>
+            {(() => {
+              // ┌──────────────────────────────────────────────────────────┐
+              // │ LE FONDS ANNONCÉ EST CELUI QUE L'OUVERTURE APPLIQUERA.   │
+              // │ Ce texte disait « solde d'ouverture à zéro » pendant que │
+              // │ le serveur reprenait 1 772,40 $ de la dernière clôture : │
+              // │ le caissier comptait son tiroir contre un chiffre faux.  │
+              // └──────────────────────────────────────────────────────────┘
+              const herite = new Map(
+                (selectedRegister?.inherited_opening_balances ?? []).map((l) => [
+                  l.currency,
+                  parseFloat(String(l.amount)) || 0,
+                ])
+              );
+              const principale = defaultCurrency?.code || "CDF";
+              const devises = [
+                ...new Set([
+                  principale,
+                  ...herite.keys(),
+                  ...orgCurrencies.filter((c) => c.is_active).map((c) => c.currency_code),
+                ]),
+              ];
+              return (
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm font-medium">Fonds de caisse</Label>
+                    <p className="text-xs text-gray-500">
+                      Laissez vide pour reprendre ce qui a été compté à la dernière clôture.
+                    </p>
+                  </div>
+                  {devises.map((code) => {
+                    const saisie = fondsSaisis[code] ?? "";
+                    const lu = lireNombre(saisie);
+                    const repris = herite.get(code);
+                    return (
+                      <div key={code} className="grid grid-cols-[3.5rem_1fr] items-start gap-2">
+                        <span className="pt-2 text-sm font-semibold text-gray-700">{code}</span>
+                        <div className="space-y-1">
+                          <Input
+                            inputMode="decimal"
+                            aria-label={`Fonds de caisse en ${code}`}
+                            value={saisie}
+                            placeholder={money.money(repris ?? 0, code)}
+                            onChange={(e) =>
+                              setFondsSaisis((prev) => ({ ...prev, [code]: e.target.value }))
+                            }
+                            aria-invalid={!lu.ok}
+                          />
+                          {!lu.ok ? (
+                            <p className="text-xs text-destructive">{phraseDeRefus(lu.motif)}</p>
+                          ) : (
+                            <p className="text-xs text-gray-500">
+                              {saisie.trim() !== ""
+                                ? "Ce montant remplace la reprise."
+                                : repris !== undefined
+                                  ? `Repris de la dernière clôture : ${money.money(repris, code)}`
+                                  : "Aucune clôture précédente : le tiroir part de zéro."}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p className="text-sm text-gray-600">
+                    Vous serez redirigé vers le point de vente. Une seule session ouverte par
+                    personne : on ne vend que dans la sienne.
+                  </p>
+                </div>
+              );
+            })()}
             {refusOuverture && (
               <p
                 role="alert"
@@ -940,23 +1090,33 @@ export default function RegistersPage() {
             {selectedSession && (
               <div className="p-3 bg-gray-50 rounded-lg space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Solde d&apos;ouverture</span>
-                  <span className="font-medium">
-                    {formatPrice(selectedSession.opening_balance)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
                   <span className="text-gray-500">Ventes</span>
                   <span className="font-medium">
                     {selectedSession.sales_count} ({formatPrice(selectedSession.sales_total)})
                   </span>
                 </div>
-                <div className="flex justify-between border-t pt-2">
-                  <span className="text-gray-600 font-medium">Solde attendu</span>
-                  <span className="font-semibold">
-                    {formatPrice(closeExpectedBalance.toFixed(2))}
-                  </span>
-                </div>
+                {closeAttendus.size > 0 ? (
+                  // Une ligne par devise : on compte des liasses distinctes.
+                  [...closeAttendus.entries()].map(([code, a]) => (
+                    <div key={code} className="space-y-0.5 border-t pt-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Attendu en {code}</span>
+                        <span className="font-semibold">{money.money(a.expected, code)}</span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Fonds {money.money(a.opening, code)} · espèces reçues{" "}
+                        {money.money(a.cashIn, code)} · sorties {money.money(a.cashOut, code)}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex justify-between border-t pt-2">
+                    <span className="text-gray-600 font-medium">Solde attendu</span>
+                    <span className="font-semibold">
+                      {formatPrice(closeExpectedBalance.toFixed(2))}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -964,24 +1124,50 @@ export default function RegistersPage() {
               <div className="space-y-2">
                 <Label>Montant réellement compté, par devise (optionnel)</Label>
                 <p className="text-xs text-gray-500">
-                  Le tiroir contient plusieurs devises. Comptez chacune séparément -
-                  le solde attendu est calculé par devise à la fermeture.
+                  Le tiroir contient plusieurs devises : comptez chacune séparément.
+                  Une devise laissée vide est clôturée à son attendu.
                 </p>
-                {closeCurrencies.map((code) => (
-                  <div key={code} className="flex items-center gap-2">
-                    <span className="w-14 shrink-0 text-sm font-semibold">{code}</span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="Laisser vide pour utiliser l'attendu"
-                      value={closeCountedByCurrency[code] ?? ""}
-                      onChange={(e) =>
-                        setCloseCountedByCurrency((prev) => ({ ...prev, [code]: e.target.value }))
-                      }
-                    />
-                  </div>
-                ))}
+                {closeCurrencies.map((code) => {
+                  const attendu = closeAttendus.get(code)?.expected;
+                  const saisie = closeCountedByCurrency[code] ?? "";
+                  const compte = saisie === "" ? null : parseFloat(saisie);
+                  const ecart =
+                    attendu !== undefined && compte !== null && Number.isFinite(compte)
+                      ? compte - attendu
+                      : null;
+                  return (
+                    <div key={code} className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="w-14 shrink-0 text-sm font-semibold">{code}</span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          aria-label={`Montant compté en ${code}`}
+                          placeholder={
+                            attendu !== undefined
+                              ? `Attendu : ${money.money(attendu, code)}`
+                              : "Laisser vide pour utiliser l'attendu"
+                          }
+                          value={saisie}
+                          onChange={(e) =>
+                            setCloseCountedByCurrency((prev) => ({ ...prev, [code]: e.target.value }))
+                          }
+                        />
+                      </div>
+                      {ecart !== null && Math.abs(ecart) > 0.005 && (
+                        <p
+                          className={`pl-16 text-xs font-medium ${
+                            ecart < 0 ? "text-red-600" : "text-amber-600"
+                          }`}
+                        >
+                          Écart : {ecart > 0 ? "+" : ""}
+                          {money.money(ecart, code)}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="space-y-2">

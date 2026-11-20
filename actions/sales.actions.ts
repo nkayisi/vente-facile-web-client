@@ -41,6 +41,8 @@ export type ReturnType = "full" | "partial" | "exchange";
 export type QuotationStatus = "draft" | "sent" | "accepted" | "rejected" | "expired" | "converted";
 
 export interface Register {
+  /** Fonds que la prochaine ouverture reprendra si rien n'est saisi (dernière clôture). */
+  inherited_opening_balances?: CurrencyAmount[];
   id: string;
   name: string;
   code: string;
@@ -86,12 +88,21 @@ export interface RegisterSession {
   difference: string | null;
   /** Soldes de caisse ventilés par devise (multi-devise RDC). */
   currency_balances?: RegisterSessionCurrencyBalance[];
+  /** Ce que le tiroir d'une session OUVERTE doit contenir, par devise (calcul de la clôture). */
+  expected_balances?: {
+    currency: string;
+    opening: string;
+    cash_in: string;
+    cash_out: string;
+    expected: string;
+  }[];
   opened_at: string;
   closed_at: string | null;
   sales_count: number;
   sales_total: string;
   notes: string;
-  payments_summary?: { method: string; total: string }[];
+  /** Ce qui est entré, par moyen ET par devise du billet (montant remis). */
+  payments_summary?: { method: string; currency?: string; total: string }[];
 }
 
 export interface PaymentMethod {

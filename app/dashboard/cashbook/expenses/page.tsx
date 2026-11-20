@@ -18,6 +18,7 @@ import {
   ArrowRightLeft,
   ClipboardList,
   Tag,
+  Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -31,11 +32,11 @@ import {
 } from "@/actions/settings.actions";
 import {
   getExpenses,
+  getExpense,
   createExpense,
   submitExpense,
   approveExpense,
   rejectExpense,
-  payExpense,
   cancelExpense,
   getExpenseCategories,
   getExpenseStats,
@@ -44,12 +45,20 @@ import {
   ExpenseStats,
   CreateExpenseData,
 } from "@/actions/cashbook.actions";
-import { buildExpenseReceipt, type ExpenseReceiptData } from "@/lib/receipt";
+import { buildExpenseReceipt, buildExpenseRequest } from "@/lib/receipt";
+import {
+  demandeDeDepense,
+  papierDisponible,
+  recuDeDepense,
+} from "@/lib/cashbook/documents-depense";
 import { StatStrip, StatStripItem } from "@/components/shared/StatStrip";
 import { MultiCurrencyTotal } from "@/components/shared/MultiCurrencyTotal";
 import { useReceiptChrome } from "@/hooks/use-receipt-chrome";
 import { useReceiptPrinter } from "@/hooks/use-receipt-printer";
 import { usePermissions } from "@/components/auth/permissions-provider";
+import { ExpensePayDialog } from "@/components/cashbook/expense-pay-dialog";
+import { gestesPossibles } from "@/lib/cashbook/gestes-depense";
+import { chargeDuJeton } from "@/lib/auth/charge-du-jeton";
 import { PermissionGate } from "@/components/auth/permission-gate";
 import { CurrencyAmountInput } from "@/components/shared/CurrencyAmountInput";
 
@@ -118,7 +127,7 @@ const AUCUN_DEPOT = "__aucun__";
 
 export default function ExpensesPage() {
   const { data: session } = useSession();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, isRole } = usePermissions();
   const { currency: defaultCurrency } = useCurrency();
   const { organization } = useOrganization();
   const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
@@ -201,6 +210,8 @@ export default function ExpensesPage() {
 
   // Cancel dialog
   const [cancelTarget, setCancelTarget] = useState<Expense | null>(null);
+  /** La dépense à payer, et si c'est un paiement DIRECT (qui vaut approbation). */
+  const [payTarget, setPayTarget] = useState<{ expense: Expense; direct: boolean } | null>(null);
   const [cancelReason, setCancelReason] = useState("");
 
   // Devise de la dépense en cours de saisie (repli : devise principale).
@@ -228,6 +239,21 @@ export default function ExpensesPage() {
   // pas. Pour lui, ses entrepôts assignés suffisent - sans drapeau « principal »,
   // donc un seul dépôt se propose d'emblée, plusieurs se choisissent.
   const voitLesEntrepots = hasPermission("warehouses.view");
+
+  /**
+   * Les droits sur les dépenses, lus comme le serveur les lit. L'auteur compte :
+   * on n'approuve jamais sa propre dépense (sauf le propriétaire), et un
+   * caissier ne paie que la sienne. L'identifiant vient du jeton, la session
+   * NextAuth ne le portant pas.
+   */
+  const moi = chargeDuJeton(session?.accessToken)?.user_id;
+  const droitsDepense = {
+    peutCreer: hasPermission("cashbook.create_expense"),
+    peutApprouver: hasPermission("cashbook.approve_expense"),
+    peutPayer: hasPermission("cashbook.pay_expense"),
+    proprietaire: isRole("owner"),
+    moi: typeof moi === "string" ? moi : null,
+  };
   // ⚠ L'ACTION, PAS LA LECTURE : une dépense se rattache à un entrepôt où l'on
   // agit, affecté et ACTIF. Un membre qui consulte tous les entrepôts lit leurs
   // dépenses, mais n'en saisit que chez lui ; et un entrepôt désactivé ne
@@ -363,25 +389,12 @@ export default function ExpensesPage() {
         warehouse: createForm.warehouse || undefined,
       });
       if (res.success) {
-        // Une sortie de caisse sans pièce justificative n'était opposable à
-        // personne : le bénéficiaire repart désormais avec un reçu signable.
+        // La DEMANDE, pas le reçu : aucun argent n'est encore sorti. Le reçu
+        // s'imprime au paiement, quand la sortie a eu lieu.
         const created = res.data;
         if (chrome && created) {
-          const receipt: ExpenseReceiptData = {
-            kind: "expense",
-            chrome,
-            number: created.reference,
-            date: new Date(created.expense_date).toLocaleDateString("fr-CD"),
-            cashierName: session.user?.name || undefined,
-            category: created.category_name || undefined,
-            payee: created.beneficiary || undefined,
-            paymentMethod: created.payment_method_name || undefined,
-            amount: parseFloat(created.amount) || 0,
-            currency: created.currency,
-            description: created.description || undefined,
-          };
-          job.present(buildExpenseReceipt(receipt), {
-            filename: `depense-${created.reference}.pdf`,
+          job.present(buildExpenseRequest(demandeDeDepense(created, chrome)), {
+            filename: `demande-depense-${created.reference}.pdf`,
             paperWidth,
             successMessage: "Dépense enregistrée",
           });
@@ -414,22 +427,48 @@ export default function ExpensesPage() {
 
 
 
-  async function handleAction(
-    action: "submit" | "approve" | "pay",
-    expense: Expense
-  ) {
+
+  /**
+   * Réimprime le papier d'une dépense : son reçu une fois payée, sa demande
+   * avant. Toujours un DUPLICATA : l'original est sorti au geste.
+   */
+  async function reimprimer(expense: Expense) {
+    if (!session?.accessToken || !organization || !chrome) return;
+    const papier = papierDisponible(expense.status);
+    if (!papier) return;
+    // Ouvert sur le geste, avant l'appel réseau : sinon le navigateur bloque
+    // la fenêtre.
+    const job = printer.begin();
+    // La fiche, et non la ligne de liste : elle seule porte la sortie
+    // d'argent, donc le payeur, l'heure du paiement et la caisse.
+    const res = await getExpense(session.accessToken, organization.id, expense.id);
+    if (!res.success || !res.data) {
+      job.abort();
+      toast.error(res.error || "La dépense n'a pas pu être relue.");
+      return;
+    }
+    const blocs =
+      papier === "recu"
+        ? buildExpenseReceipt(recuDeDepense(res.data, chrome, { duplicata: true }))
+        : buildExpenseRequest(demandeDeDepense(res.data, chrome, { duplicata: true }));
+    job.present(blocs, {
+      filename: `${papier === "recu" ? "depense" : "demande-depense"}-${res.data.reference}.pdf`,
+      paperWidth,
+      successMessage: papier === "recu" ? "Reçu réimprimé" : "Demande réimprimée",
+    });
+  }
+  async function handleAction(action: "submit" | "approve", expense: Expense) {
     if (!session?.accessToken || !organization) return;
     const token = session.accessToken;
     const orgId = organization.id;
     const actions = {
       submit: () => submitExpense(token, orgId, expense.id),
       approve: () => approveExpense(token, orgId, expense.id),
-      pay: () => payExpense(token, orgId, expense.id),
     };
     const labels = {
       submit: "Dépense soumise",
-      approve: "Dépense approuvée",
-      pay: "Dépense marquée comme payée",
+      // L'argent ne sort pas ici : il sort au paiement, de la caisse du payeur.
+      approve: "Dépense approuvée. Elle peut maintenant être payée.",
     };
 
     try {
@@ -692,6 +731,7 @@ export default function ExpensesPage() {
               ) : (
                 expenses.map((expense) => {
                   const statusCfg = STATUS_CONFIG[expense.status] || STATUS_CONFIG.draft;
+                  const gestes = gestesPossibles(expense, droitsDepense);
                   return (
                     <TableRow key={expense.id}>
                       <TableCell className="font-mono text-xs">
@@ -734,38 +774,50 @@ export default function ExpensesPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {expense.status === "draft" && (
+                            {gestes.includes("submit") && (
                               <DropdownMenuItem onClick={() => handleAction("submit", expense)}>
                                 <Send className="h-4 w-4 mr-2" />
                                 Soumettre
                               </DropdownMenuItem>
                             )}
-                            {expense.status === "pending" && hasPermission("cashbook.approve_expense") && (
-                              <>
-                                <DropdownMenuItem onClick={() => handleAction("approve", expense)}>
-                                  <CheckCircle className="h-4 w-4 mr-2" />
-                                  Approuver
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setRejectTarget(expense);
-                                    setRejectReason("");
-                                  }}
-                                >
-                                  <XCircle className="h-4 w-4 mr-2" />
-                                  Rejeter
-                                </DropdownMenuItem>
-                              </>
+                            {gestes.includes("approve") && (
+                              <DropdownMenuItem onClick={() => handleAction("approve", expense)}>
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Approuver
+                              </DropdownMenuItem>
                             )}
-                            {(expense.status === "draft" || expense.status === "pending" || expense.status === "approved") &&
-                              hasPermission("cashbook.approve_expense") && (
-                                <DropdownMenuItem onClick={() => handleAction("pay", expense)}>
-                                  <CreditCard className="h-4 w-4 mr-2" />
-                                  Payer directement
-                                </DropdownMenuItem>
-                              )}
-                            {expense.status !== "cancelled" && expense.status !== "rejected" &&
-                              hasPermission("cashbook.approve_expense") && (
+                            {gestes.includes("reject") && (
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setRejectTarget(expense);
+                                  setRejectReason("");
+                                }}
+                              >
+                                <XCircle className="h-4 w-4 mr-2" />
+                                Rejeter
+                              </DropdownMenuItem>
+                            )}
+                            {gestes.includes("pay") && (
+                              <DropdownMenuItem onClick={() => setPayTarget({ expense, direct: false })}>
+                                <CreditCard className="h-4 w-4 mr-2" />
+                                Payer
+                              </DropdownMenuItem>
+                            )}
+                            {gestes.includes("pay_direct") && (
+                              <DropdownMenuItem onClick={() => setPayTarget({ expense, direct: true })}>
+                                <CreditCard className="h-4 w-4 mr-2" />
+                                Payer directement
+                              </DropdownMenuItem>
+                            )}
+                            {papierDisponible(expense.status) && chrome && (
+                              <DropdownMenuItem onClick={() => reimprimer(expense)}>
+                                <Printer className="h-4 w-4 mr-2" />
+                                {papierDisponible(expense.status) === "recu"
+                                  ? "Imprimer le reçu"
+                                  : "Imprimer la demande"}
+                              </DropdownMenuItem>
+                            )}
+                            {gestes.includes("cancel") && (
                               <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
@@ -779,6 +831,9 @@ export default function ExpensesPage() {
                                   Annuler
                                 </DropdownMenuItem>
                               </>
+                            )}
+                            {gestes.length === 0 && !(papierDisponible(expense.status) && chrome) && (
+                              <DropdownMenuItem disabled>Aucune action possible</DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -982,6 +1037,18 @@ export default function ExpensesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {payTarget && (
+        <ExpensePayDialog
+          expense={payTarget.expense}
+          direct={payTarget.direct}
+          montant={money(payTarget.expense.amount, payTarget.expense.currency)}
+          chrome={chrome}
+          paperWidth={paperWidth}
+          onClose={() => setPayTarget(null)}
+          onPaid={fetchData}
+        />
+      )}
 
       {/* Cancel Dialog */}
       <Dialog open={!!cancelTarget} onOpenChange={(open) => !open && setCancelTarget(null)}>

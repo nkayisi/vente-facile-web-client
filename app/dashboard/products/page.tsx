@@ -1,5 +1,6 @@
 "use client";
 
+import { CreateProductSuggestion } from "@/components/products/create-product-suggestion";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -813,9 +814,14 @@ export default function ProductsPage() {
                 emptyIcon={<Package className="h-8 w-8" />}
                 emptyAction={
                     hasActiveFilters ? (
-                        <Button variant="outline" onClick={clearFilters}>
-                            Effacer les filtres
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                            <Button variant="outline" onClick={clearFilters}>
+                                Effacer les filtres
+                            </Button>
+                            {/* L'article cherché n'existe pas : on propose de le
+                                créer avec ce qui a déjà été tapé. */}
+                            <CreateProductSuggestion terme={searchQuery} />
+                        </div>
                     ) : (
                         <Link href="/dashboard/products/new">
                             <Button className="bg-orange-500 hover:bg-orange-600">

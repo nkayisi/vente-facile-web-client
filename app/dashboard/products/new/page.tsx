@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,9 +39,32 @@ import { useOrganization } from "@/components/auth/organization-checker";
  * (description, photo, poids, dimensions, produit vedette…) se complètent
  * depuis la fiche du produit une fois celui-ci créé.
  */
+/**
+ * Le SKU proposé à partir d'un nom : six lettres, et les quatre derniers
+ * chiffres de l'heure pour qu'il ne collisionne pas.
+ */
+function skuDepuis(nom: string): string {
+  return nom.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) + "-" + Date.now().toString().slice(-4);
+}
+
 export default function NewProductPage() {
   const { data: session } = useSession();
   const router = useRouter();
+  /**
+   * ┌──────────────────────────────────────────────────────────────────────┐
+   * │ UNE RECHERCHE SANS RÉSULTAT OUVRE CETTE PAGE PRÉ-REMPLIE.            │
+   * │                                                                      │
+   * │ `?name=` ou `?barcode=` : ce que le vendeur a déjà cherché ou        │
+   * │ scanné, pour qu'il ne retape rien. `?origine=` : la page a été       │
+   * │ ouverte dans un nouvel onglet par un autre écran (le point de vente, │
+   * │ une réquisition), dont l'état vit dans SA page ; elle se referme une │
+   * │ fois l'article créé et rend la main à cet écran.                     │
+   * └──────────────────────────────────────────────────────────────────────┘
+   */
+  const searchParams = useSearchParams();
+  const nomPrerempli = (searchParams.get("name") ?? "").trim();
+  const codePrerempli = (searchParams.get("barcode") ?? "").trim();
+  const origine = searchParams.get("origine");
   const { currency: defaultCurrency } = useCurrency();
 
   const { organization } = useOrganization();
@@ -54,10 +77,12 @@ export default function NewProductPage() {
     DuplicateCheckResult["duplicates"]
   >({ sku: null, barcode: null });
 
-  const [formData, setFormData] = useState<CreateProductData>({
-    name: "",
-    sku: "",
-    barcode: "",
+  const [formData, setFormData] = useState<CreateProductData>(() => ({
+    name: nomPrerempli,
+    // Un SKU vide bloque l'enregistrement : on le propose d'emblée quand un
+    // nom arrive, le marchand peut toujours le changer.
+    sku: nomPrerempli ? skuDepuis(nomPrerempli) : "",
+    barcode: codePrerempli,
     category: null,
     brand: null,
     selling_mode: "retail_only",
@@ -80,15 +105,12 @@ export default function NewProductPage() {
     // avant est une décision qui se prend plus tard, depuis sa fiche.
     is_active: true,
     is_featured: false,
-  });
+  }));
 
 
   const generateSKU = () => {
     if (!formData.name) return;
-    const sku =
-      formData.name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) +
-      "-" +
-      Date.now().toString().slice(-4);
+    const sku = skuDepuis(formData.name);
     setFormData((prev) => ({ ...prev, sku }));
   };
 
@@ -201,6 +223,14 @@ export default function NewProductPage() {
         toast.warning("Produit créé, mais la photo n'a pas pu être enregistrée", {
           description: "Vous pouvez l'ajouter depuis la fiche du produit.",
         });
+      }
+      if (origine) {
+        // Ouverte par un autre écran : on lui rend la main. L'article s'y
+        // retrouve à la recherche suivante (le point de vente relance la
+        // sienne quand l'onglet redevient visible). `close()` n'agit que sur
+        // un onglet ouvert par script ; sinon on retombe sur la fiche.
+        toast.success("Article créé. Vous pouvez revenir à l'écran précédent.");
+        window.close();
       }
       router.push(`/dashboard/products/${result.data.id}`);
     } else {

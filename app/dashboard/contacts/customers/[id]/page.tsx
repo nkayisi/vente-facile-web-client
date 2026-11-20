@@ -1,5 +1,6 @@
 "use client";
 
+import { chromeDeSecours } from "@/lib/receipt/chrome";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
@@ -92,6 +93,7 @@ import { createMoneyHelpers, MONEY_EPS } from "@/lib/currency";
 import { isOverdue, dueDateLabel } from "@/lib/due-date";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { PermissionGate } from "@/components/auth/permission-gate";
+import { usePermissions } from "@/components/auth/permissions-provider";
 import { CustomerPaymentDialog } from "@/components/contacts/customer-payment-dialog";
 import { CustomerAdjustDialog } from "@/components/contacts/customer-adjust-dialog";
 
@@ -114,6 +116,7 @@ export default function CustomerDetailPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const { organization } = useOrganization();
+  const { hasPermission } = usePermissions();
   const { chrome, paperWidth } = useReceiptChrome(session?.accessToken, organization);
   const printer = useReceiptPrinter();
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -439,7 +442,7 @@ export default function CustomerDetailPage() {
 
         const receiptData: PaymentReceiptData = {
           kind: "debt_payment",
-          chrome: chrome ?? { org: { name: organization.name || "Vente Facile" } },
+          chrome: chrome ?? chromeDeSecours(organization.name),
           number: settledPayment?.receipt_number || selectedSale.reference,
           date: new Date().toLocaleString("fr-CD"),
           customerName: customer.name,
@@ -1136,21 +1139,34 @@ export default function CustomerDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {customer.recent_sales.map(sale => (
-                    <Link
-                      key={sale.id}
-                      href={`/dashboard/sales/${sale.id}`}
-                      className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div>
-                        <p className="text-sm font-medium">{sale.reference}</p>
-                        <p className="text-xs text-gray-500">{formatDateTime(sale.date)}</p>
+                  {customer.recent_sales.map(sale => {
+                    const ligne = (
+                      <>
+                        <div>
+                          <p className="text-sm font-medium">{sale.reference}</p>
+                          <p className="text-xs text-gray-500">{formatDateTime(sale.date)}</p>
+                        </div>
+                        <span className="font-semibold text-sm text-orange-600">
+                          {money.money(sale.total, sale.currency || defaultCurrency.code)}
+                        </span>
+                      </>
+                    );
+                    // Sans `sales.view` (le magasinier), la vente se lit sans
+                    // mener à une fiche qui lui serait refusée.
+                    return hasPermission("sales.view") ? (
+                      <Link
+                        key={sale.id}
+                        href={`/dashboard/sales/${sale.id}`}
+                        className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        {ligne}
+                      </Link>
+                    ) : (
+                      <div key={sale.id} className="flex items-center justify-between p-2">
+                        {ligne}
                       </div>
-                      <span className="font-semibold text-sm text-orange-600">
-                        {money.money(sale.total, sale.currency || defaultCurrency.code)}
-                      </span>
-                    </Link>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
               <Link

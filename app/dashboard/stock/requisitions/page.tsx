@@ -51,8 +51,23 @@ import { formatDate } from "@/lib/format";
 import {
   createRequisition, exportRequisition, getRequisitionProposal, getRequisitions,
   transitionRequisition,
-  type Requisition, type RequisitionProposal,
+  type Requisition,
 } from "@/actions/stock.actions";
+import type { Product } from "@/actions/products.actions";
+import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
+import { CreateProductSuggestion } from "@/components/products/create-product-suggestion";
+import { createProductSearchHandler } from "@/lib/product-search";
+import {
+  ajouterAuBordereau,
+  fusionnerProposition,
+  lignesRetenues,
+  nombreDeRefus,
+  quantiteEnvoyee,
+  refusDeLigne,
+  retirerDuBordereau,
+  type LigneBordereau,
+} from "@/lib/stock/bordereau-requisition";
+import { phraseDeRefus } from "@/lib/stock/nombres";
 
 type Statut = Requisition["status"];
 
@@ -64,12 +79,6 @@ const STATUT: Record<Statut, { label: string; color: string; icon: typeof Clock 
   cancelled: { label: "Annulée", color: "bg-muted text-muted-foreground", icon: X },
 };
 
-/** Une ligne du bordereau en cours de saisie. */
-interface LigneSaisie extends RequisitionProposal {
-  retenue: boolean;
-  /** La saisie BRUTE : le champ garde ce qui est tapé. */
-  quantite: string;
-}
 
 export default function RequisitionsPage() {
   const { data: session } = useSession();
@@ -125,7 +134,9 @@ export default function RequisitionsPage() {
   const [entrepot, setEntrepot] = useState("");
   const [rupturesSeules, setRupturesSeules] = useState(false);
   const [notes, setNotes] = useState("");
-  const [lignes, setLignes] = useState<LigneSaisie[]>([]);
+  const [lignes, setLignes] = useState<LigneBordereau[]>([]);
+  /** Les articles rendus par la recherche, pour retrouver le choisi. */
+  const [trouves, setTrouves] = useState<Product[]>([]);
   const [chargementProposition, setChargementProposition] = useState(false);
 
   const effectif = perimetre.effective({
@@ -202,16 +213,12 @@ export default function RequisitionsPage() {
       setChargementProposition(true);
       const res = await getRequisitionProposal(jeton, organization.id, depot, ruptures);
       if (res.success && res.data) {
-        setLignes(
-          res.data.items.map((p) => ({
-            ...p,
-            retenue: true,
-            quantite: String(p.suggested),
-          }))
-        );
+        const items = res.data.items;
+        // On FUSIONNE : les quantités corrigées et les articles ajoutés à la
+        // main survivent à la bascule « Ruptures seulement ».
+        setLignes((avant) => fusionnerProposition(items, avant));
       } else {
         toast.error(res.message ?? "La proposition n'a pas pu être calculée");
-        setLignes([]);
       }
       setChargementProposition(false);
     },
@@ -233,10 +240,46 @@ export default function RequisitionsPage() {
     if (defaut) void chargerProposition(defaut, false);
   };
 
-  const retenues = lignes.filter((l) => l.retenue && Number(l.quantite) > 0);
+  const retenues = lignesRetenues(lignes);
+  const saisiesRefusees = nombreDeRefus(lignes);
+
+  /**
+   * La recherche d'un article à AJOUTER, hors proposition : tout le catalogue,
+   * stock de l'entrepôt choisi. Sans `full_catalog`, un magasinier ne
+   * trouverait pas un article jamais reçu dans son dépôt - c'est-à-dire
+   * précisément celui qu'il vient demander.
+   */
+  const chercherArticle = useCallback(
+    async (terme: string) => {
+      if (!jeton || !organization || !entrepot) return [];
+      return createProductSearchHandler(jeton, organization.id, {
+        extraFilters: { full_catalog: true, warehouse: entrepot },
+        onResults: setTrouves,
+      })(terme);
+    },
+    [jeton, organization, entrepot]
+  );
+
+  const ajouterArticle = (id: string) => {
+    const p = trouves.find((x) => x.id === id);
+    if (!p) return;
+    const r = ajouterAuBordereau(lignes, {
+      product: p.id,
+      product_name: p.name,
+      product_sku: p.sku || null,
+      unit_name: p.unit_name ?? null,
+      stock: Number(p.stock_quantity ?? 0),
+      reorder_point: Number(p.reorder_point ?? 0),
+    });
+    if (r.deja) {
+      toast.info(`${p.name} est déjà dans la demande : corrigez sa quantité.`);
+      return;
+    }
+    setLignes(r.lignes);
+  };
 
   const enregistrer = async () => {
-    if (!jeton || !organization || !entrepot || retenues.length === 0) return;
+    if (!jeton || !organization || !entrepot || retenues.length === 0 || saisiesRefusees > 0) return;
     setEnvoi(true);
     const res = await createRequisition(jeton, organization.id, {
       warehouse: entrepot,
@@ -245,7 +288,7 @@ export default function RequisitionsPage() {
       // d'écrire une pénurie qui n'existe pas.
       items: retenues.map((l) => ({
         product: l.product,
-        quantity_requested: l.quantite,
+        quantity_requested: quantiteEnvoyee(l),
       })),
     });
     setEnvoi(false);
@@ -496,6 +539,26 @@ export default function RequisitionsPage() {
               </div>
             </div>
 
+            {/* Un article hors des suggestions : stock suffisant, ou jamais
+                reçu dans ce dépôt. Le serveur l'accepte, l'écran le permet. */}
+            {entrepot ? (
+              <div className="space-y-2">
+                <Label>Ajouter un article</Label>
+                <SearchableSelectAsync
+                  value={undefined}
+                  onValueChange={ajouterArticle}
+                  onSearch={chercherArticle}
+                  resetKey={entrepot}
+                  placeholder="Rechercher un article à demander…"
+                  searchPlaceholder="Nom, SKU ou code-barres…"
+                  emptyMessage="Aucun article ne correspond."
+                  emptyAction={(terme) => (
+                    <CreateProductSuggestion terme={terme} origine="requisition" />
+                  )}
+                />
+              </div>
+            ) : null}
+
             {chargementProposition ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -503,7 +566,7 @@ export default function RequisitionsPage() {
             ) : lignes.length === 0 ? (
               <div className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">
                 {entrepot
-                  ? "Aucun article n'est sous son point de réapprovisionnement dans ce dépôt."
+                  ? "Aucun article n'est sous son point de réapprovisionnement dans ce dépôt. Ajoutez-en un ci-dessus."
                   : "Choisissez un entrepôt pour voir ce qui manque."}
               </div>
             ) : (
@@ -537,7 +600,28 @@ export default function RequisitionsPage() {
                           />
                         </td>
                         <td className="px-3 py-2">
-                          <div className="font-medium">{l.product_name}</div>
+                          <div className="flex items-center gap-2 font-medium">
+                            {l.product_name}
+                            {l.ajoutee ? (
+                              <>
+                                <Badge variant="secondary" className="text-[10px]">
+                                  Ajouté
+                                </Badge>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="ml-auto h-7 w-7"
+                                  aria-label={`Retirer ${l.product_name}`}
+                                  onClick={() =>
+                                    setLignes((avant) => retirerDuBordereau(avant, l.product))
+                                  }
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </>
+                            ) : null}
+                          </div>
                           {l.product_sku ? (
                             <div className="text-xs text-muted-foreground">{l.product_sku}</div>
                           ) : null}
@@ -550,9 +634,8 @@ export default function RequisitionsPage() {
                         </td>
                         <td className="px-3 py-2 text-right">
                           <Input
-                            type="number"
-                            min="0"
-                            step="0.001"
+                            inputMode="decimal"
+                            placeholder={l.ajoutee ? "Quantité" : undefined}
                             value={l.quantite}
                             disabled={!l.retenue}
                             onChange={(e) =>
@@ -562,8 +645,14 @@ export default function RequisitionsPage() {
                                 )
                               )
                             }
+                            aria-invalid={refusDeLigne(l) !== null}
                             className="ml-auto w-28 text-right"
                           />
+                          {refusDeLigne(l) ? (
+                            <p className="mt-1 text-xs text-destructive">
+                              {phraseDeRefus(refusDeLigne(l)!)}
+                            </p>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
@@ -585,7 +674,9 @@ export default function RequisitionsPage() {
 
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
-              {retenues.length === 0
+              {saisiesRefusees > 0
+                ? `${saisiesRefusees} ${saisiesRefusees > 1 ? "quantités ne se lisent pas" : "quantité ne se lit pas"} : corrigez-${saisiesRefusees > 1 ? "les" : "la"} avant d'enregistrer.`
+                : retenues.length === 0
                 ? "Cochez au moins un article à demander."
                 : `${retenues.length} ${retenues.length > 1 ? "articles" : "article"} à demander`}
             </p>
@@ -595,7 +686,7 @@ export default function RequisitionsPage() {
               </Button>
               <Button
                 onClick={() => void enregistrer()}
-                disabled={retenues.length === 0 || !entrepot || envoi}
+                disabled={retenues.length === 0 || saisiesRefusees > 0 || !entrepot || envoi}
               >
                 {envoi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Enregistrer la demande

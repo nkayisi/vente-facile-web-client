@@ -9,6 +9,11 @@
  * « 2 » sur Carton puis « 3 » sur Bouteille et obtient « 2 cartons +
  * 3 bouteilles » sans jamais multiplier de tête.
  *
+ * Il s'ouvre sur 1 (voir `quantiteInitiale` du noyau), sélectionné pour que la
+ * première touche le remplace, sauf quand 1 fermerait l'encaissement. Un scan
+ * de douchette tapé dans le champ est reconnu (`lib/pos/rescan.ts`) : il
+ * n'écrit jamais son code comme une quantité.
+ *
  * Le composant ne calcule aucune quantité qui serait envoyée telle quelle : il
  * remonte la saisie brute (`packages`, `loose`), exactement comme
  * `PackagingService.to_base` l'attend côté serveur. Les règles de partage
@@ -35,19 +40,18 @@ import {
 } from "@/lib/packaging";
 import { formatUnitQuantity, pluralizeUnit } from "@/lib/units";
 import { cn } from "@/lib/utils";
-
-/**
- * Une quantité telle qu'elle se RÉÉDITE dans un champ : virgule décimale, et
- * surtout AUCUN groupement des milliers.
- *
- * `formatQuantity` du paquet groupe par espace fine insécable, ce qui est juste
- * pour un montant affiché et faux dans un `<input>` : le caractère se retrouve
- * dans la valeur, le curseur le traverse, et une réédition au clavier donne un
- * nombre que `parseFloat` ne relit pas.
- */
-function frSaisie(n: number): string {
-  return String(n).replace(".", ",");
-}
+import {
+  basculerCanal,
+  quantiteInitiale,
+  saisieDeQuantite,
+  type EtatQuantite,
+} from "@/lib/pos";
+import {
+  estLeMemeArticle,
+  frapperDansLaSaisie,
+  rescanAuRepos,
+  type EtatRescan,
+} from "@/lib/pos/rescan";
 
 /** Saisie brute d'une ligne : conditionnements entiers + unités de détail. */
 export interface PackagedSelection {
@@ -153,6 +157,14 @@ export interface QuantityPickerProps {
   initialCurrency?: string;
   /** Retrait de la ligne, proposé quand la quantité retombe à zéro. */
   onRemove?: () => void;
+  /**
+   * `dialog` : toujours dans une boîte, sans carte d'ancrage.
+   *
+   * L'article SCANNÉ n'est pas forcément dans la grille, qui pagine par
+   * cinquante : un popover n'aurait aucune carte où s'accrocher. Absent, la
+   * présentation suit la largeur (popover sur un grand écran, feuille sinon).
+   */
+  presentation?: "auto" | "dialog";
 }
 
 export function QuantityPicker({
@@ -174,8 +186,10 @@ export function QuantityPicker({
   invoiceCurrency,
   initialCurrency,
   onRemove,
+  presentation = "auto",
 }: QuantityPickerProps) {
-  const compact = useIsCompact();
+  const etroit = useIsCompact();
+  const compact = presentation === "dialog" || etroit;
 
   const body = open ? (
     <QuantityPickerBody
@@ -215,15 +229,26 @@ export function QuantityPicker({
         <Dialog open={open} onOpenChange={onOpenChange}>
           <DialogContent
             showCloseButton={false}
-            className="top-auto bottom-0 left-0 w-full max-w-full translate-x-0 translate-y-0 gap-0 rounded-b-none rounded-t-2xl border-b-0 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
+            className={
+              etroit
+                ? "top-auto bottom-0 left-0 w-full max-w-full translate-x-0 translate-y-0 gap-0 rounded-b-none rounded-t-2xl border-b-0 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
+                : // Un article scanné sur un grand écran : une boîte centrée de
+                  // la largeur du popover, pas une feuille qui traverse l'écran.
+                  // ⚠ `grid-cols-1` n'est pas décoratif : `DialogContent` est une
+                  //   grille SANS colonne explicite, dont la piste s'élargit sur
+                  //   son contenu ; la rangée des raccourcis sortait alors de la
+                  //   boîte, « Annuler » et le total rognés à droite.
+                  "w-[min(20rem,calc(100vw-1.5rem))] grid-cols-1 gap-2 rounded-2xl p-3"
+            }
           >
-            <DialogTitle className="sr-only">
-              Quantité pour {product.name}
-            </DialogTitle>
-            <div
-              aria-hidden
-              className="mx-auto mb-2 h-1 w-10 shrink-0 rounded-full bg-slate-200"
-            />
+            {/* Le nom est déjà en tête du corps : un titre visible le doublerait. */}
+            <DialogTitle className="sr-only">{`Quantité pour ${product.name}`}</DialogTitle>
+            {etroit ? (
+              <div
+                aria-hidden
+                className="mx-auto mb-2 h-1 w-10 shrink-0 rounded-full bg-slate-200"
+              />
+            ) : null}
             {body}
           </DialogContent>
         </Dialog>
@@ -302,25 +327,51 @@ function QuantityPickerBody({
   const startPackages = initial?.packages ?? 0;
   const startLoose = initial?.loose ?? 0;
   const isEditing = startPackages > 0 || startLoose > 0;
-  // Rouvrir une ligne existante sur le canal qu'elle utilise déjà.
-  const startChannel: Channel = !packaging
-    ? "retail"
-    : packaging.packageOnly || (startPackages > 0 && startLoose === 0)
-      ? "package"
-      : "retail";
-  // Rien n'est pré-rempli à l'ajout : le champ part vide et le bouton reste
-  // inactif tant que le caissier n'a pas annoncé une quantité. Une valeur
-  // amorcée à 1 se validerait par inadvertance au premier clic.
-  const seed = isEditing
-    ? startChannel === "package"
-      ? startPackages
-      : startLoose
-    : 0;
+  const locked = lockReference !== null && lockReference !== undefined;
 
-  const [packages, setPackages] = useState(startPackages);
-  const [loose, setLoose] = useState(startLoose);
-  const [channel, setChannel] = useState<Channel>(startChannel);
-  const [draft, setDraft] = useState(seed ? String(seed) : "");
+  /**
+   * Ce qu'un « 1 » dans ce canal ouvrirait comme motif de fermer
+   * l'encaissement. Le verrou d'inventaire, le stock qui ne couvre pas 1, les
+   * contenants scellés manquants. L'ouverture d'un contenant n'en est pas un :
+   * le stock est là, il s'ouvre (seul, ou d'un bouton dans cette même boîte).
+   */
+  const alerteSiUn = (canal: Channel): string | null => {
+    if (locked) return "inventaire";
+    const besoin = canal === "package" ? factor : 1;
+    if (maxBase !== null && besoin > maxBase) return "stock";
+    if (canal === "package" && sealedAvailable !== null && sealedAvailable < 1) return "scelles";
+    return null;
+  };
+
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │ ON PROPOSE 1, SÉLECTIONNÉ : LA PREMIÈRE TOUCHE LE REMPLACE.          │
+  // │                                                                      │
+  // │ Le champ partait vide, de peur qu'un 1 d'avance se valide par        │
+  // │ inadvertance. Il ne fait du tort que s'il ferme l'encaissement :     │
+  // │ dans ce cas seul le champ reste vide, et le motif est dit d'emblée.  │
+  // │ Ailleurs, un scan suivi d'Entrée ajoute l'article. La règle vit dans │
+  // │ le noyau (`quantiteInitiale`), le terminal l'applique aussi.          │
+  // └──────────────────────────────────────────────────────────────────────┘
+  const [depart] = useState<EtatQuantite>(() =>
+    quantiteInitiale({
+      packaging,
+      initiale: isEditing ? { packages: startPackages, loose: startLoose } : null,
+      alerteSiUn,
+    })
+  );
+
+  const [packages, setPackages] = useState(depart.packages);
+  const [loose, setLoose] = useState(depart.loose);
+  const [channel, setChannel] = useState<Channel>(depart.canal);
+  const [draft, setDraft] = useState(
+    saisieDeQuantite(depart.canal === "package" ? depart.packages : depart.loose)
+  );
+  // La proposition intacte suit le canal (`basculerCanal`) ; le motif dit
+  // pourquoi rien n'est proposé. Les deux tombent à la première frappe.
+  const [proposee, setProposee] = useState(depart.proposee);
+  const [motifVide, setMotifVide] = useState<string | null>(depart.motifVide);
+  const [avisScan, setAvisScan] = useState<string | null>(null);
+  const rescan = useRef<EtatRescan<EtatQuantite>>(rescanAuRepos());
   const [unpacking, setUnpacking] = useState(false);
   const showDiscount = discountPercent !== undefined;
   const [discount, setDiscount] = useState(discountPercent ?? 0);
@@ -335,6 +386,13 @@ function QuantityPickerBody({
     }, 30);
     return () => window.clearTimeout(id);
   }, []);
+
+  /** La saisie devient celle du caissier : la proposition et son motif tombent. */
+  const saisieTouchee = () => {
+    setProposee(false);
+    setMotifVide(null);
+    setAvisScan(null);
+  };
 
   const retailWord = packaging?.retailWord || product.unit_name?.trim() || "unité";
   const packageWord =
@@ -433,7 +491,6 @@ function QuantityPickerBody({
   // │ du serveur), et cet écran dit pourquoi AVANT l'ajout.                │
   // └──────────────────────────────────────────────────────────────────────┘
   const canSubmit = base >= MIN_QUANTITY;
-  const locked = lockReference !== null && lockReference !== undefined;
 
   // Ouverture manuelle : elle ne se propose que si elle est possible, c'est à
   // dire s'il reste des contenants scellés à ouvrir. Le message renvoyait
@@ -463,7 +520,8 @@ function QuantityPickerBody({
     const clean = Math.max(0, roundQuantity(Number.isFinite(next) ? next : 0));
     if (channel === "package") setPackages(clean);
     else setLoose(clean);
-    setDraft(clean ? frSaisie(clean) : "");
+    setDraft(saisieDeQuantite(clean));
+    saisieTouchee();
   };
 
   /**
@@ -493,13 +551,32 @@ function QuantityPickerBody({
     const value = roundQuantity(parseFloat(borne.replace(",", ".")) || 0);
     if (channel === "package") setPackages(value);
     else setLoose(value);
+    saisieTouchee();
+  };
+
+  const etatCourant = (): EtatQuantite => ({
+    canal: channel,
+    packages,
+    loose,
+    proposee,
+    motifVide,
+  });
+
+  const appliquerEtat = (e: EtatQuantite) => {
+    setChannel(e.canal);
+    setPackages(e.packages);
+    setLoose(e.loose);
+    setProposee(e.proposee);
+    setMotifVide(e.motifVide);
+    setDraft(saisieDeQuantite(e.canal === "package" ? e.packages : e.loose));
   };
 
   const switchChannel = (next: Channel) => {
     if (next === channel) return;
-    setChannel(next);
-    const value = next === "package" ? packages : loose;
-    setDraft(value ? frSaisie(value) : "");
+    // ⚠ Une proposition intacte SUIT le canal : sans cela « 1 bouteille »
+    // proposée resterait sous les « 2 cartons » tapés ensuite.
+    appliquerEtat(basculerCanal(etatCourant(), next, alerteSiUn));
+    setAvisScan(null);
     window.setTimeout(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -530,6 +607,36 @@ function QuantityPickerBody({
       ...(showDiscount ? { discountPercentage: discount } : {}),
       ...(priceCurrency ? { priceCurrency } : {}),
     });
+  };
+
+  /**
+   * Une douchette qui tape dans le champ : la saisie d'avant la rafale est
+   * rétablie, le même article ajoute 1, un autre est refusé. Son Entrée ne
+   * valide rien (`stopPropagation` : le conteneur soumettrait).
+   */
+  const surToucheDuChamp = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const r = frapperDansLaSaisie(rescan.current, e.key, e.timeStamp, etatCourant());
+    rescan.current = r.etat;
+    if (!r.scan) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const avant = r.scan.avant;
+    if (!estLeMemeArticle(r.scan.candidats, product)) {
+      appliquerEtat(avant);
+      setAvisScan("Un autre article a été scanné : terminez d'abord cette saisie.");
+      return;
+    }
+    const plusUn = roundQuantity((avant.canal === "package" ? avant.packages : avant.loose) + 1);
+    appliquerEtat({
+      ...avant,
+      packages: avant.canal === "package" ? plusUn : avant.packages,
+      loose: avant.canal === "package" ? avant.loose : plusUn,
+      proposee: false,
+      motifVide: null,
+    });
+    setAvisScan(null);
+    window.setTimeout(() => inputRef.current?.select(), 0);
   };
 
   const recap = (() => {
@@ -708,6 +815,7 @@ function QuantityPickerBody({
           value={draft}
           placeholder="0"
           onChange={(e) => handleDraft(e.target.value)}
+          onKeyDown={surToucheDuChamp}
           aria-label={`Nombre de ${channel === "package" ? packageWord : retailWord}`}
           className={cn(
             "h-11 min-w-0 flex-1 rounded-lg border text-center text-lg font-bold tabular-nums outline-none transition-colors",
@@ -775,6 +883,32 @@ function QuantityPickerBody({
         </p>
       ) : null}
 
+      {/* Rien n'est proposé : on dit pourquoi AVANT la moindre frappe. Le
+          verrou a déjà son avis juste au-dessus. */}
+      {motifVide && motifVide !== "inventaire" && base === 0 ? (
+        <p className="flex items-start gap-1 rounded-lg bg-warning/10 px-1.5 py-1 text-[10px] font-medium leading-snug text-warning">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+          <span>
+            {motifVide === "scelles"
+              ? `Plus aucun ${packageWord} scellé.`
+              : product.track_inventory && product.stock_quantity == null
+                ? "Stock inconnu pour cet article."
+                : maxBase !== null && maxBase > 0
+                  ? `Il ne reste que ${availabilityLabel}.`
+                  : "Plus rien en stock."}{" "}
+            Rien n&apos;est proposé : tapez une quantité pour l&apos;ajouter quand même,
+            l&apos;encaissement restera fermé tant que le stock ne couvre pas la ligne.
+          </span>
+        </p>
+      ) : null}
+
+      {avisScan ? (
+        <p role="status" className="flex items-start gap-1 rounded-lg bg-slate-100 px-1.5 py-1 text-[10px] font-medium leading-snug text-slate-700">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+          <span>{avisScan}</span>
+        </p>
+      ) : null}
+
       {overStock || overSealed || needsOpening ? (
         <div className="space-y-1 rounded-lg bg-warning/10 px-1.5 py-1">
           <p className="flex items-start gap-1 text-[10px] font-medium leading-snug text-warning">
@@ -803,10 +937,11 @@ function QuantityPickerBody({
                 setPackages(fallbackSelection.packages);
                 setLoose(fallbackSelection.loose);
                 setDraft(
-                  channel === "package"
-                    ? String(fallbackSelection.packages || "")
-                    : String(fallbackSelection.loose || "")
+                  saisieDeQuantite(
+                    channel === "package" ? fallbackSelection.packages : fallbackSelection.loose
+                  )
                 );
+                saisieTouchee();
               }}
             >
               Vendre{" "}

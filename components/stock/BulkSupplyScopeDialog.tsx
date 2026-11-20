@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelectAsync } from "@/components/ui/searchable-select-async";
+import { CreateProductSuggestion } from "@/components/products/create-product-suggestion";
 import {
   createCategorySearchHandler,
   createProductSearchHandler,
@@ -227,6 +228,9 @@ export function BulkSupplyScopeDialog({
               onChange={(articles) => maj({ articles })}
               onSearch={chercheArticle}
               placeholder="Ajouter un article"
+              emptyAction={(terme) => (
+                <CreateProductSuggestion terme={terme} origine="appro" />
+              )}
             />
           ) : null}
 
@@ -283,12 +287,15 @@ function ChoixMultiple({
   onChange,
   onSearch,
   placeholder,
+  emptyAction,
 }: {
   label: string;
   valeurs: OptionPerimetre[];
   onChange: (v: OptionPerimetre[]) => void;
   onSearch: (q: string) => Promise<OptionPerimetre[]>;
   placeholder: string;
+  /** Une recherche vide : proposer de créer l'article (les articles seuls). */
+  emptyAction?: (terme: string) => React.ReactNode;
 }) {
   return (
     <div className="space-y-2">
@@ -302,6 +309,7 @@ function ChoixMultiple({
         }}
         onSearch={onSearch}
         placeholder={placeholder}
+        emptyAction={emptyAction}
       />
       {valeurs.length > 0 ? (
         <div className="flex flex-wrap gap-2">

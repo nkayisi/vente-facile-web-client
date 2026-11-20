@@ -16,6 +16,7 @@
  * ⚠ LE MOTIF EST OBLIGATOIRE : un ajustement sans motif est une écriture dont
  *   plus personne ne saura l'origine. Le serveur le refuse aussi.
  */
+import { chromeDeSecours } from "@/lib/receipt/chrome";
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { Loader2, Scale } from "lucide-react";
@@ -115,7 +116,7 @@ export function CustomerAdjustDialog({
       job.present(
         buildPaymentReceipt({
           kind: "adjustment",
-          chrome: chrome ?? { org: { name: organization.name || "Vente Facile" } },
+          chrome: chrome ?? chromeDeSecours(organization.name),
           number: d.receipt_number,
           date: new Date().toLocaleString("fr-CD"),
           customerName: customer.name,

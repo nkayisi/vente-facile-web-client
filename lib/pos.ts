@@ -21,6 +21,12 @@ export {
   maxGlobalDiscount,
   totalInSaleCurrency,
   tendersIn,
+  // La monnaie depuis les billets remis, un seul arrondi : la règle du serveur.
+  monnaieARendre,
+  // Ce que le sélecteur de quantité affiche à l'ouverture.
+  quantiteInitiale,
+  basculerCanal,
+  saisieDeQuantite,
   lineGross,
   packagingFactorOf,
   looseQuantityOf,
@@ -57,6 +63,8 @@ export type {
   BasketInput,
   SaleCurrencyInput,
   TenderLike,
+  CanalQuantite,
+  EtatQuantite,
   LoyaltyProgramLike,
   CreditCustomerLike,
   CreditVerdict,

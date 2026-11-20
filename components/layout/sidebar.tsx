@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useOrganization } from "@/components/auth/organization-checker";
 import { usePermissions } from "@/components/auth/permissions-provider";
+import { pageOuverte } from "@/lib/navigation/regles-de-route";
 import {
   LayoutDashboard,
   Users,
@@ -32,35 +33,30 @@ const menuItems = [
     icon: LayoutDashboard,
     href: "/dashboard",
     badge: null,
-    permission: null,
   },
   {
     label: "Ventes",
     icon: ShoppingCart,
     href: "/dashboard/sales",
     badge: null,
-    permission: "sales.view",
   },
   {
     label: "Produits",
     icon: Package,
     href: "/dashboard/products",
     badge: null,
-    permission: "products.view",
   },
   {
     label: "Stock",
     icon: Boxes,
     href: "/dashboard/stock",
     badge: null,
-    permission: "stock.view",
   },
   {
     label: "Inventaire",
     icon: ClipboardList,
     href: "/dashboard/inventory",
     badge: null,
-    permission: "inventory.view",
   },
   {
     // Lot 13. Le droit de LECTURE, et non `purchases.create` : un magasinier
@@ -70,49 +66,42 @@ const menuItems = [
     icon: ShoppingBag,
     href: "/dashboard/purchases",
     badge: null,
-    permission: "purchases.view",
   },
   {
     label: "Livre de caisse",
     icon: Wallet,
     href: "/dashboard/cashbook",
     badge: null,
-    permission: "cashbook.view",
   },
   {
     label: "Rapports & statistiques",
     icon: BarChart3,
     href: "/dashboard/reports",
     badge: null,
-    permission: "reports.view",
   },
   {
     label: "Clients & fournisseurs",
     icon: Users,
     href: "/dashboard/contacts",
     badge: null,
-    permission: "customers.view",
   },
   {
     label: "Utilisateurs",
     icon: UserCog,
     href: "/dashboard/users",
     badge: null,
-    permission: "users.view",
   },
   {
     label: "Abonnement",
     icon: Crown,
     href: "/dashboard/subscription",
     badge: null,
-    permission: "settings.view",
   },
   {
     label: "Paramètres",
     icon: Settings,
     href: "/dashboard/settings",
     badge: null,
-    permission: "settings.view",
   }
 ];
 
@@ -182,7 +171,8 @@ export function Sidebar({ isMobileOpen = false, onMobileClose }: SidebarProps) {
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => {
-            if (item.permission && !permissionsLoading && !hasPermission(item.permission)) {
+            // Ce que la PAGE exige, jamais une permission recopiée ici.
+            if (!permissionsLoading && !pageOuverte(item.href, hasPermission)) {
               return null;
             }
             const Icon = item.icon;

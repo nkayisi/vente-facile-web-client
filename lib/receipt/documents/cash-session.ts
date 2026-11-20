@@ -12,10 +12,12 @@
 export {
   buildCashSessionReceipt,
   buildExpenseReceipt,
+  buildExpenseRequest,
 } from "@vente-facile/core/receipt";
 
 export type {
   CashSessionCurrencyLine,
   CashSessionReceiptData,
   ExpenseReceiptData,
+  ExpenseRequestData,
 } from "@vente-facile/core/receipt";
